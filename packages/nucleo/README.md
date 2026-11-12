@@ -79,6 +79,8 @@ import { importar } from '@journey/nucleo/importacao';   // puxa exceljs
 import { gerarModeloXlsx } from '@journey/nucleo/modelos'; // puxa exceljs
 ```
 
+`@journey/nucleo/teste` exporta os construtores de documento dos testes (`doc`, `entrada`, `peca`, `saida`, `ramal`, `fila`, `grupo`, `janela`), pra outros pacotes testarem com documentos pequenos.
+
 `formato`, `motor` e `diagnostico` não importam `exceljs`, nem direta nem indiretamente (um teste confere). Assim um componente de tela que só simula ou diagnostica não leva a biblioteca de planilhas no bundle.
 
 ## Fixture da central

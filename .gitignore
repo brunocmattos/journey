@@ -3,3 +3,10 @@ dist/
 saida/
 *.log
 .DS_Store
+.next/
+test-results/
+playwright-report/
+.env.local
+supabase/.temp/
+*.tsbuildinfo
+next-env.d.ts

@@ -9,7 +9,8 @@
     "./importacao": "./src/importacao/index.ts",
     "./modelos": "./src/modelos/index.ts",
     "./motor": "./src/motor/index.ts",
-    "./diagnostico": "./src/diagnostico/index.ts"
+    "./diagnostico": "./src/diagnostico/index.ts",
+    "./teste": "./test/apoio.ts"
   },
   "scripts": {
     "test": "vitest run",
