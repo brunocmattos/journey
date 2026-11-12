@@ -2564,3 +2564,27 @@ Abrir o PR em rascunho pra `main`: "Etapa 3: links públicos". No corpo: que ele
 **Fica pro Bruno:**
 1. Na Vercel, a variável `SUPABASE_SECRET_KEY` (a secret key do projeto no Supabase, em Project Settings → API Keys), marcada como Sensitive, sem `NEXT_PUBLIC_`. E `npx supabase db push` pra aplicar a migração nova.
 2. O critério 3 de verdade: salvar o cenário "E se ligarem às 16h57?" na central importada, compartilhar com nomes escondidos e mandar pra 2 ou 3 colegas; eles descrevem o caminho sem explicação.
+
+## Depois das revisões
+
+O código foi escrito como está acima e depois passou por revisões independentes, uma por camada. O que elas acharam e onde foi consertado:
+
+| Revisão | O que achou | Commits |
+|---|---|---|
+| Banco | A data da revogação aceitava qualquer valor (agora um trigger grava `now()`); o nome do cenário do link podia ser vazio ou enorme (agora de 1 a 200 caracteres); faltavam testes de isolamento entre empresas (empresa própria com jornada de outra, revogar link de outra empresa, `anon` lendo a tabela) | `65192c3` |
+| Retrato | Entrada e rótulo apontando pra ramal sem nome ou fora do export mantinham o nome da pessoa; texto em NFD não trocava; a troca dependia de `toLocaleLowerCase` ("İsmail"); espaços repetidos, NBSP e apóstrofo tipográfico escapavam; o trocador era calculado duas vezes | `260a6b5` |
+| Servidor | Toda FK violada virava "Esta versão não existe mais" (agora "Esta jornada não existe mais.", sem versão fixa); revogar um link que não existe dizia "já estava revogado"; faltavam testes de link vencido, de erro do banco, do prefixo `sb_secret_` e de `env:` no `next.config` | `4092364` |
+| Tela | Erro de rede travava "Criar link" e "Revogar" até recarregar; copiar da lista sem área de transferência não tinha saída; o diálogo abria sem nome acessível e sem foco; "esconder nomes" não voltava ligado ao reabrir (contra o spec 14); faltava um envio único entre criar e revogar; as teclas da simulação agiam com o diálogo aberto; botões sem contexto pro leitor de tela; o autor dependia de `undefined` | `d66c461` |
+| Página pública e polimento | Contraste abaixo do AA no texto da página indisponível e no "vale até"; `<title>` vazio quando o link falha; sem testes de `/lx` e `/l`; sem `h1`; "vale até" numa linha sozinha no celular; a região de status não anunciava a segunda cópia; o aviso de cópia automática orientava mal no Safari | `ce67fd4` |
+
+Ficou de fora, de propósito: link indisponível responde 200 (uma página que explica, com `noindex`), não 404 nem 410; o teste de banco não passa pelas server actions (o ponta a ponta passa); `criarLink` com opções nulas lança em vez de devolver erro (igual a `salvarCenario`); contar quantas vezes o link foi aberto.
+
+Contagens finais (eram 253, 168, 84 e 24 + 1 no ensaio):
+
+| Suíte | Resultado |
+|---|---|
+| Núcleo (Vitest) | `Tests  253 passed (253)` |
+| App (Vitest) | `Tests  180 passed (180)` |
+| Banco (pgTAP) | `Result: PASS`, `Tests=90` |
+| Ponta a ponta (Playwright) | `24 passed`, `1 skipped` (as capturas) |
+| `typecheck` e `build` | limpos; o build lista `ƒ /l/[token]`; `grep -rl ExcelJS apps/web/.next/static` não acha nada |
