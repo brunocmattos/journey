@@ -18,7 +18,12 @@ describe('chave secreta', () => {
   const todos = arquivos(SRC).map((f) => [f.slice(SRC.length + 1), readFileSync(f, 'utf8')] as const);
 
   it('só src/lib/link.ts lê SUPABASE_SECRET_KEY', () => {
-    expect(todos.filter(([, texto]) => /SUPABASE_SECRET_KEY|SERVICE_ROLE/.test(texto)).map(([nome]) => nome)).toEqual(['lib/link.ts']);
+    expect(todos.filter(([, texto]) => /SUPABASE_SECRET_KEY|SERVICE_ROLE|sb_secret_/.test(texto)).map(([nome]) => nome)).toEqual(['lib/link.ts']);
+  });
+
+  it('o next.config não tem env: (iria pro bundle do navegador)', () => {
+    const config = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8');
+    expect(config).not.toMatch(/\benv\s*:/);
   });
 
   it('e ele é só do servidor', () => {

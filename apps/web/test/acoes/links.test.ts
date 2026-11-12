@@ -91,6 +91,11 @@ describe('acoes/links', () => {
     expect(log).toHaveBeenCalled();
   });
 
+  it('sem versão fixa, 23503 é a jornada que sumiu', async () => {
+    respostas['links.insert'] = { error: { code: '23503', message: 'violates foreign key' } };
+    expect(await criarLink('e1', 'j1', { ...OPCOES, versao: null })).toEqual({ erro: 'Esta jornada não existe mais.' });
+  });
+
   it('revogar marca a data, só se ainda não foi revogado, nesta jornada', async () => {
     respostas['links.update'] = { data: [{ id: 'l1' }], error: null };
     expect(await revogarLink('e1', 'j1', 'l1')).toEqual({});
@@ -105,7 +110,7 @@ describe('acoes/links', () => {
 
   it('revogar de novo avisa', async () => {
     respostas['links.update'] = { data: [], error: null };
-    expect(await revogarLink('e1', 'j1', 'l1')).toEqual({ erro: 'Este link já estava revogado.' });
+    expect(await revogarLink('e1', 'j1', 'l1')).toEqual({ erro: 'Este link não existe mais ou já foi revogado.' });
     expect(revalidar).not.toHaveBeenCalled();
   });
 });

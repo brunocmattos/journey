@@ -44,6 +44,16 @@ describe('abrirLink', () => {
     expect(await abrirLink(TOKEN)).toEqual({ estado: 'revogado', quando: '2026-11-12T10:00:00Z' });
   });
 
+  it('vencido passa com a data', async () => {
+    resposta = { data: { estado: 'vencido', quando: '2026-11-01T00:00:00Z' }, error: null };
+    expect(await abrirLink(TOKEN)).toEqual({ estado: 'vencido', quando: '2026-11-01T00:00:00Z' });
+  });
+
+  it('erro do banco rejeita com a mensagem', async () => {
+    resposta = { data: null, error: { message: 'banco fora do ar' } };
+    await expect(abrirLink(TOKEN)).rejects.toThrow('banco fora do ar');
+  });
+
   it('link que vale volta como retrato, já sem os nomes', async () => {
     const documento = doc({ ramais: [ramal('2001', { nome: 'Ana' })] });
     resposta = {

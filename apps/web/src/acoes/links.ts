@@ -45,7 +45,8 @@ export async function criarLink(empresaId: string, jornadaId: string, o: OpcoesL
     })
     .select('token')
     .single();
-  if (r.error) return { erro: mensagemDoErro('criarLink', r.error, { '23503': 'Esta versão não existe mais nesta jornada.' }) };
+  // 23503 é a FK: com versão fixa, é a versão; sem ela, só pode ser a jornada.
+  if (r.error) return { erro: mensagemDoErro('criarLink', r.error, { '23503': o.versao !== null ? 'Esta versão não existe mais nesta jornada.' : 'Esta jornada não existe mais.' }) };
   revalidatePath(caminho(empresaId, jornadaId));
   return { token: r.data.token as string };
 }
@@ -61,7 +62,7 @@ export async function revogarLink(empresaId: string, jornadaId: string, linkId: 
     .is('revogado_em', null)
     .select('id');
   if (r.error) return { erro: mensagemDoErro('revogarLink', r.error) };
-  if (!r.data?.length) return { erro: 'Este link já estava revogado.' };
+  if (!r.data?.length) return { erro: 'Este link não existe mais ou já foi revogado.' };
   revalidatePath(caminho(empresaId, jornadaId));
   return {};
 }
