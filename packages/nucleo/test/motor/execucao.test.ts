@@ -125,4 +125,89 @@ describe('motor', () => {
     expect(executar(doc({ pecas: [peca('a', 'audio')] }), { entrada: 'peca:a', inicio: '2026-11-24T10:00' }).motivo).toBe('beco');
     expect(executar(doc({}), { entrada: 'externo:celular', inicio: '2026-11-24T10:00' }).motivo).toBe('saiu_da_central');
   });
+
+  describe('peça incompleta para a água', () => {
+    const inicio = '2026-11-24T10:00';
+    const ultimos = (e: Execucao) => e.eventos.slice(-2);
+
+    it('menu sem tempo e fila sem toque param com o que falta', () => {
+      const menu = executar(doc({ pecas: [peca('m', 'menu', { nome: 'Principal' })], saidas: [saida('m', '1', 'fim:atendido')] }), { entrada: 'peca:m', inicio, respostas: { 'peca:m': '1' } });
+      expect(menu.motivo).toBe('incompleta');
+      expect(ultimos(menu)).toEqual([
+        expect.objectContaining({ tipo: 'chegou', ref: 'peca:m' }),
+        expect.objectContaining({ tipo: 'terminou', ref: 'peca:m', motivo: 'incompleta', detalhe: expect.stringContaining('espera_s') }),
+      ]);
+      const f = executar(doc({ filas: [fila('1', { toque_por_membro_s: undefined })] }), { entrada: 'fila:1', inicio });
+      expect(f.motivo).toBe('incompleta');
+      expect(f.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'fila:1', detalhe: expect.stringContaining('toque_por_membro_s') });
+    });
+
+    it('menu sem esgotou não para', () => {
+      const e = executar(doc({ pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 })], saidas: [saida('m', '1', 'fim:atendido')] }), { entrada: 'peca:m', inicio });
+      expect(e.terminou).toBe(false);
+      expect(e.pendente?.ref).toBe('peca:m');
+    });
+
+    const regra = (p: ReturnType<typeof peca>, extra: Partial<Parameters<typeof doc>[0]> = {}) =>
+      executar(doc({ pecas: [p], saidas: [saida(p.id, 'sim', 'fim:desliga'), saida(p.id, 'nao', 'fim:atendido')], ...extra }), { entrada: `peca:${p.id}`, inicio });
+
+    it('regra de horário sem horário ou com horário sem janelas para', () => {
+      const sem = regra(peca('r', 'regra_horario', { nome: 'Expediente' }));
+      expect(sem.motivo).toBe('incompleta');
+      expect(sem.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'peca:r', detalhe: 'a regra "Expediente" não diz qual horário usar (horario)' });
+      const vazio = regra(peca('r', 'regra_horario', { horario: 'horario:x' }));
+      expect(vazio.motivo).toBe('incompleta');
+      expect(vazio.eventos.at(-1)).toMatchObject({ detalhe: 'o horário "x" não existe' });
+    });
+
+    it('regra de feriado sem calendário para; calendário sem feriados responde não', () => {
+      const sem = regra(peca('r', 'regra_feriado'));
+      expect(sem.motivo).toBe('incompleta');
+      expect(sem.eventos.at(-1)).toMatchObject({ detalhe: 'a regra "r" não diz qual calendário usar (calendario)' });
+      const padrao = regra(peca('r', 'regra_feriado', { calendario: 'padrao' }));
+      expect(padrao.motivo).toBe('atendido');
+      expect(padrao.eventos).toContainEqual(expect.objectContaining({ tipo: 'escolheu', ref: 'peca:r', opcao: 'nao', como: 'relogio' }));
+    });
+  });
+
+  it('modo livre termina como ciclo quando a ligação gira sem decisão', () => {
+    const giro = doc({ pecas: [peca('a', 'audio'), peca('b', 'audio')], saidas: [saida('a', 'sempre', 'peca:b'), saida('b', 'sempre', 'peca:a')] });
+    const e = executar(giro, { entrada: 'peca:a', inicio: '2026-11-24T10:00', modo: 'livre' });
+    expect(e.motivo).toBe('ciclo');
+    expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', motivo: 'ciclo' });
+  });
+
+  it('saída única respeita o "quando"', () => {
+    const d = doc({
+      pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('a', 'audio')],
+      saidas: [saida('m', '1', 'peca:a', { define: { chave: 'tipo', valor: 'y' } }), saida('a', 'sempre', 'fim:atendido', { quando: { chave: 'tipo', valor: 'x' } })],
+    });
+    const e = executar(d, { entrada: 'peca:m', inicio: '2026-11-24T10:00', respostas: { 'peca:m': '1' } });
+    expect(e.motivo).toBe('beco');
+    expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'peca:a' });
+  });
+
+  describe('voltar ao menu por escolha não é ciclo', () => {
+    const repete = doc({
+      pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('r', 'audio', { duracao_s: 4 })],
+      saidas: [saida('m', '9', 'peca:r'), saida('m', '1', 'fim:atendido'), saida('r', 'sempre', 'peca:m')],
+    });
+    const inicio = { entrada: 'peca:m', inicio: '2026-11-24T10:00' };
+
+    it('pelo cenário', () => {
+      const e = executar(repete, { ...inicio, respostas: { 'peca:m': ['9', '9', '1'] } });
+      expect(e.motivo).toBe('atendido');
+      expect(chegadas(e).filter((r) => r === 'peca:m')).toHaveLength(3);
+    });
+
+    it('por quem liga', () => {
+      const e = executar(repete, inicio);
+      for (let i = 0; i < 3; i++) {
+        e.avancar('9');
+        expect(e.pendente?.ref).toBe('peca:m');
+      }
+      e.avancar('1');
+      expect(e.motivo).toBe('atendido');
+    });
+  });
 });

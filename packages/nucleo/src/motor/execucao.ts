@@ -1,10 +1,11 @@
+import { completude } from '../formato/completude';
 import type { Canal, Documento, Expressao, Peca } from '../formato/documento';
 import { existe, indexar, type Indice } from '../formato/indice';
 import { lerRef } from '../formato/refs';
 import { dentroDoHorario, ehFeriado, lerInicio, somar } from './relogio';
 
 export type QuemDecide = 'quem_liga' | 'relogio' | 'sistema' | 'fila' | 'grupo' | 'ramal';
-export type Motivo = 'fim' | 'atendido' | 'desistiu' | 'beco' | 'destino_inexistente' | 'ciclo' | 'saiu_da_central';
+export type Motivo = 'fim' | 'atendido' | 'desistiu' | 'beco' | 'destino_inexistente' | 'ciclo' | 'saiu_da_central' | 'incompleta';
 export type Como = 'cenario' | 'relogio' | 'unica' | 'resposta' | 'ninguem_atende';
 
 export interface Opcao {
@@ -42,7 +43,10 @@ export interface OpcoesExecucao {
   modo?: 'cenario' | 'livre' | 'ninguem_atende';
   /** Respostas por referência. Lista = uma resposta por visita. */
   respostas?: Record<string, string | readonly string[]>;
-  /** Termina como ciclo quando um ponto é alcançado esta quantidade de vezes. Padrão 3; no modo livre, sem limite. */
+  /**
+   * Termina como ciclo quando um ponto é alcançado esta quantidade de vezes. Padrão 3; no modo livre, sem limite.
+   * Só conta a repetição automática: uma escolha de quem liga ou do cenário zera a contagem.
+   */
   limiteVisitas?: number;
 }
 
@@ -60,6 +64,8 @@ export class Execucao {
   private visitas = new Map<string, number>();
   private aguardando: { ref: string; opcoes: Opcao[] } | null = null;
   private motivoFim: Motivo | null = null;
+  /** O que falta em cada ponto que não dá pra simular. */
+  private readonly incompletas = new Map<string, string>();
 
   constructor(fonte: Documento | Indice, opcoes: OpcoesExecucao) {
     this.idx = 'formato' in fonte ? indexar(fonte) : fonte;
@@ -68,6 +74,24 @@ export class Execucao {
     this.limite = opcoes.limiteVisitas ?? (this.modo === 'livre' ? Infinity : 3);
     for (const [ref, r] of Object.entries(opcoes.respostas ?? {})) this.respostas.set(ref, typeof r === 'string' ? [r] : [...r]);
     this.atual = opcoes.entrada;
+    this.apontarIncompletas();
+  }
+
+  private apontarIncompletas(): void {
+    for (const p of completude(this.idx)) {
+      if (p.regra !== 'menu_sem_esgotou' && !this.incompletas.has(p.ref)) this.incompletas.set(p.ref, p.mensagem);
+    }
+    for (const p of this.idx.pecas.values()) {
+      const ref = `peca:${p.id}`;
+      const nome = p.nome ?? p.id;
+      if (p.tipo === 'regra_horario') {
+        const grupo = p.horario ? (lerRef(p.horario)?.id ?? p.horario) : undefined;
+        if (grupo === undefined) this.incompletas.set(ref, `a regra "${nome}" não diz qual horário usar (horario)`);
+        else if (!this.idx.janelas.get(grupo)?.length) this.incompletas.set(ref, `o horário "${grupo}" não existe`);
+      }
+      // Calendário sem nenhum feriado não é falta: só nunca é feriado.
+      if (p.tipo === 'regra_feriado' && !p.calendario) this.incompletas.set(ref, `a regra "${nome}" não diz qual calendário usar (calendario)`);
+    }
   }
 
   get terminou(): boolean {
@@ -100,11 +124,12 @@ export class Execucao {
       const ref = this.aguardando.ref;
       this.aguardando = null;
       this.emitir({ tipo: 'escolheu', ref, opcao: o.opcao, como: 'resposta' });
+      this.visitas.clear();
       this.aplicar(ref, o);
     }
     for (let guarda = 0; !this.motivoFim && !this.aguardando; guarda++) {
-      if (guarda > 10_000) throw new Error('a execução não terminou em 10.000 passos');
-      this.passo();
+      if (guarda >= 10_000) this.terminar(this.atual, 'ciclo', 'a ligação ficou girando sem nenhuma decisão');
+      else this.passo();
     }
     return this.eventos.slice(inicio);
   }
@@ -133,6 +158,8 @@ export class Execucao {
     if (ref.startsWith('fim:')) return this.terminar(ref, 'fim');
     if (ref.startsWith('externo:')) return this.terminar(ref, 'saiu_da_central');
     if (!existe(this.idx, ref)) return this.terminar(ref, 'destino_inexistente');
+    const falta = this.incompletas.get(ref);
+    if (falta) return this.terminar(ref, 'incompleta', falta);
 
     const r = lerRef(ref)!;
     if (r.tipo === 'entrada') {
@@ -153,7 +180,11 @@ export class Execucao {
     const opcoes = this.opcoesDe(ref);
     if (opcoes.length === 0) return this.terminar(ref, 'beco');
     const quem = this.quemDecide(ref);
-    if (quem === null) return this.aplicar(ref, opcoes[0]!);
+    if (quem === null) {
+      const unica = opcoes.find((o) => o.disponivel);
+      if (!unica) return this.terminar(ref, 'beco', `a saída "${opcoes[0]!.rotulo}" não vale com as variáveis atuais`);
+      return this.aplicar(ref, unica);
+    }
 
     const disponiveis = opcoes.filter((o) => o.disponivel);
     const auto = this.respostaAutomatica(ref, disponiveis, opcoes.length);
@@ -166,6 +197,8 @@ export class Execucao {
     const o = disponiveis.find((x) => x.opcao === auto.opcao);
     if (!o) return this.terminar(ref, 'beco', `não existe saída "${auto.opcao}"`);
     this.emitir({ tipo: 'escolheu', ref, opcao: o.opcao, como: auto.como });
+    // O cenário escolheu: o que vier depois não é repetição automática.
+    if (auto.como === 'cenario') this.visitas.clear();
     this.aplicar(ref, o);
   }
 
