@@ -26,7 +26,8 @@ export function Cano({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps
   const correndo = estado.correndo === id;
   const pergunta = estado.perguntando?.no === cano.de ? estado.perguntando : null;
   // Opção que esta válvula oferece por este cano (uma basta: as outras do mesmo cano vão pro mesmo lugar).
-  const opcao = pergunta?.opcoes.find((o) => o.disponivel && (o.saida ? cano.saidas.includes(o.saida) : cano.opcoes.includes(o.opcao)));
+  // Cano que o motor não usa não vira botão: o clique não teria pra onde ir.
+  const opcao = cano.simulavel ? pergunta?.opcoes.find((o) => o.disponivel && (o.saida ? cano.saidas.includes(o.saida) : cano.opcoes.includes(o.opcao))) : undefined;
   const chipX = Math.abs(sourceY - targetY) < 1 ? (sourceX + targetX) / 2 : (sourceX + MANIFOLD + targetX) / 2;
   const mostraChip = cano.rotulo !== '' && cano.opcoes.length > 0;
   const emFoco = !foco || foco.has(id);

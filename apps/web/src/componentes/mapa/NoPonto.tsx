@@ -35,7 +35,7 @@ export function NoPonto({ data: { no, semSaida } }: NodeProps<NoFluxo>) {
 
   if (no.tipo === 'entrada' || no.tipo === 'ramais_diretos') {
     return (
-      <div className={`entrada-no${aqui ? ' aceso' : ''}`} data-no={no.id}>
+      <div className={`entrada-no${no.inativo ? ' inativo' : ''}${aqui ? ' aceso' : ''}`} data-no={no.id}>
         {alcas}
         <Icone nome="telefone" />
         <button className="tocar" type="button" aria-label={`Dar play em ${no.titulo}`} onClick={() => tocar(no.id)}>
