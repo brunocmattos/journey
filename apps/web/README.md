@@ -34,7 +34,7 @@ npm run build
 |---|---|
 | `src/mapa` | `montarMapa`: o documento vira árvore da esquerda pra direita (o algoritmo do protótipo), com atalhos, faixas por regime de horário e canos que seguem o motor |
 | `src/simulacao` | Sessão (refazer as escolhas = mesma execução), passos da animação, estado visual, textos da linha do tempo, comparação com o resultado aprovado e `vinculo` (se a tela ainda é o caminho de um cenário) |
-| `src/diagnostico` | `cenarioAte`: o caminho de uma entrada até o ponto de um achado (o "Simular") |
+| `src/diagnostico` | `cenarioAte`: o caminho de uma entrada até o ponto de um achado (o "Simular"); `pontosComAgenda`: as regras de horário que as entradas encontram primeiro, passando por áudios de saída única |
 | `src/importacao` | Jornadas por canal, refs usadas, revisão, relatório e o teto de 4 MB |
 | `src/lib` | Clientes do Supabase, leituras do servidor (`dados.ts`), origem do app, mensagens de erro, fuso |
 | `src/acoes` | Server actions: import, cenários, intencionais, convites, empresa |
@@ -44,9 +44,13 @@ npm run build
 
 ## Decisões
 
+- **A tela importa o núcleo só pelos subcaminhos** (`@journey/nucleo/formato`, `/motor`, `/diagnostico`). A raiz reexporta `importacao` e `modelos`, que puxam o exceljs (~1 MB) pro navegador. O teste `test/cliente-sem-exceljs.test.ts` barra a raiz, `importacao` e `modelos` em `src/componentes`, `src/mapa`, `src/simulacao` e `src/diagnostico`; depois do build, `grep -rl ExcelJS apps/web/.next/static` tem que vir vazio. O servidor (páginas, `acoes`, `lib`, `importacao`) pode importar a raiz.
 - **A tela nunca grava no catálogo nem nas versões:** só a função `confirmar_import` (security definer) troca o catálogo e cria versões. O catálogo guarda as colunas do formato em `dados` (jsonb), então coluna nova no formato não pede migração.
 - **`confirmar_import` só aceita documento `journey/1`:** `formato` certo e as 8 listas (entradas, horários, feriados, ramais, filas, grupos, peças, saídas). Com outra forma a jornada não abriria. O conteúdo de cada lista é conferido pelo app.
-- **Uma jornada por canal das entradas**, criada no primeiro import; cada import confirmado cria uma versão nova em cada uma.
+- **Uma jornada por canal das entradas**, criada no primeiro import; cada import confirmado cria uma versão nova em cada uma. Cada jornada leva só as entradas do seu canal, mas o "não recebe ligação" olha o documento inteiro: o que só o outro canal alcança não aparece como órfão.
+- **A lista de jornadas vem da view `jornadas_resumo`** (`security_invoker`, vale a RLS de quem pergunta): a última versão de cada jornada e os graves contados no banco, sem trazer o diagnóstico de todas as versões.
+- **Intencional mostra quem marcou** (spec 12.4): o `autor` vira o e-mail pelos membros da empresa; quem saiu (ou foi apagado) aparece como "alguém que saiu".
+- **Tempo de toque vem do núcleo** (`toqueDoRamal`, `toqueDoGrupo`): o painel de ramais mostra o mesmo tempo que o motor usa (siga-me completo = só o ramal + com a lista; senão `toque_s` ou 20 s).
 - **Convite só vale pra e-mail confirmado** (`email_confirmado()` lê `auth.users`, não o token) e o Supabase fica com `enable_confirmations = true`. Sem isso, alguém criaria conta com o e-mail de outra pessoa e entraria na empresa dela.
 - **Chaves estrangeiras compostas por empresa:** tabela filha liga o pai pela dupla `(id, empresa_id)`, então uma linha nunca aponta pra linha de outra empresa. Quem criou fica `null` se a pessoa for apagada.
 - **Membro só muda algumas colunas:** em `imports`, `status` e `arquivos` (descartar o rascunho); em `empresas`, `nome`; em `achados_intencionais`, as quatro que o upsert manda (`empresa_id`, `jornada_id`, `chave`, `nota`). O resto não se reescreve pela API.
