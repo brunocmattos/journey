@@ -91,7 +91,7 @@ const DIAS_POR_EXTENSO: Record<string, Dia> = {
 /** Aceita só a abreviação de 3 letras ou o nome por extenso (já em minúsculas e sem acento). */
 function paraDia(t: string): Dia | undefined {
   if (DIAS.includes(t as Dia)) return t as Dia;
-  return DIAS_POR_EXTENSO[t];
+  return Object.hasOwn(DIAS_POR_EXTENSO, t) ? DIAS_POR_EXTENSO[t] : undefined;
 }
 
 function lerDias(texto: string): ResultadoCelula {

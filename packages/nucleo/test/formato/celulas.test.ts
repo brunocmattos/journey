@@ -53,6 +53,7 @@ describe('lerCelula', () => {
     expect(lerCelula(col({ tipo: 'dias' }), 'seg-sexta')).toEqual({ ok: true, valor: semana });
     expect(lerCelula(col({ tipo: 'dias' }), 'segunda-feira')).toMatchObject({ ok: false });
     expect(lerCelula(col({ tipo: 'dias' }), 'sexagenario')).toMatchObject({ ok: false });
+    expect(lerCelula(col({ tipo: 'dias' }), 'constructor')).toMatchObject({ ok: false });
   });
   it('expressão chave=valor', () => {
     expect(lerCelula(col({ tipo: 'expressao' }), 'Tipo = aluguel')).toEqual({ ok: true, valor: { chave: 'tipo', valor: 'aluguel' } });
