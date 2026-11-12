@@ -2,8 +2,10 @@ import 'server-only';
 import { cache } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import type { Achado, Documento, Evento } from '@journey/nucleo';
+import type { LinkResumo } from '@/compartilhar/opcoes';
 import type { Revisao } from '@/importacao/revisao';
 import type { Modo } from '@/simulacao/sessao';
+import { ehDocumento } from './documento';
 import { supabaseServidor } from './supabase/servidor';
 
 /** Leituras do banco pelo servidor, com a sessão de quem está logado: a regra de acesso (RLS) vale em todas. */
@@ -35,15 +37,6 @@ function ok<T>(r: { data: T[] | null; error: ErroBanco }): T[] {
 function talvez<T>(r: { data: T | null; error: ErroBanco }): T | null {
   falhou(r.error);
   return r.data;
-}
-
-const LISTAS_DO_DOCUMENTO = ['entradas', 'horarios', 'feriados', 'ramais', 'filas', 'grupos', 'pecas', 'saidas'] as const;
-
-/** A forma de um documento journey/1 (o banco já recusa outra; aqui é a segunda trava, antes da tela). */
-function ehDocumento(v: unknown): v is Documento {
-  if (typeof v !== 'object' || v === null) return false;
-  const d = v as Record<string, unknown>;
-  return d.formato === 'journey/1' && LISTAS_DO_DOCUMENTO.every((k) => Array.isArray(d[k]));
 }
 
 export interface EmpresaResumo {
@@ -138,6 +131,18 @@ export async function intencionais(empresaId: string, jornadaId: string): Promis
     for (const m of ms) emails.set(m.usuario_id, m.email);
   }
   return linhas.map((l) => ({ chave: l.chave, nota: l.nota, criado_em: l.criado_em, autor: (l.autor && emails.get(l.autor)) ?? null }));
+}
+
+/** Os links da jornada, do mais novo pro mais velho (vencidos e revogados também: a lista conta o que já foi mandado). */
+export async function links(jornadaId: string): Promise<LinkResumo[]> {
+  const { supabase } = await usuarioAtual();
+  return ok<LinkResumo>(
+    await supabase
+      .from('links')
+      .select('id, token, versao, esconder_nomes, cenario_nome:cenario->>nome, expira_em, revogado_em, criado_em')
+      .eq('jornada_id', jornadaId)
+      .order('criado_em', { ascending: false }),
+  );
 }
 
 export interface ImportRevisao {
