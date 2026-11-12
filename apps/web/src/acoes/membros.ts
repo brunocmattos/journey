@@ -14,9 +14,10 @@ export async function convidar(empresaId: string, _antes: { erro?: string; ok?: 
   return { ok: `Convite pra ${email} criado. Ela entra pelo link mágico com esse e-mail.` };
 }
 
-export async function desfazerConvite(empresaId: string, email: string) {
+export async function desfazerConvite(empresaId: string, email: string): Promise<{ erro?: string }> {
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('convites').delete().eq('empresa_id', empresaId).eq('email', email);
-  if (r.error) console.error('[desfazerConvite]', r.error.code, r.error.message);
+  if (r.error) return { erro: mensagemDoErro('desfazerConvite', r.error) };
   revalidatePath(`/e/${empresaId}/membros`);
+  return {};
 }
