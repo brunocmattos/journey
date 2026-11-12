@@ -84,18 +84,30 @@ function lerUmaRef(coluna: Coluna, texto: string): ResultadoCelula {
   return { ok: true, valor: montarRef(r.tipo, r.id) };
 }
 
+const DIAS_POR_EXTENSO: Record<string, Dia> = {
+  domingo: 'dom', segunda: 'seg', terca: 'ter', quarta: 'qua', quinta: 'qui', sexta: 'sex', sabado: 'sab',
+};
+
+/** Aceita só a abreviação de 3 letras ou o nome por extenso (já em minúsculas e sem acento). */
+function paraDia(t: string): Dia | undefined {
+  if (DIAS.includes(t as Dia)) return t as Dia;
+  return DIAS_POR_EXTENSO[t];
+}
+
 function lerDias(texto: string): ResultadoCelula {
   const dias = new Set<Dia>();
   for (const parte of semAcento(texto.toLowerCase()).split(/[\s,]+/).filter(Boolean)) {
-    const faixa = /^([a-z]{3})-([a-z]{3})$/.exec(parte);
+    const faixa = /^([a-z]+)-([a-z]+)$/.exec(parte);
     if (faixa) {
-      const a = DIAS.indexOf(faixa[1] as Dia);
-      const b = DIAS.indexOf(faixa[2] as Dia);
+      const da = paraDia(faixa[1] as string);
+      const db = paraDia(faixa[2] as string);
+      const a = da === undefined ? -1 : DIAS.indexOf(da);
+      const b = db === undefined ? -1 : DIAS.indexOf(db);
       if (a < 0 || b < 0 || b < a) return { ok: false, erro: `"${parte}" não é uma faixa de dias válida, por exemplo seg-sex` };
       for (let i = a; i <= b; i++) dias.add(DIAS[i] as Dia);
     } else {
-      const d = parte.slice(0, 3) as Dia;
-      if (!DIAS.includes(d)) return { ok: false, erro: `"${parte}" não é um dia. Use dom, seg, ter, qua, qui, sex, sab` };
+      const d = paraDia(parte);
+      if (!d) return { ok: false, erro: `"${parte}" não é um dia. Use dom, seg, ter, qua, qui, sex, sab` };
       dias.add(d);
     }
   }

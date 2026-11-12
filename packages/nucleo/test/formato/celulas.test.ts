@@ -47,6 +47,13 @@ describe('lerCelula', () => {
     expect(lerCelula(col({ tipo: 'dias' }), 'Sábado, domingo')).toEqual({ ok: true, valor: ['dom', 'sab'] });
     expect(lerCelula(col({ tipo: 'dias' }), 'feriado')).toMatchObject({ ok: false });
   });
+  it('dias por extenso em faixas e sem prefixo solto', () => {
+    const semana = ['seg', 'ter', 'qua', 'qui', 'sex'];
+    expect(lerCelula(col({ tipo: 'dias' }), 'segunda-sexta')).toEqual({ ok: true, valor: semana });
+    expect(lerCelula(col({ tipo: 'dias' }), 'seg-sexta')).toEqual({ ok: true, valor: semana });
+    expect(lerCelula(col({ tipo: 'dias' }), 'segunda-feira')).toMatchObject({ ok: false });
+    expect(lerCelula(col({ tipo: 'dias' }), 'sexagenario')).toMatchObject({ ok: false });
+  });
   it('expressão chave=valor', () => {
     expect(lerCelula(col({ tipo: 'expressao' }), 'Tipo = aluguel')).toEqual({ ok: true, valor: { chave: 'tipo', valor: 'aluguel' } });
     expect(lerCelula(col({ tipo: 'expressao' }), 'aluguel')).toMatchObject({ ok: false });
