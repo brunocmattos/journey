@@ -378,10 +378,10 @@ language sql immutable set search_path = '' as $$
     then split_part(p_nome, '/', 1)::uuid end;
 $$;
 
--- 20 MB por arquivo: o app já recusa mais que isso somando todos.
+-- 4 MB por arquivo: o app já recusa mais que isso somando todos (a Vercel corta o corpo em 4,5 MB).
 -- Só octet-stream: o arquivo nunca é servido como HTML/SVG (um membro poderia subir uma página com script).
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('imports', 'imports', false, 20971520, '{application/octet-stream}')
+values ('imports', 'imports', false, 4194304, '{application/octet-stream}')
 on conflict (id) do update set file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
 create policy "membro lê arquivos de import" on storage.objects for select to authenticated

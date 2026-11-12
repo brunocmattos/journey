@@ -10,7 +10,7 @@ insert into auth.users (id, email, aud, role, email_confirmed_at) values
   ('00000000-0000-0000-0000-00000000000c', 'caio@exemplo.com', 'authenticated', 'authenticated', now()),
   ('00000000-0000-0000-0000-00000000000d', 'davi@exemplo.com', 'authenticated', 'authenticated', null);
 
-select is((select file_size_limit from storage.buckets where id = 'imports'), 20971520::bigint, 'o bucket de imports aceita até 20 MB por arquivo');
+select is((select file_size_limit from storage.buckets where id = 'imports'), 4194304::bigint, 'o bucket de imports aceita até 4 MB por arquivo');
 select is((select allowed_mime_types from storage.buckets where id = 'imports'), array['application/octet-stream'], 'e só como octet-stream');
 
 create function pg_temp.entrar(p_id uuid, p_email text) returns void language sql as $$
