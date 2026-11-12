@@ -86,7 +86,7 @@ const NOMES_EMBUTIDOS: Record<string, string> = {
 
 /** Nome legível de uma referência, pra mensagens. */
 export function nomeDe(idx: Indice, ref: string): string {
-  const embutido = NOMES_EMBUTIDOS[ref];
+  const embutido = Object.hasOwn(NOMES_EMBUTIDOS, ref) ? NOMES_EMBUTIDOS[ref] : undefined;
   if (embutido) return embutido;
   const r = lerRef(ref);
   if (!r) return ref;

@@ -32,6 +32,7 @@ describe('indexar', () => {
     expect(nomeDe(idx, 'fila:100')).toBe('fila 100 (Atendimento)');
     expect(nomeDe(idx, 'ramal:1')).toBe('ramal 1');
     expect(nomeDe(idx, 'fim:desliga')).toBe('desligar');
+    expect(nomeDe(idx, 'constructor')).toBe('constructor');
   });
 });
 
