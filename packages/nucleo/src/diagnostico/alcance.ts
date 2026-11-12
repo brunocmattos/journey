@@ -3,7 +3,11 @@ import { lerRef } from '../formato/refs';
 
 const definidos = (...refs: (string | undefined)[]) => refs.filter((r): r is string => r !== undefined);
 
-/** Pra onde a ligação pode ir a partir de uma referência. */
+/**
+ * Pra onde a ligação pode ir a partir de uma referência.
+ * Membros de fila e grupo e a lista do siga-me só tocam: o transbordo pessoal deles não vale ali, então não são caminho.
+ * Pontos inativos continuam no caminho; a regra de nó inativo depende disso.
+ */
 export function vizinhos(idx: Indice, ref: string): string[] {
   const r = lerRef(ref);
   if (!r) return [];
