@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { importsRecentes } from '@/lib/dados';
 import { FormularioImport } from './formulario';
+import { FUSO } from '@/lib/fuso';
 
 const STATUS = { revisao: 'em revisão', confirmado: 'confirmado', descartado: 'descartado' } as const;
 
@@ -52,7 +53,7 @@ export default async function Importar({ params }: { params: Promise<{ empresa: 
                 {recentes.map((i) => (
                   <tr key={i.id}>
                     <td>
-                      <Link href={`/e/${id}/importar/${i.id}`}>{new Date(i.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</Link>
+                      <Link href={`/e/${id}/importar/${i.id}`}>{new Date(i.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: FUSO })}</Link>
                     </td>
                     <td>{i.arquivos.map((a) => a.nome).join(', ')}</td>
                     <td>{i.parcial ? 'parcial' : 'completo'}</td>

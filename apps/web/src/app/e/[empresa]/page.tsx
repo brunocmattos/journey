@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { jornadas } from '@/lib/dados';
+import { FUSO } from '@/lib/fuso';
 
 export default async function Jornadas({ params }: { params: Promise<{ empresa: string }> }) {
   const { empresa: id } = await params;
@@ -29,7 +30,7 @@ export default async function Jornadas({ params }: { params: Promise<{ empresa: 
               <h2>{j.nome}</h2>
               <span className="mudo">
                 versão {j.versao ?? '—'}
-                {j.atualizada && ` · ${new Date(j.atualizada).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`}
+                {j.atualizada && ` · ${new Date(j.atualizada).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: FUSO })}`}
               </span>
               {j.graves > 0 ? <span className="selo grave">{j.graves} graves</span> : <span className="selo ok">sem achado grave</span>}
             </Link>

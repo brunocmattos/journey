@@ -108,6 +108,7 @@ export default async function Catalogo({ params, searchParams }: { params: Promi
             </table>
           </div>
         )}
+        {filtrados.length > 1000 && <p className="mudo">Mostrando 1000 de {filtrados.length}. Refina a busca.</p>}
       </div>
     </main>
   );

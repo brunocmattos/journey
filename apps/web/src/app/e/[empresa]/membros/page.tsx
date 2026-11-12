@@ -1,5 +1,6 @@
 import { membros } from '@/lib/dados';
 import { Convites } from './convites';
+import { FUSO } from '@/lib/fuso';
 
 export default async function Membros({ params }: { params: Promise<{ empresa: string }> }) {
   const { empresa: id } = await params;
@@ -14,7 +15,7 @@ export default async function Membros({ params }: { params: Promise<{ empresa: s
             {m.membros.map((x) => (
               <tr key={x.usuario_id}>
                 <td>{x.email}</td>
-                <td className="mudo">desde {new Date(x.entrou_em).toLocaleDateString('pt-BR')}</td>
+                <td className="mudo">desde {new Date(x.entrou_em).toLocaleDateString('pt-BR', { timeZone: FUSO })}</td>
               </tr>
             ))}
           </tbody>

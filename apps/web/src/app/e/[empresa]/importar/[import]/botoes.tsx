@@ -22,7 +22,12 @@ export function BotoesRevisao({ empresaId, importId, ok, temProblemas }: { empre
         >
           {pendente ? 'Confirmando…' : 'Confirmar import'}
         </button>
-        <button className="botao" disabled={pendente} onClick={() => iniciar(() => descartarImport(empresaId, importId))}>
+        <button className="botao" disabled={pendente} onClick={() =>
+            iniciar(async () => {
+              const r = await descartarImport(empresaId, importId);
+              if (r?.erro) setErro(r.erro);
+            })
+          }>
           Descartar
         </button>
         {temProblemas && (

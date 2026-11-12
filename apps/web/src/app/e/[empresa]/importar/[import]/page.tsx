@@ -1,6 +1,7 @@
 import { NOMES_ABAS, type Problema } from '@journey/nucleo';
 import { importDaEmpresa } from '@/lib/dados';
 import { BotoesRevisao } from './botoes';
+import { FUSO } from '@/lib/fuso';
 
 function Problemas({ titulo, lista, classe }: { titulo: string; lista: Problema[]; classe: 'grave' | 'alerta' }) {
   if (lista.length === 0) return null;
@@ -48,7 +49,7 @@ export default async function Revisao({ params }: { params: Promise<{ empresa: s
         <span className={`selo ${r.ok ? 'ok' : 'grave'}`}>{r.ok ? 'pode confirmar' : `${r.erros.length} erros bloqueiam`}</span>
       </div>
       <p className="mudo">
-        {imp.arquivos.map((a) => a.nome).join(', ')} · {r.parcial ? 'parcial' : 'completo'} · {new Date(imp.criado_em).toLocaleString('pt-BR')}
+        {imp.arquivos.map((a) => a.nome).join(', ')} · {r.parcial ? 'parcial' : 'completo'} · {new Date(imp.criado_em).toLocaleString('pt-BR', { timeZone: FUSO })}
       </p>
       <div className="cartao">
         <h2>O que entra</h2>

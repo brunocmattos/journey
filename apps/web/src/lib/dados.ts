@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import type { Achado, Documento, Evento } from '@journey/nucleo';
 import type { Revisao } from '@/importacao/revisao';
@@ -7,23 +8,42 @@ import { supabaseServidor } from './supabase/servidor';
 
 /** Leituras do banco pelo servidor, com a sessão de quem está logado: a regra de acesso (RLS) vale em todas. */
 
-export async function usuarioAtual() {
+/** Uma ida ao Auth por pedido: o layout e a página chamam, o cache do React junta as duas. */
+export const usuarioAtual = cache(async () => {
   const supabase = await supabaseServidor();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect('/entrar');
   return { supabase, usuario: data.user };
+});
+
+type ErroBanco = { code?: string; message: string } | null;
+
+/** O erro vira exceção (a tela de erro do Next mostra). Id da URL que não é uuid (22P02) é página que não existe. */
+function falhou(erro: ErroBanco): void {
+  if (!erro) return;
+  if (erro.code === '22P02') notFound();
+  throw new Error(erro.message);
 }
 
-/** Lista do banco; o erro vira exceção (a tela de erro do Next mostra). */
-function ok<T>(r: { data: T[] | null; error: { message: string } | null }): T[] {
-  if (r.error) throw new Error(r.error.message);
+/** Lista do banco. */
+function ok<T>(r: { data: T[] | null; error: ErroBanco }): T[] {
+  falhou(r.error);
   return r.data ?? [];
 }
 
 /** Uma linha ou nada. */
-function talvez<T>(r: { data: T | null; error: { message: string } | null }): T | null {
-  if (r.error) throw new Error(r.error.message);
+function talvez<T>(r: { data: T | null; error: ErroBanco }): T | null {
+  falhou(r.error);
   return r.data;
+}
+
+const LISTAS_DO_DOCUMENTO = ['entradas', 'horarios', 'feriados', 'ramais', 'filas', 'grupos', 'pecas', 'saidas'] as const;
+
+/** A forma de um documento journey/1 (o banco já recusa outra; aqui é a segunda trava, antes da tela). */
+function ehDocumento(v: unknown): v is Documento {
+  if (typeof v !== 'object' || v === null) return false;
+  const d = v as Record<string, unknown>;
+  return d.formato === 'journey/1' && LISTAS_DO_DOCUMENTO.every((k) => Array.isArray(d[k]));
 }
 
 export interface EmpresaResumo {
@@ -38,7 +58,7 @@ export async function empresasDoUsuario(): Promise<EmpresaResumo[]> {
 
 export async function empresa(id: string): Promise<EmpresaResumo> {
   const { supabase } = await usuarioAtual();
-  const e = talvez(await supabase.from('empresas').select('id, nome').eq('id', id).maybeSingle());
+  const e = talvez<EmpresaResumo>(await supabase.from('empresas').select('id, nome').eq('id', id).maybeSingle());
   if (!e) notFound();
   return e;
 }
@@ -79,13 +99,14 @@ export interface VersaoJornada {
 
 export async function versaoAtual(empresaId: string, jornadaId: string): Promise<VersaoJornada> {
   const { supabase } = await usuarioAtual();
-  const j = talvez(await supabase.from('jornadas').select('id, nome, canal').eq('empresa_id', empresaId).eq('id', jornadaId).maybeSingle());
+  const j = talvez<VersaoJornada['jornada']>(await supabase.from('jornadas').select('id, nome, canal').eq('empresa_id', empresaId).eq('id', jornadaId).maybeSingle());
   if (!j) notFound();
   const v = talvez<{ numero: number; criada_em: string; documento: unknown; diagnostico: unknown }>(
     await supabase.from('jornada_versoes').select('numero, criada_em, documento, diagnostico').eq('jornada_id', jornadaId).order('numero', { ascending: false }).limit(1).maybeSingle(),
   );
   if (!v) notFound();
-  return { jornada: j, numero: v.numero, criada_em: v.criada_em, documento: v.documento as Documento, diagnostico: v.diagnostico as Achado[] };
+  if (!ehDocumento(v.documento)) throw new Error(`a versão ${v.numero} de "${j.nome}" não é um documento journey/1`);
+  return { jornada: j, numero: v.numero, criada_em: v.criada_em, documento: v.documento, diagnostico: v.diagnostico as Achado[] };
 }
 
 export interface Cenario {
@@ -126,9 +147,9 @@ export interface ImportRevisao {
 
 export async function importDaEmpresa(empresaId: string, id: string): Promise<ImportRevisao> {
   const { supabase } = await usuarioAtual();
-  const i = talvez(await supabase.from('imports').select('id, status, parcial, arquivos, relatorio, criado_em').eq('empresa_id', empresaId).eq('id', id).maybeSingle());
+  const i = talvez<ImportRevisao>(await supabase.from('imports').select('id, status, parcial, arquivos, relatorio, criado_em').eq('empresa_id', empresaId).eq('id', id).maybeSingle());
   if (!i) notFound();
-  return i as ImportRevisao;
+  return i;
 }
 
 export async function importsRecentes(empresaId: string) {
@@ -146,17 +167,35 @@ export interface ItemCatalogo {
   dados: Record<string, unknown>;
 }
 
+/** O PostgREST devolve no máximo 1000 linhas por pedido (max_rows): o que pode passar disso vem em páginas. */
+const PAGINA = 1000;
+
+/** A aba inteira, em páginas (a busca da tela filtra sobre tudo). */
 export async function catalogo(empresaId: string, aba: string): Promise<ItemCatalogo[]> {
   const { supabase } = await usuarioAtual();
-  return ok(await supabase.from('catalogo').select('aba, item_id, nome, dados').eq('empresa_id', empresaId).eq('aba', aba).order('item_id'));
+  const todos: ItemCatalogo[] = [];
+  for (let de = 0; ; de += PAGINA) {
+    const pagina = ok<ItemCatalogo>(
+      await supabase.from('catalogo').select('aba, item_id, nome, dados').eq('empresa_id', empresaId).eq('aba', aba).order('item_id').range(de, de + PAGINA - 1),
+    );
+    todos.push(...pagina);
+    if (pagina.length < PAGINA) return todos;
+  }
 }
 
+const ABAS_DO_CATALOGO = ['entradas', 'horarios', 'feriados', 'ramais', 'filas', 'grupos'] as const;
+
+/** Quantos itens por aba, contados no banco (contar as linhas devolvidas pararia em 1000). */
 export async function contagemCatalogo(empresaId: string): Promise<Record<string, number>> {
   const { supabase } = await usuarioAtual();
-  const linhas = ok(await supabase.from('catalogo').select('aba').eq('empresa_id', empresaId));
-  const c: Record<string, number> = {};
-  for (const l of linhas) c[l.aba] = (c[l.aba] ?? 0) + 1;
-  return c;
+  const pares = await Promise.all(
+    ABAS_DO_CATALOGO.map(async (aba) => {
+      const r = await supabase.from('catalogo').select('*', { count: 'exact', head: true }).eq('empresa_id', empresaId).eq('aba', aba);
+      falhou(r.error);
+      return [aba, r.count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(pares);
 }
 
 export interface Uso {

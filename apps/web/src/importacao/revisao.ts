@@ -36,6 +36,11 @@ export function revisar(r: ResultadoImport, jornadas: JornadaCalculada[], parcia
 /** O relatório de problemas em CSV (separador ;), pra baixar. */
 export function relatorioCsv(problemas: readonly Problema[]): string {
   const cabecalho = ['gravidade', 'aba', 'linha', 'coluna', 'mensagem'];
-  const linhas = problemas.map((p) => [p.gravidade, p.aba ?? '', p.linha === undefined ? '' : String(p.linha), p.coluna ?? '', descrever(p)]);
+  const linhas = problemas.map((p) => [p.gravidade, p.aba ?? '', p.linha === undefined ? '' : String(p.linha), p.coluna ?? '', descrever(p)].map(semFormula));
   return escreverCsv([cabecalho, ...linhas]);
+}
+
+/** O texto vem do arquivo de quem importou: começando com = + - @ (ou tab/CR), o Excel rodaria como fórmula. */
+function semFormula(v: string): string {
+  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
 }
