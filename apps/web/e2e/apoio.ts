@@ -26,3 +26,16 @@ export async function entrar(page: Page, request: APIRequestContext, email: stri
 }
 
 export const emailNovo = (prefixo: string) => `${prefixo}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@exemplo.com`;
+
+/** Cria a empresa e importa os arquivos; termina na página da jornada. */
+export async function empresaComImport(page: Page, arquivos: string[], nome = 'Empresa de teste') {
+  await expect(page).toHaveURL(/\/empresa\/nova/);
+  await page.getByLabel('Nome da empresa').fill(nome);
+  await page.getByRole('button', { name: 'Criar' }).click();
+  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await page.getByLabel('Arquivos').setInputFiles(arquivos);
+  await page.getByRole('button', { name: 'Analisar' }).click();
+  await expect(page.getByText('pode confirmar')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Confirmar import' }).click();
+  await expect(page.getByTestId('mapa')).toBeVisible({ timeout: 30_000 });
+}
