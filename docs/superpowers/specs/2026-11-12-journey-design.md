@@ -367,17 +367,19 @@ A cada versão salva, no servidor, com o resultado guardado na versão. Na tela,
 | Achado | Gravidade | Regra |
 |---|---|---|
 | Beco sem saída | grave | peça alcançável sem saída e que não é `fim`; saída apontando pra peça inexistente ou removida |
-| Ramal ou fila inexistente | grave | transbordo pra referência fora do catálogo |
+| Ramal ou fila inexistente | grave | transbordo pra referência fora do catálogo; regra de horário com `horario` que não existe |
+| Membro inexistente | alerta | ramal listado em `membros` ou `siga_me_lista` que não está no catálogo: ele não toca, os outros seguem |
 | Ciclo de transbordo | grave | cadeia de `ao_nao_atender` que volta a um ramal já visitado |
 | Volta sem limite | alerta | atalho de retorno pra um menu anterior sem contador |
 | Redundância | alerta | duas ou mais opções do mesmo menu terminam no mesmo destino (ignora menus com `guarda_variavel`) |
 | Sem entrada | alerta | peça, fila ou grupo que nenhuma entrada alcança |
 | Nó inativo | alerta | saída ou peça com `ativo = nao` no caminho |
 | Volta pra própria fila | alerta | ramal transborda pra fila da qual é membro |
-| Grupo que desliga | alerta | grupo com `ao_esgotar = fim:desliga` |
+| Grupo que desliga | alerta | grupo com `ao_esgotar = fim:desliga` ou sem `ao_esgotar` (o motor trata os dois igual) |
 | Buraco no horário | observação | janela menor que 60 min sem atendimento entre duas janelas com atendimento |
 | Espera sem limite | observação | fila sem `espera_maxima_s` |
 | Plano B que não dispara | observação | fila com `ao_esgotar` e sem `espera_maxima_s` |
+| Sem transbordo | observação | fila alcançável com `espera_maxima_s` e sem `ao_esgotar` (um achado por fila); ramais alcançáveis sem `ao_nao_atender` (um achado só, com todos) |
 | Dado incompleto | observação | menu sem `espera_s` ou `tentativas`, menu sem saída `esgotou`, fila sem `toque_por_membro_s` |
 
 ### 12.3 Achados que precisam aparecer com a central real

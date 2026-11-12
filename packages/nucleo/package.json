@@ -1,0 +1,29 @@
+{
+  "name": "@journey/nucleo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./formato": "./src/formato/index.ts",
+    "./importacao": "./src/importacao/index.ts",
+    "./modelos": "./src/modelos/index.ts",
+    "./motor": "./src/motor/index.ts",
+    "./diagnostico": "./src/diagnostico/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "modelos": "tsx scripts/gerar-modelos.ts",
+    "fixture": "tsx scripts/gerar-fixture.ts"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
