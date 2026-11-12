@@ -18,8 +18,14 @@ export function FormularioEntrar({ google }: { google: boolean }) {
     setEstado(error ? { erro: error.message } : 'enviado');
   }
 
+  // Dando certo, o navegador sai pro Google; só volta aqui com erro (provedor desligado, rede).
   async function comGoogle() {
-    await supabaseNavegador().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: destino() } });
+    setEstado('livre');
+    const { error } = await supabaseNavegador().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: destino() } });
+    if (error) {
+      console.error('[entrar com Google]', error.message);
+      setEstado({ erro: 'Não deu pra entrar com o Google agora. Tenta de novo ou recebe o link por e-mail.' });
+    }
   }
 
   return (
@@ -38,7 +44,11 @@ export function FormularioEntrar({ google }: { google: boolean }) {
           Link enviado. Confere o e-mail e abre o link neste navegador.
         </p>
       )}
-      {typeof estado === 'object' && <p className="aviso-caixa erro">{estado.erro}</p>}
+      {typeof estado === 'object' && (
+        <p role="alert" className="aviso-caixa erro">
+          {estado.erro}
+        </p>
+      )}
       {google && (
         <button className="botao" type="button" onClick={comGoogle}>
           Entrar com Google
