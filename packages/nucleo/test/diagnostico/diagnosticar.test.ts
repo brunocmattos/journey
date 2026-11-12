@@ -20,9 +20,9 @@ describe('diagnosticar', () => {
     expect(achados.map((a) => a.gravidade)).toEqual(['grave', 'grave', 'alerta', 'observacao']);
   });
 
-  it('avisa quando ninguém atende e não há transbordo', () => {
+  it('grupo sem ao_esgotar é grupo_desliga, como o que tem fim:desliga', () => {
     const achados = diagnosticar(doc({ entradas: [entrada('e', 'grupo:1')], grupos: [grupo('1')] }));
-    expect(achados.map((a) => a.chave)).toEqual(['sem_transbordo:grupo:1']);
+    expect(achados.map((a) => [a.chave, a.gravidade])).toEqual([['grupo_desliga:grupo:1', 'alerta']]);
   });
 });
 
@@ -34,7 +34,7 @@ describe('o que a validação promete, o diagnóstico entrega', () => {
     ['fila com membro inexistente', doc({ filas: [fila('1', { membros: ['ramal:9'] })] }), 'fila:1'],
     ['grupo com destino de falha inexistente', doc({ grupos: [grupo('1', { ao_esgotar: 'fila:9' })] }), 'grupo:1'],
     [
-      'regra de horário apontando pra horário sem janelas',
+      'regra de horário apontando pra horário que não existe',
       doc({ pecas: [peca('h', 'regra_horario', { horario: 'horario:x' })], saidas: [saida('h', 'sim', 'fim:desliga')] }),
       'peca:h',
     ],
@@ -64,11 +64,16 @@ describe('o que a validação promete, o diagnóstico entrega', () => {
     expect(a.find((x) => x.refs[0] === 'peca:f')!.texto).toContain('não diz qual calendário usar (calendario)');
   });
 
-  it('regra de horário com grupo sem janelas é dado_incompleto', () => {
+  it('regra de horário apontando pra horário que não existe é destino_inexistente grave, pela peça e pelo campo', () => {
+    // Horário sem nenhuma linha na aba horarios não existe: o grupo de horário é feito das linhas.
     const d = doc({ pecas: [peca('h', 'regra_horario', { horario: 'horario:x' })], saidas: [saida('h', 'sim', 'fim:desliga')], horarios: [janela('y', ['seg'], '08:00', '18:00')] });
-    const a = diagnosticar(d).filter((x) => x.tipo === 'dado_incompleto');
-    expect(a).toHaveLength(1);
-    expect(a[0]!.texto).toContain('horário "x" não existe');
+    const a = diagnosticar(d);
+    expect(a.filter((x) => x.tipo === 'dado_incompleto')).toEqual([]);
+    const quebrada = a.filter((x) => x.tipo === 'destino_inexistente');
+    expect(quebrada).toEqual([
+      expect.objectContaining({ gravidade: 'grave', chave: 'destino_inexistente:peca:h:horario', refs: ['peca:h', 'horario:x'], campos: ['horario'] }),
+    ]);
+    expect(quebrada[0]!.texto).toContain('horario:x, que não está no catálogo');
   });
 
   it('saída órfã é destino_inexistente grave, com chave própria', () => {

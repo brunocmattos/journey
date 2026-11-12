@@ -128,17 +128,18 @@ export function voltaPropriaFila(idx: Indice): Achado[] {
   return out;
 }
 
-/** Grupos que desligam quando ninguém atende. */
+/** Grupos que desligam quando ninguém atende: ao_esgotar = fim:desliga ou vazio (o motor trata os dois igual). */
 export function gruposQueDesligam(idx: Indice): Achado[] {
   return idx.doc.grupos
-    .filter((g) => g.ao_esgotar === 'fim:desliga')
+    .filter((g) => g.ao_esgotar === undefined || g.ao_esgotar === 'fim:desliga')
     .map((g) =>
       achado(
         'grupo_desliga',
         `grupo:${g.id}`,
         `${nomeDe(idx, `grupo:${g.id}`)} desliga se ninguém atende`,
-        `Todos do grupo tocam por ${g.toque_s ?? 20} s. Se ninguém atende, a central desliga a ligação.`,
+        `Todos do grupo tocam por ${g.toque_s ?? 20} s. Se ninguém atende, a central desliga a ligação${g.ao_esgotar === undefined ? ': não há destino em ao_esgotar' : ''}.`,
         [`grupo:${g.id}`],
+        ['ao_esgotar'],
       ),
     );
 }
@@ -168,32 +169,46 @@ export function planoBQueNaoDispara(idx: Indice): Achado[] {
 }
 
 /**
- * Ramais, filas e grupos alcançáveis sem destino pra quando ninguém atende: a ligação desliga.
+ * Ramais e filas alcançáveis sem destino pra quando ninguém atende: a ligação desliga.
+ * Os ramais saem num achado só (chave sem_transbordo:ramais, refs em ordem), pra uma lista grande não virar uma enxurrada; cada fila sai no seu.
  * Fila sem tempo máximo fica de fora: a espera não acaba, e quem avisa é espera_sem_limite.
+ * Grupo fica de fora: grupo sem ao_esgotar é grupo_desliga, igual ao que tem fim:desliga.
+ * Ramais, filas e grupos não têm a coluna ativo; não há inativo a pular.
  */
 export function semTransbordo(idx: Indice, alc: Set<string>): Achado[] {
   const out: Achado[] = [];
-  const registrar = (ref: string, campo: string, quando: string) =>
+  const ramais = idx.doc.ramais
+    .filter((r) => r.ao_nao_atender === undefined && alc.has(`ramal:${r.id}`))
+    .map((r) => `ramal:${r.id}`)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (ramais.length > 0) {
+    const um = ramais.length === 1;
+    out.push(
+      achado(
+        'sem_transbordo',
+        'ramais',
+        um ? `${nomeDe(idx, ramais[0]!)} desliga se ninguém atende` : `${ramais.length} ramais desligam se ninguém atende`,
+        um
+          ? 'Se ninguém atende o ramal, a central desliga a ligação: não há destino em ao_nao_atender.'
+          : `Se ninguém atende, a central desliga a ligação: estes ramais não têm destino em ao_nao_atender (${ramais.map((r) => r.slice('ramal:'.length)).join(', ')}).`,
+        ramais,
+        ['ao_nao_atender'],
+      ),
+    );
+  }
+  for (const f of idx.doc.filas) {
+    const ref = `fila:${f.id}`;
+    if (!alc.has(ref) || f.ao_esgotar !== undefined || f.espera_maxima_s === undefined) continue;
     out.push(
       achado(
         'sem_transbordo',
         ref,
         `${nomeDe(idx, ref)} desliga se ninguém atende`,
-        `${quando}, a central desliga a ligação: não há destino em ${campo}.`,
+        `Se ninguém atende em ${f.espera_maxima_s} s, a central desliga a ligação: não há destino em ao_esgotar.`,
         [ref],
-        [campo],
+        ['ao_esgotar'],
       ),
     );
-  for (const r of idx.doc.ramais) {
-    if (alc.has(`ramal:${r.id}`) && r.ao_nao_atender === undefined) registrar(`ramal:${r.id}`, 'ao_nao_atender', 'Se ninguém atende o ramal');
-  }
-  for (const f of idx.doc.filas) {
-    if (alc.has(`fila:${f.id}`) && f.ao_esgotar === undefined && f.espera_maxima_s !== undefined) {
-      registrar(`fila:${f.id}`, 'ao_esgotar', `Se ninguém atende em ${f.espera_maxima_s} s`);
-    }
-  }
-  for (const g of idx.doc.grupos) {
-    if (alc.has(`grupo:${g.id}`) && g.ao_esgotar === undefined) registrar(`grupo:${g.id}`, 'ao_esgotar', `Se ninguém atende em ${g.toque_s ?? 20} s`);
   }
   return out;
 }

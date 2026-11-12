@@ -67,12 +67,23 @@ describe('diagnóstico de transbordo', () => {
     expect(gruposQueDesligam(idx).map((a) => a.chave)).toEqual(['grupo_desliga:grupo:20']);
   });
 
+  it('grupo sem ao_esgotar desliga do mesmo jeito: grupo_desliga, alerta', () => {
+    const i = indexar(doc({ grupos: [grupo('1', { ao_esgotar: 'fim:desliga' }), grupo('2'), grupo('3', { ao_esgotar: 'fim:caixa_postal' })] }));
+    const a = gruposQueDesligam(i);
+    expect(a.map((x) => [x.chave, x.gravidade])).toEqual([
+      ['grupo_desliga:grupo:1', 'alerta'],
+      ['grupo_desliga:grupo:2', 'alerta'],
+    ]);
+    expect(a[1]!.texto).toContain('não há destino em ao_esgotar');
+    expect(a[1]!.campos).toEqual(['ao_esgotar']);
+  });
+
   it('espera sem limite e plano B que não dispara', () => {
     expect(esperaSemLimite(idx).map((a) => a.chave)).toEqual(['espera_sem_limite:fila:10']);
     expect(planoBQueNaoDispara(idx).map((a) => a.chave)).toEqual(['plano_b_nao_dispara:fila:10']);
   });
 
-  it('sem transbordo: fila, grupo e ramal alcançáveis que desligam por falta de destino', () => {
+  it('sem transbordo: cada fila alcançável, e os ramais alcançáveis num achado só; grupo fica com grupo_desliga', () => {
     const d = indexar(
       doc({
         entradas: [entrada('e', 'peca:m')],
@@ -84,7 +95,9 @@ describe('diagnóstico de transbordo', () => {
           saida('m', '4', 'grupo:1'),
           saida('m', '5', 'grupo:2'),
           saida('m', '6', 'ramal:1'),
-          saida('m', 'esgotou', 'ramal:2'),
+          saida('m', '7', 'ramal:2'),
+          saida('m', '8', 'ramal:10'),
+          saida('m', 'esgotou', 'ramal:3'),
         ],
         filas: [
           fila('1', { espera_maxima_s: 60 }),
@@ -94,14 +107,22 @@ describe('diagnóstico de transbordo', () => {
           fila('9', { espera_maxima_s: 60 }),
         ],
         grupos: [grupo('1'), grupo('2', { ao_esgotar: 'fim:desliga' }), grupo('9')],
-        ramais: [ramal('1'), ramal('2', { ao_nao_atender: 'fim:caixa_postal' }), ramal('9')],
+        ramais: [ramal('3'), ramal('1'), ramal('2', { ao_nao_atender: 'fim:caixa_postal' }), ramal('10'), ramal('9')],
       }),
     );
     const achados = semTransbordo(d, alcancaveis(d));
-    expect(achados.map((a) => a.chave)).toEqual(['sem_transbordo:ramal:1', 'sem_transbordo:fila:1', 'sem_transbordo:grupo:1']);
-    expect(achados.map((a) => a.campos)).toEqual([['ao_nao_atender'], ['ao_esgotar'], ['ao_esgotar']]);
+    expect(achados.map((a) => a.chave)).toEqual(['sem_transbordo:ramais', 'sem_transbordo:fila:1']);
+    expect(achados.map((a) => a.campos)).toEqual([['ao_nao_atender'], ['ao_esgotar']]);
+    expect(achados[0]!.refs).toEqual(['ramal:1', 'ramal:10', 'ramal:3']);
+    expect(achados[0]!.titulo).toBe('3 ramais desligam se ninguém atende');
     expect(achados[1]!.texto).toContain('60 s');
     expect(achados.every((a) => a.gravidade === 'observacao')).toBe(true);
     expect(GRAVIDADE.sem_transbordo).toBe('observacao');
+  });
+
+  it('sem transbordo com um ramal só: o mesmo achado, com o nome do ramal', () => {
+    const d = indexar(doc({ entradas: [entrada('e', 'ramal:1')], ramais: [ramal('1', { nome: 'Recepção' })] }));
+    const a = semTransbordo(d, alcancaveis(d));
+    expect(a.map((x) => [x.chave, x.refs, x.titulo])).toEqual([['sem_transbordo:ramais', ['ramal:1'], 'ramal 1 (Recepção) desliga se ninguém atende']]);
   });
 });

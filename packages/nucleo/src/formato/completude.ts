@@ -2,7 +2,7 @@ import type { NomeAba } from './documento';
 import type { Indice } from './indice';
 import { lerRef } from './refs';
 
-export type RegraCompletude = 'menu_sem_tempo' | 'menu_sem_esgotou' | 'fila_sem_toque' | 'regra_sem_horario' | 'regra_sem_calendario';
+export type RegraCompletude = 'menu_sem_tempo' | 'menu_sem_esgotou' | 'fila_sem_toque' | 'regra_sem_horario' | 'horario_inexistente' | 'regra_sem_calendario';
 
 export interface Pendencia {
   regra: RegraCompletude;
@@ -35,9 +35,12 @@ export function completude(idx: Indice): Pendencia[] {
 }
 
 /**
- * Regras de horário e feriado sem o que precisam: a coluna vazia ou um horário sem nenhuma janela.
+ * Regras de horário e feriado sem o que precisam: a coluna vazia (regra_sem_horario, regra_sem_calendario)
+ * ou um horário que não existe (horario_inexistente). O grupo de horário é feito das linhas da aba horarios:
+ * sem nenhuma linha, ele não existe; com linha, sempre tem janela (dias é obrigatório).
  * Calendário sem feriado não entra: a regra só nunca cai em feriado.
- * Vale pro motor (a peça vira incompleta) e pro diagnóstico (dado_incompleto).
+ * Vale pro motor (a peça vira incompleta) e pro diagnóstico: coluna vazia é dado_incompleto;
+ * horário que não existe é referência quebrada, destino_inexistente.
  */
 export function regrasDeRelogioIncompletas(idx: Indice): Pendencia[] {
   const out: Pendencia[] = [];
@@ -47,7 +50,7 @@ export function regrasDeRelogioIncompletas(idx: Indice): Pendencia[] {
     if (p.tipo === 'regra_horario') {
       const grupo = p.horario ? (lerRef(p.horario)?.id ?? p.horario) : undefined;
       if (grupo === undefined) out.push({ regra: 'regra_sem_horario', aba: 'pecas', id: p.id, ref, mensagem: `a regra "${nome}" não diz qual horário usar (horario)` });
-      else if (!idx.janelas.get(grupo)?.length) out.push({ regra: 'regra_sem_horario', aba: 'pecas', id: p.id, ref, mensagem: `o horário "${grupo}" não existe` });
+      else if (!idx.janelas.has(grupo)) out.push({ regra: 'horario_inexistente', aba: 'pecas', id: p.id, ref, mensagem: `o horário "${grupo}" não existe` });
     }
     if (p.tipo === 'regra_feriado' && !p.calendario) {
       out.push({ regra: 'regra_sem_calendario', aba: 'pecas', id: p.id, ref, mensagem: `a regra "${nome}" não diz qual calendário usar (calendario)` });

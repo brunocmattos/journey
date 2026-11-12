@@ -2,7 +2,7 @@ import type { Documento } from '../formato/documento';
 import { indexar, type Indice } from '../formato/indice';
 import { alcancaveis } from './alcance';
 import { buracosDeHorario } from './horario';
-import { becos, dadosIncompletos, nosInativos, redundancias, semEntrada, voltasSemLimite } from './pecas';
+import { becos, dadosIncompletos, horariosInexistentes, nosInativos, redundancias, semEntrada, voltasSemLimite } from './pecas';
 import type { Achado } from './tipos';
 import { ciclosDeTransbordo, destinosInexistentes, esperaSemLimite, gruposQueDesligam, planoBQueNaoDispara, semTransbordo, voltaPropriaFila } from './transbordo';
 
@@ -15,6 +15,7 @@ export function diagnosticar(fonte: Documento | Indice): Achado[] {
   const todos = [
     ...becos(idx, alc),
     ...destinosInexistentes(idx),
+    ...horariosInexistentes(idx),
     ...ciclosDeTransbordo(idx),
     ...voltasSemLimite(idx, alc),
     ...redundancias(idx, alc),

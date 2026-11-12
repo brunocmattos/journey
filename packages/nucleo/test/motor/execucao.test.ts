@@ -169,7 +169,7 @@ describe('motor', () => {
     const regra = (p: ReturnType<typeof peca>, extra: Partial<Parameters<typeof doc>[0]> = {}) =>
       executar(doc({ pecas: [p], saidas: [saida(p.id, 'sim', 'fim:desliga'), saida(p.id, 'nao', 'fim:atendido')], ...extra }), { entrada: `peca:${p.id}`, inicio });
 
-    it('regra de horário sem horário ou com horário sem janelas para', () => {
+    it('regra de horário sem horário ou com horário que não existe para', () => {
       const sem = regra(peca('r', 'regra_horario', { nome: 'Expediente' }));
       expect(sem.motivo).toBe('incompleta');
       expect(sem.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'peca:r', detalhe: 'a regra "Expediente" não diz qual horário usar (horario)' });

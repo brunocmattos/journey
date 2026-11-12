@@ -156,7 +156,27 @@ export function nosInativos(idx: Indice, alc: Set<string>): Achado[] {
   return out;
 }
 
-/** Dados que faltam pra simular direito. */
+/** Dados que faltam pra simular direito. Horário que não existe não entra: é referência quebrada (horariosInexistentes). */
 export function dadosIncompletos(idx: Indice): Achado[] {
-  return [...completude(idx), ...regrasDeRelogioIncompletas(idx)].map((p) => achado('dado_incompleto', `${p.regra}:${p.ref}`, `${nomeDe(idx, p.ref)}: falta informação`, p.mensagem[0]!.toUpperCase() + p.mensagem.slice(1) + '.', [p.ref]));
+  return [...completude(idx), ...regrasDeRelogioIncompletas(idx).filter((p) => p.regra !== 'horario_inexistente')].map((p) =>
+    achado('dado_incompleto', `${p.regra}:${p.ref}`, `${nomeDe(idx, p.ref)}: falta informação`, p.mensagem[0]!.toUpperCase() + p.mensagem.slice(1) + '.', [p.ref]),
+  );
+}
+
+/** Regras de horário que apontam pra um horário que não existe: referência quebrada, como um transbordo pra ramal apagado. */
+export function horariosInexistentes(idx: Indice): Achado[] {
+  return regrasDeRelogioIncompletas(idx)
+    .filter((p) => p.regra === 'horario_inexistente')
+    .map((p) => {
+      const alvo = idx.pecas.get(p.id)!.horario!;
+      const nome = nomeDe(idx, p.ref);
+      return achado(
+        'destino_inexistente',
+        `${p.ref}:horario`,
+        `${nome} usa o horário ${alvo}, que não existe`,
+        `Em horario, ${nome} aponta pra ${alvo}, que não está no catálogo (nenhuma linha na aba horarios com esse grupo). Sem horário, a regra não sabe pra onde mandar a ligação.`,
+        [p.ref, alvo],
+        ['horario'],
+      );
+    });
 }
