@@ -39,7 +39,7 @@ export interface PropsJornada {
   intencionais: MarcaIntencional[];
   /** null no link público: a tela é só leitura (simula e vê o diagnóstico, não grava nada). */
   membro: MembroNaJornada | null;
-  /** Cenário que abre e toca quando a página abre, se a URL não pedir outro (o cenário inicial do link). */
+  /** Cenário que abre e toca quando a página abre (o cenário inicial do link). No link público a URL é ignorada; na tela dos membros, o ?cenario= vem antes. */
   cenarioInicial?: string;
 }
 
@@ -145,6 +145,8 @@ export function Jornada(p: PropsJornada) {
 
   // No link público o endereço é o do link: o ?cenario= é coisa da tela dos membros.
   const membro = p.membro;
+  // Um booleano: o objeto do membro é outro a cada refresh e refaria o `comecar`.
+  const ehMembro = membro !== null;
   const soltarCenario = () => {
     setCenarioId(null);
     if (membro) marcarUrl(null);
@@ -156,13 +158,13 @@ export function Jornada(p: PropsJornada) {
       setRaiz(novaRaiz);
       setDestaque(null);
       setCenarioId(c?.id ?? null);
-      if (membro) marcarUrl(c?.id ?? null);
+      if (ehMembro) marcarUrl(c?.id ?? null);
       setPausado(false);
       setSessao(s);
       setRodada((n) => n + 1);
       irPara(0);
     },
-    [irPara, membro],
+    [irPara, ehMembro],
   );
 
   // ?cenario=<id> (ou o cenário inicial do link) abre e toca o cenário.
@@ -206,6 +208,8 @@ export function Jornada(p: PropsJornada) {
     if (!perguntando || !noFim) return;
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      // Com um diálogo aberto (o Compartilhar), as teclas são dele.
+      if (document.querySelector('dialog[open]')) return;
       const alvo = e.target as HTMLElement | null;
       if (alvo?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
       const o = opcaoDaTecla(perguntando.opcoes, e.key);

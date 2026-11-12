@@ -120,7 +120,8 @@ export function PainelDiagnostico({ idx, achados, intencionais, verNoMapa, simul
                 <div className="achado" key={a.chave} data-intencional={a.chave}>
                   <b>{a.titulo}</b>
                   <p>{marcadas.get(a.chave)!.nota || (desmarcar ? 'Sem nota.' : 'Marcado como intencional pela equipe.')}</p>
-                  {marcadas.get(a.chave)!.autor !== undefined && (
+                  {/* Quem marcou só aparece pra membro: o mesmo critério da nota. */}
+                  {desmarcar && (
                     <p className="mudo" style={{ fontSize: 12 }}>
                       por {marcadas.get(a.chave)!.autor ?? 'alguém que saiu'}
                     </p>
