@@ -2398,13 +2398,13 @@ index 1e37ce6..d1aaea2 100644
 
 Com o Supabase no ar e `SUPABASE_SECRET_KEY` no `apps/web/.env.local` (veja "Antes de começar"; se o `next dev` já estava aberto, reinicie).
 
-Run: `npm run e2e -- e2e/links.spec.ts --trace off`
+Run: `npm run e2e -- e2e/links.spec.ts --trace=off`
 Expected: `3 passed`.
 
-Run: `npm run e2e -- --trace off`
+Run: `npm run e2e -- --trace=off`
 Expected: `24 passed`, `1 skipped` (as capturas).
 
-Run: `CAPTURAS=/tmp/capturas npm run e2e -- e2e/capturas.spec.ts --trace off`
+Run: `CAPTURAS=/tmp/capturas npm run e2e -- e2e/capturas.spec.ts --trace=off`
 Expected: `1 passed`; em `/tmp/capturas`, além das 6 da etapa 2, `7-compartilhar.png` (o diálogo com o link novo), `8-link-publico.png` (o link aberto sem conta, "só leitura" e "nomes escondidos" no topo) e `9-link-celular.png` (390 px). Olhe as três: os rádios da versão em linha, um embaixo do outro, e nada cortado no celular.
 
 - [ ] **Passo 3: commit**
@@ -2528,7 +2528,7 @@ npm run banco:testes
 npm run typecheck
 npm run build
 grep -rl ExcelJS apps/web/.next/static
-npm run e2e -- --trace off
+npm run e2e -- --trace=off
 ```
 
 Expected: núcleo `Tests  253 passed (253)`, app `Tests  168 passed (168)`; pgTAP `Tests=84`, `Result: PASS`; `typecheck` e `build` limpos, com `ƒ /l/[token]`; o `grep` não acha nada; e2e `24 passed`, `1 skipped`.
