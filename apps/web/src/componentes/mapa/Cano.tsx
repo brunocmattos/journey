@@ -2,7 +2,7 @@
 
 import { EdgeLabelRenderer, type Edge, type EdgeProps } from '@xyflow/react';
 import type { CanoMapa } from '@/mapa/montar';
-import { useMapa } from './contexto';
+import { useAcoesMapa, useVistaMapa } from './contexto';
 
 export type CanoFluxo = Edge<{ cano: CanoMapa }, 'cano'>;
 
@@ -19,21 +19,22 @@ export function caminhoCano(sx: number, sy: number, tx: number, ty: number): str
 }
 
 export function Cano({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps<CanoFluxo>) {
-  const { estado, duracaoCano, escolher, foco } = useMapa();
+  const { escolher } = useAcoesMapa();
+  const { estado, duracaoCano, foco, podeEscolher } = useVistaMapa();
   const cano = data!.cano;
   const d = caminhoCano(sourceX, sourceY, targetX, targetY);
   const molhado = estado.molhados.has(id);
   const correndo = estado.correndo === id;
   const pergunta = estado.perguntando?.no === cano.de ? estado.perguntando : null;
   // Opção que esta válvula oferece por este cano (uma basta: as outras do mesmo cano vão pro mesmo lugar).
-  // Cano que o motor não usa não vira botão: o clique não teria pra onde ir.
-  const opcao = cano.simulavel ? pergunta?.opcoes.find((o) => o.disponivel && (o.saida ? cano.saidas.includes(o.saida) : cano.opcoes.includes(o.opcao))) : undefined;
+  // Cano que o motor não usa não vira botão: o clique não teria pra onde ir. Nem antes de a decisão estar na tela.
+  const opcao = cano.simulavel && podeEscolher ? pergunta?.opcoes.find((o) => o.disponivel && (o.saida ? cano.saidas.includes(o.saida) : cano.opcoes.includes(o.opcao))) : undefined;
   const chipX = Math.abs(sourceY - targetY) < 1 ? (sourceX + targetX) / 2 : (sourceX + MANIFOLD + targetX) / 2;
   const mostraChip = cano.rotulo !== '' && cano.opcoes.length > 0;
   const emFoco = !foco || foco.has(id);
   return (
     <>
-      <g className={`k-${cano.tipo}`}>
+      <g className={`cano k-${cano.tipo}${foco?.has(id) ? ' foco' : ''}`}>
         <path d={d} className="cano-parede" />
         <path d={d} className="cano-nucleo" />
         {cano.tipo !== 'inativo' && <path d={d} className="cano-brilho" />}

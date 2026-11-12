@@ -3,7 +3,7 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Icone } from '@/componentes/Icone';
 import type { NoMapa } from '@/mapa/montar';
-import { useMapa } from './contexto';
+import { useAcoesMapa, useVistaMapa } from './contexto';
 
 export type NoFluxo = Node<{ no: NoMapa; semSaida: boolean }, 'ponto'>;
 
@@ -22,7 +22,10 @@ const ICONE_PECA: Record<string, string> = {
 const ICONE_TIPO: Record<string, string> = { fila: 'fila', grupo: 'fila', ramal: 'pessoa', fim: 'desliga', externo: 'telefone', inexistente: 'alerta' };
 
 export function NoPonto({ data: { no, semSaida } }: NodeProps<NoFluxo>) {
-  const { estado, tocar, irPara } = useMapa();
+  const { tocar, irPara } = useAcoesMapa();
+  const { estado, foco } = useVistaMapa();
+  // Holofote: a classe vai no elemento de dentro, pra mudar o foco não recriar os nós do React Flow.
+  const emFoco = foco?.has(no.id) ?? false;
   const perguntando = estado.perguntando?.no === no.id;
   const aqui = estado.atual === no.id;
   const fimAqui = estado.fim?.no === no.id ? estado.fim.motivo : null;
@@ -35,7 +38,7 @@ export function NoPonto({ data: { no, semSaida } }: NodeProps<NoFluxo>) {
 
   if (no.tipo === 'entrada' || no.tipo === 'ramais_diretos') {
     return (
-      <div className={`entrada-no${no.inativo ? ' inativo' : ''}${aqui ? ' aceso' : ''}`} data-no={no.id}>
+      <div className={`entrada-no${no.inativo ? ' inativo' : ''}${aqui ? ' aceso' : ''}${emFoco ? ' foco' : ''}`} data-no={no.id}>
         {alcas}
         <Icone nome="telefone" />
         <button className="tocar" type="button" aria-label={`Dar play em ${no.titulo}`} onClick={() => tocar(no.id)}>
@@ -51,7 +54,7 @@ export function NoPonto({ data: { no, semSaida } }: NodeProps<NoFluxo>) {
 
   if (no.tipo === 'atalho') {
     return (
-      <button type="button" className={`atalho-no${no.atalho?.volta ? ' volta' : ''}`} data-no={no.id} onClick={() => irPara(no.atalho!.alvo)} aria-label={`Ir até ${no.titulo}`}>
+      <button type="button" className={`atalho-no${no.atalho?.volta ? ' volta' : ''}${emFoco ? ' foco' : ''}`} data-no={no.id} onClick={() => irPara(no.atalho!.alvo)} aria-label={`Ir até ${no.titulo}`}>
         {alcas}
         <Icone nome={no.atalho?.volta ? 'volta' : 'seta'} />
         <span className="rotulo">
@@ -74,6 +77,7 @@ export function NoPonto({ data: { no, semSaida } }: NodeProps<NoFluxo>) {
     fimAqui === 'atendido' && 'atendido',
     fimAqui && ['desistiu', 'incompleta'].includes(fimAqui) && 'alarme',
     fimAqui && ['beco', 'destino_inexistente', 'ciclo'].includes(fimAqui) && 'morto',
+    emFoco && 'foco',
   ]
     .filter(Boolean)
     .join(' ');

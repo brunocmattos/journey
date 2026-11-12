@@ -99,7 +99,8 @@ button.chip:hover, .chip.escolhido { background: var(--lit); border-color: var(-
 @keyframes pulsar { 50% { border-color: color-mix(in srgb, var(--lit) 30%, transparent); } }
 
 /* Holofote: na decisão (e no "ver no mapa"), o resto apaga. */
-.holofote .react-flow__node:not(.foco):not(.react-flow__node-faixa), .holofote .react-flow__edge:not(.foco) { opacity: 0.15; }
+/* A classe "foco" vem de dentro do nó e do cano (NoPonto, Cano): o holofote não recria os nós do React Flow. */
+.holofote :is(.ponto, .entrada-no, .atalho-no):not(.foco), .holofote .cano:not(.foco) { opacity: 0.15; }
 .holofote .chip:not(.foco) { opacity: 0.15; }
 
 /* Sobreposições do palco. */

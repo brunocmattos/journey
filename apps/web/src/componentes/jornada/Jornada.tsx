@@ -229,6 +229,7 @@ export function Jornada(p: PropsJornada) {
           estado={estado}
           foco={foco}
           duracaoCano={semMovimento ? 0 : 750 / velocidade}
+          podeEscolher={noFim && estado.perguntando !== null}
           tocar={tocar}
           escolher={escolher}
           irPara={(id) => {
