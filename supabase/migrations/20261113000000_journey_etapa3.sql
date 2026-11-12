@@ -29,6 +29,7 @@ create table public.links (
   constraint links_cenario check (cenario is null or coalesce(
     jsonb_typeof(cenario) = 'object'
     and jsonb_typeof(cenario -> 'nome') = 'string'
+    and length(btrim(cenario ->> 'nome')) between 1 and 200
     and jsonb_typeof(cenario -> 'entrada') = 'string'
     and (cenario ->> 'inicio') ~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$'
     and (cenario ->> 'modo') in ('cenario', 'livre', 'ninguem_atende')
@@ -46,11 +47,23 @@ create policy "membro revoga link" on public.links for update to authenticated
   using (public.eh_membro(empresa_id) and revogado_em is null)
   with check (public.eh_membro(empresa_id) and revogado_em is not null);
 
--- Na criação, o membro escolhe só as opções; token, autor e datas são do banco. Depois, só revoga.
+-- Na criação, o membro escolhe só as opções; token, autor e datas são do banco. Depois, só revoga,
+-- e a data da revogação também é do banco (pelo trigger abaixo).
 revoke all on public.links from anon;
 revoke insert, update, delete, truncate, trigger, references on public.links from authenticated;
 grant insert (empresa_id, jornada_id, versao, esconder_nomes, cenario, expira_em) on public.links to authenticated;
 grant update (revogado_em) on public.links to authenticated;
+
+-- A data da revogação é a do banco, seja qual for a que o app mandou (o grant deixa escrever a coluna).
+create function public.links_revogado_agora() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.revogado_em := now();
+  return new;
+end;
+$$;
+create trigger links_revogado_agora before update of revogado_em on public.links
+  for each row execute function public.links_revogado_agora();
 
 -- O que o link mostra, pelo token. Devolve { estado } e, quando o link vale, a versão e as opções.
 -- security invoker: quem chama é o servidor do app com a chave secreta (service_role, que passa pela RLS).
