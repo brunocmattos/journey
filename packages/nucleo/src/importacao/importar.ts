@@ -1,4 +1,4 @@
-import { NOMES_ABAS, type Documento } from '../formato/documento';
+import { NOMES_ABAS, documentoVazio, tabelasDe, type Documento, type NomeAba } from '../formato/documento';
 import { indexar } from '../formato/indice';
 import { aplicarAjustes, type Ajuste, type AjusteInvalido, type Conflito } from './ajustes';
 import { analisar } from './analisar';
@@ -33,8 +33,9 @@ export interface ResultadoImport {
 
 export async function importar(arquivos: ArquivoEntrada[], opcoes: OpcoesImport = {}): Promise<ResultadoImport> {
   const lidos = await lerArquivos(arquivos);
-  const analise = analisar(lidos.tabelas);
-  const base = juntar(opcoes.anterior, analise.documento, { presentes: analise.presentes, parcial: opcoes.parcial ?? false });
+  const parcial = opcoes.parcial ?? false;
+  const analise = analisar(lidos.tabelas, parcial ? { existentes: idsExistentes(opcoes.anterior) } : {});
+  const base = juntar(opcoes.anterior, analise.documento, { presentes: analise.presentes, parcial, colunas: analise.colunas });
   const daBase = validar(indexar(base), analise.linhas);
   const problemas: Problema[] = [...lidos.problemas, ...analise.problemas, ...daBase];
   if (analise.presentes.length === 0 && !problemas.some((p) => p.gravidade === 'erro')) {
@@ -55,6 +56,12 @@ export async function importar(arquivos: ArquivoEntrada[], opcoes: OpcoesImport 
     redundantes: ajustados.redundantes,
     invalidos: ajustados.invalidos,
   };
+}
+
+/** Ids da base anterior, por aba. */
+function idsExistentes(anterior: Documento | null | undefined): Partial<Record<NomeAba, ReadonlySet<string>>> {
+  const t = tabelasDe(anterior ?? documentoVazio());
+  return Object.fromEntries(NOMES_ABAS.map((aba) => [aba, new Set(t[aba].map((l) => l.id))]));
 }
 
 /** O ajuste não foi aplicado, mas o import da central segue: é aviso. */

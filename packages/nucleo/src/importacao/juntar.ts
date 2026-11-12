@@ -6,6 +6,23 @@ export interface OpcoesJuntar {
   presentes: readonly NomeAba[];
   /** Parcial: só as abas presentes mudam, e o que não veio nelas fica. Completo: o arquivo substitui tudo. */
   parcial: boolean;
+  /**
+   * Parcial: colunas que vieram em cada aba. Numa linha que já existia, só elas substituem o valor antigo
+   * (vazia = limpa); as outras ficam como estavam. Sem isto, a linha inteira é substituída.
+   */
+  colunas?: Partial<Record<NomeAba, ReadonlySet<string>>>;
+}
+
+/** Linha antiga com as colunas que vieram trocadas pelas da linha nova. */
+function mesclar<T extends { id: string }>(velha: T, nova: T, colunas: ReadonlySet<string>): T {
+  const out: Record<string, unknown> = structuredClone(velha);
+  const n = nova as Record<string, unknown>;
+  for (const c of colunas) {
+    if (c === 'id') continue;
+    if (n[c] === undefined) delete out[c];
+    else out[c] = structuredClone(n[c]);
+  }
+  return out as T;
 }
 
 /** Monta a nova base a partir da base anterior e do que veio no import. */
@@ -24,7 +41,12 @@ export function juntar(anterior: Documento | null | undefined, novo: Documento, 
       continue;
     }
     const novos = new Map(agora[aba].map((l) => [l.id, l] as const));
-    const juntas = antes[aba].map((l) => structuredClone(novos.get(l.id) ?? l));
+    const colunas = opcoes.colunas?.[aba];
+    const juntas = antes[aba].map((l) => {
+      const n = novos.get(l.id);
+      if (!n) return structuredClone(l);
+      return colunas ? mesclar(l, n, colunas) : structuredClone(n);
+    });
     const jaTinha = new Set(antes[aba].map((l) => l.id));
     for (const l of agora[aba]) if (!jaTinha.has(l.id)) juntas.push(structuredClone(l));
     destino[aba] = juntas;

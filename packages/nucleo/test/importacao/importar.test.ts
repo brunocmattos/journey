@@ -42,6 +42,58 @@ describe('importar', () => {
     expect(segundo.diferencas.alterados).toEqual([{ chave: 'filas/2', campos: ['estrategia', 'toque_por_membro_s'] }]);
   });
 
+  describe('import parcial por coluna', () => {
+    const json = (obj: unknown) => ({ nome: 'dados.json', conteudo: JSON.stringify({ formato: 'journey/1', ...(obj as object) }) });
+    const base = async () =>
+      (await importar([csv('filas.csv', 'id;estrategia;toque_por_membro_s;membros_dinamicos', '1;ringall;10;sim', '2;ringall;20;nao')])).base;
+
+    it('filas.csv só com id;estrategia mantém as outras colunas da fila existente', async () => {
+      const r = await importar([csv('filas.csv', 'id;estrategia', '1;linear')], { anterior: await base(), parcial: true });
+      expect(r.ok).toBe(true);
+      expect(r.base.filas[0]).toMatchObject({ id: '1', estrategia: 'linear', toque_por_membro_s: 10 });
+      expect(r.diferencas.alterados).toEqual([{ chave: 'filas/1', campos: ['estrategia'] }]);
+    });
+
+    it('sem a coluna com padrão (membros_dinamicos), mantém o valor anterior (não aplica o padrão)', async () => {
+      const r = await importar([csv('filas.csv', 'id;estrategia', '1;linear')], { anterior: await base(), parcial: true });
+      expect(r.base.filas[0]!.membros_dinamicos).toBe(true);
+    });
+
+    it('coluna presente com célula vazia volta ao padrão/limpa', async () => {
+      const r = await importar([csv('filas.csv', 'id;estrategia;toque_por_membro_s;membros_dinamicos', '1;linear;;')], { anterior: await base(), parcial: true });
+      expect(r.base.filas[0]!.toque_por_membro_s).toBeUndefined();
+      expect(r.base.filas[0]!.membros_dinamicos).toBe(false);
+    });
+
+    it('sem coluna obrigatória: atualiza linha existente, mas linha nova leva erro', async () => {
+      const r = await importar([csv('filas.csv', 'id;nome', '1;Vendas', '3;Nova')], { anterior: await base(), parcial: true });
+      expect(r.base.filas.find((f) => f.id === '1')).toMatchObject({ nome: 'Vendas', estrategia: 'ringall', toque_por_membro_s: 10 });
+      const erros = r.problemas.filter((p) => p.gravidade === 'erro' && p.aba === 'filas');
+      expect(erros).toEqual([expect.objectContaining({ linha: 3, coluna: 'estrategia', mensagem: expect.stringContaining('estrategia') })]);
+      expect(r.ok).toBe(false);
+    });
+
+    it('sem coluna obrigatória e só linhas existentes: ok', async () => {
+      const r = await importar([csv('filas.csv', 'id;nome', '1;Vendas')], { anterior: await base(), parcial: true });
+      expect(r.problemas.filter((p) => p.gravidade === 'erro')).toEqual([]);
+      expect(r.ok).toBe(true);
+    });
+
+    it('import completo continua substituindo a linha inteira e acusando coluna ausente', async () => {
+      const r = await importar([csv('filas.csv', 'id;estrategia', '1;linear')], { anterior: await base() });
+      expect(r.base.filas).toEqual([expect.not.objectContaining({ toque_por_membro_s: expect.anything() })]);
+      const c = await importar([csv('filas.csv', 'id;nome', '1;V')], { anterior: await base() });
+      expect(c.problemas).toContainEqual({ gravidade: 'erro', aba: 'filas', coluna: 'estrategia', mensagem: 'falta a coluna obrigatória "estrategia"' });
+    });
+
+    it('JSON parcial: colunas presentes são a união das chaves dos itens', async () => {
+      const r = await importar([json({ filas: [{ id: '1', estrategia: 'linear' }, { id: '2', estrategia: 'ringall', nome: 'Dois' }] })], { anterior: await base(), parcial: true });
+      expect(r.ok).toBe(true);
+      expect(r.base.filas[0]).toMatchObject({ id: '1', estrategia: 'linear', toque_por_membro_s: 10, membros_dinamicos: true });
+      expect(r.base.filas[1]).toMatchObject({ id: '2', nome: 'Dois', estrategia: 'ringall', toque_por_membro_s: 20 });
+    });
+  });
+
   describe('ajustes e documento efetivo', () => {
     const arquivos = () => [
       csv('entradas.csv', 'id;numero;destino', 'e1;5130000001;peca:menu', 'e2;5130000002;peca:nada'),

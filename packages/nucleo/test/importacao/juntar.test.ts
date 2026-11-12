@@ -28,6 +28,26 @@ describe('juntar', () => {
   });
 });
 
+describe('juntar parcial com colunas', () => {
+  const anterior = doc({ filas: [fila('1', { nome: 'A', toque_por_membro_s: 10, ativo: false } as never)] });
+  it('só as colunas que vieram substituem; as ausentes ficam', () => {
+    const novo = doc({ filas: [{ id: '1', estrategia: 'linear' } as never] });
+    const b = juntar(anterior, novo, { presentes: ['filas'], parcial: true, colunas: { filas: new Set(['id', 'estrategia']) } });
+    expect(b.filas[0]).toMatchObject({ nome: 'A', estrategia: 'linear', toque_por_membro_s: 10, ativo: false });
+  });
+  it('coluna que veio e não tem valor é limpa', () => {
+    const novo = doc({ filas: [{ id: '1', estrategia: 'linear' } as never] });
+    const b = juntar(anterior, novo, { presentes: ['filas'], parcial: true, colunas: { filas: new Set(['id', 'estrategia', 'nome']) } });
+    expect(b.filas[0]!.nome).toBeUndefined();
+    expect(b.filas[0]!.toque_por_membro_s).toBe(10);
+  });
+  it('completo ignora colunas e substitui a linha', () => {
+    const novo = doc({ filas: [{ id: '1', estrategia: 'linear' } as never] });
+    const b = juntar(anterior, novo, { presentes: ['filas'], parcial: false, colunas: { filas: new Set(['id', 'estrategia']) } });
+    expect(b.filas[0]!.nome).toBeUndefined();
+  });
+});
+
 describe('diferencas', () => {
   it('lista novos, removidos e campos alterados', () => {
     const anterior = doc({ filas: [fila('1', { nome: 'A' }), fila('2', { nome: 'B' })], ramais: [ramal('9')] });
