@@ -1,4 +1,4 @@
-import { completude } from '../formato/completude';
+import { completude, regrasDeRelogioIncompletas } from '../formato/completude';
 import type { Saida } from '../formato/documento';
 import { existe, nomeDe, type Indice } from '../formato/indice';
 import { lerRef } from '../formato/refs';
@@ -23,7 +23,19 @@ export function becos(idx: Indice, alc: Set<string>): Achado[] {
     out.push(achado('beco_sem_saida', ref, `${nomeDe(idx, ref)} não tem saída`, `A ligação chega em ${nomeDe(idx, ref)} e não tem pra onde ir.`, [ref]));
   }
   for (const s of idx.doc.saidas) {
-    if (!alc.has(s.de) || existe(idx, s.para)) continue;
+    if (!existe(idx, s.de)) {
+      out.push(
+        achado(
+          'destino_inexistente',
+          `saida:${s.id}:origem`,
+          `A saída ${s.id} parte de ${s.de}, que não existe`,
+          `A saída ${s.id} (${descreverOpcao(s)}) sai de ${s.de}, que não está no catálogo (pode ter sido apagado). Nenhuma ligação chega até ela.`,
+          [`saida:${s.id}`, s.de],
+        ),
+      );
+      continue;
+    }
+    if (existe(idx, s.para)) continue;
     const tipo = lerRef(s.para)?.tipo === 'peca' ? 'beco_sem_saida' : 'destino_inexistente';
     out.push(
       achado(
@@ -146,5 +158,5 @@ export function nosInativos(idx: Indice, alc: Set<string>): Achado[] {
 
 /** Dados que faltam pra simular direito. */
 export function dadosIncompletos(idx: Indice): Achado[] {
-  return completude(idx).map((p) => achado('dado_incompleto', `${p.regra}:${p.ref}`, `${nomeDe(idx, p.ref)}: falta informação`, p.mensagem[0]!.toUpperCase() + p.mensagem.slice(1) + '.', [p.ref]));
+  return [...completude(idx), ...regrasDeRelogioIncompletas(idx)].map((p) => achado('dado_incompleto', `${p.regra}:${p.ref}`, `${nomeDe(idx, p.ref)}: falta informação`, p.mensagem[0]!.toUpperCase() + p.mensagem.slice(1) + '.', [p.ref]));
 }

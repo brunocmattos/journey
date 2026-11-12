@@ -8,7 +8,7 @@ import { ciclosDeTransbordo, destinosInexistentes, esperaSemLimite, gruposQueDes
 
 const ORDEM = { grave: 0, alerta: 1, observacao: 2 } as const;
 
-/** Todos os achados, do mais grave pro mais leve. */
+/** Todos os achados (empate na gravidade: ordem por código, igual em qualquer idioma), do mais grave pro mais leve. */
 export function diagnosticar(fonte: Documento | Indice): Achado[] {
   const idx = 'formato' in fonte ? indexar(fonte) : fonte;
   const alc = alcancaveis(idx);
@@ -28,5 +28,5 @@ export function diagnosticar(fonte: Documento | Indice): Achado[] {
     ...semTransbordo(idx, alc),
     ...dadosIncompletos(idx),
   ];
-  return todos.sort((a, b) => ORDEM[a.gravidade] - ORDEM[b.gravidade] || a.chave.localeCompare(b.chave));
+  return todos.sort((a, b) => ORDEM[a.gravidade] - ORDEM[b.gravidade] || (a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0));
 }

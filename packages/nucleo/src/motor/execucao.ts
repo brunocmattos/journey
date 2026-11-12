@@ -1,4 +1,4 @@
-import { completude } from '../formato/completude';
+import { completude, regrasDeRelogioIncompletas } from '../formato/completude';
 import type { Canal, Documento, Expressao, Peca } from '../formato/documento';
 import { existe, indexar, type Indice } from '../formato/indice';
 import { lerRef } from '../formato/refs';
@@ -87,17 +87,7 @@ export class Execucao {
     for (const p of completude(this.idx)) {
       if (p.regra !== 'menu_sem_esgotou' && !this.incompletas.has(p.ref)) this.incompletas.set(p.ref, p.mensagem);
     }
-    for (const p of this.idx.pecas.values()) {
-      const ref = `peca:${p.id}`;
-      const nome = p.nome ?? p.id;
-      if (p.tipo === 'regra_horario') {
-        const grupo = p.horario ? (lerRef(p.horario)?.id ?? p.horario) : undefined;
-        if (grupo === undefined) this.incompletas.set(ref, `a regra "${nome}" não diz qual horário usar (horario)`);
-        else if (!this.idx.janelas.get(grupo)?.length) this.incompletas.set(ref, `o horário "${grupo}" não existe`);
-      }
-      // Calendário sem nenhum feriado não é falta: só nunca é feriado.
-      if (p.tipo === 'regra_feriado' && !p.calendario) this.incompletas.set(ref, `a regra "${nome}" não diz qual calendário usar (calendario)`);
-    }
+    for (const p of regrasDeRelogioIncompletas(this.idx)) this.incompletas.set(p.ref, p.mensagem);
   }
 
   get terminou(): boolean {

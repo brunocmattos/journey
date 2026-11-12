@@ -2,30 +2,51 @@ import { existe, nomeDe, type Indice } from '../formato/indice';
 import { lerRef } from '../formato/refs';
 import { achado, type Achado } from './tipos';
 
-/** Ramais, filas e grupos que transbordam (ou chamam membros) que não existem. */
+/** Campos em que a lista só toca: o que não existe ali não é caminho (ver alcance.ts). */
+const CAMPOS_DE_MEMBROS = new Set(['membros', 'siga_me_lista']);
+
+/**
+ * Ramais, filas e grupos que transbordam pra algo que não existe (grave) ou listam membro que não existe (alerta).
+ * Se o mesmo alvo aparece nos dois tipos de campo, saem dois achados, cada um com a sua chave.
+ */
 export function destinosInexistentes(idx: Indice): Achado[] {
   const out: Achado[] = [];
   const registrar = (dono: string, campos: [string, string | string[] | undefined][]) => {
-    const porAlvo = new Map<string, string[]>();
+    const porAlvo = new Map<string, { destino: string[]; membro: string[] }>();
     for (const [campo, valor] of campos) {
       for (const alvo of Array.isArray(valor) ? valor : valor ? [valor] : []) {
         if (existe(idx, alvo)) continue;
-        const lista = porAlvo.get(alvo);
-        if (lista) lista.push(campo);
-        else porAlvo.set(alvo, [campo]);
+        const entrada = porAlvo.get(alvo) ?? { destino: [], membro: [] };
+        entrada[CAMPOS_DE_MEMBROS.has(campo) ? 'membro' : 'destino'].push(campo);
+        porAlvo.set(alvo, entrada);
       }
     }
-    for (const [alvo, nomes] of porAlvo) {
-      out.push(
-        achado(
-          'destino_inexistente',
-          `${dono}>${alvo}`,
-          `${nomeDe(idx, dono)} aponta pra ${alvo}, que não existe`,
-          `Em ${nomes.join(', ')}, ${nomeDe(idx, dono)} aponta pra ${alvo}, que não está no catálogo (pode ter sido apagado). A ligação não tem pra onde ir.`,
-          [dono, alvo],
-          nomes,
-        ),
-      );
+    const nome = nomeDe(idx, dono);
+    for (const [alvo, { destino, membro }] of porAlvo) {
+      if (destino.length > 0) {
+        out.push(
+          achado(
+            'destino_inexistente',
+            `${dono}>${alvo}`,
+            `${nome} aponta pra ${alvo}, que não existe`,
+            `Em ${destino.join(', ')}, ${nome} aponta pra ${alvo}, que não está no catálogo (pode ter sido apagado). A ligação não tem pra onde ir.`,
+            [dono, alvo],
+            destino,
+          ),
+        );
+      }
+      if (membro.length > 0) {
+        out.push(
+          achado(
+            'membro_inexistente',
+            `${dono}>${alvo}`,
+            `${nome} lista ${alvo}, que não existe`,
+            `Em ${membro.join(', ')}, ${nome} lista como membro ${alvo}, que não está no catálogo (pode ter sido apagado); ele não vai tocar. Os outros da lista continuam tocando.`,
+            [dono, alvo],
+            membro,
+          ),
+        );
+      }
     }
   };
   for (const r of idx.doc.ramais) {

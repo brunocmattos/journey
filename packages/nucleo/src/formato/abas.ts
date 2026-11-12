@@ -93,7 +93,7 @@ export const ABAS: Record<NomeAba, Aba> = {
       OBS,
     ],
     exemplos: [
-      { id: '2001', nome: 'Ana', tipo: 'pessoa', toque_s: '20', ao_nao_atender: 'fila:100' },
+      { id: '2001', nome: 'Ana', tipo: 'pessoa', toque_s: '20', ao_nao_atender: 'fila:100', transbordo_anti_loop: 'sim' },
       { id: '2002', nome: 'Beto', tipo: 'pessoa', toque_s: '27', siga_me_so_ramal_s: '7', siga_me_com_lista_s: '20', siga_me_lista: 'ramal:2001', ao_nao_atender: 'fim:caixa_postal' },
     ],
   },

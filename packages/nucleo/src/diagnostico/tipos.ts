@@ -3,6 +3,7 @@ export type Gravidade = 'grave' | 'alerta' | 'observacao';
 export type TipoAchado =
   | 'beco_sem_saida'
   | 'destino_inexistente'
+  | 'membro_inexistente'
   | 'ciclo_transbordo'
   | 'volta_sem_limite'
   | 'redundancia'
@@ -19,6 +20,7 @@ export type TipoAchado =
 export const GRAVIDADE: Record<TipoAchado, Gravidade> = {
   beco_sem_saida: 'grave',
   destino_inexistente: 'grave',
+  membro_inexistente: 'alerta',
   ciclo_transbordo: 'grave',
   volta_sem_limite: 'alerta',
   redundancia: 'alerta',

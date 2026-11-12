@@ -24,8 +24,31 @@ describe('diagnóstico de transbordo', () => {
   it('destino inexistente, agrupado por alvo, com os campos de origem', () => {
     expect(destinosInexistentes(idx).map((a) => [a.chave, a.campos])).toEqual([
       ['destino_inexistente:ramal:4>ramal:99', ['ao_nao_atender']],
-      ['destino_inexistente:ramal:4>ramal:98', ['siga_me_lista']],
+      ['membro_inexistente:ramal:4>ramal:98', ['siga_me_lista']],
     ]);
+  });
+
+  it('membro inexistente só deixa de tocar: texto próprio e gravidade alerta', () => {
+    const a = destinosInexistentes(idx);
+    const grave = a.find((x) => x.chave === 'destino_inexistente:ramal:4>ramal:99')!;
+    const membro = a.find((x) => x.chave === 'membro_inexistente:ramal:4>ramal:98')!;
+    expect(grave.gravidade).toBe('grave');
+    expect(grave.texto).toContain('não tem pra onde ir');
+    expect(membro.gravidade).toBe('alerta');
+    expect(membro.texto).toContain('lista como membro ramal:98, que não está no catálogo (pode ter sido apagado); ele não vai tocar');
+    expect(membro.texto).not.toContain('pra onde ir');
+  });
+
+  it('fila e grupo com membro inexistente; o mesmo alvo em membros e em transbordo gera dois achados distintos', () => {
+    const i = indexar(doc({ filas: [fila('1', { membros: ['ramal:9', 'ramal:8'], ao_esgotar: 'ramal:9' })], grupos: [grupo('2', { membros: ['ramal:7'] })] }));
+    const a = destinosInexistentes(i);
+    expect(a.map((x) => [x.chave, x.gravidade, x.campos])).toEqual([
+      ['destino_inexistente:fila:1>ramal:9', 'grave', ['ao_esgotar']],
+      ['membro_inexistente:fila:1>ramal:9', 'alerta', ['membros']],
+      ['membro_inexistente:fila:1>ramal:8', 'alerta', ['membros']],
+      ['membro_inexistente:grupo:2>ramal:7', 'alerta', ['membros']],
+    ]);
+    expect(new Set(a.map((x) => x.chave)).size).toBe(4);
   });
 
   it('ciclo com quem cai nele', () => {

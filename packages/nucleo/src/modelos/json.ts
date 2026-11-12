@@ -38,7 +38,7 @@ function esquemaColuna(c: Coluna): Record<string, unknown> {
     case 'refs':
       return { ...base, type: 'array', items: { type: 'string', pattern: padraoRef(c.refs ?? TIPOS_REF) } };
     case 'hora':
-      return { ...base, type: 'string', pattern: '^([01]\\d|2[0-4]):[0-5]\\d$' };
+      return { ...base, type: 'string', pattern: '^(?:(?:[01]?\\d|2[0-3]):[0-5]\\d|24:00)$' };
     case 'data':
       return { ...base, type: 'string', format: 'date' };
     case 'dias':
