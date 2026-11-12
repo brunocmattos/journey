@@ -10,7 +10,7 @@ Nada aqui conhece React, Next.js ou Supabase. Tudo recebe dados e devolve dados.
 | `src/formato` | O formato `journey/1`: abas, colunas, referências (`fila:90011`), leitura de células e índice |
 | `src/importacao` | Lê `.xlsx`, `.csv` e `.json`; valida; junta com a base anterior; aplica ajustes manuais |
 | `src/modelos` | Gera a planilha modelo `.xlsx`, o exemplo `.json` e o esquema JSON |
-| `src/motor` | Simula uma ligação: relógio, decisões, variáveis, ciclos |
+| `src/motor` | Simula uma ligação: relógio, decisões, variáveis, ciclos, quanto cada ramal e grupo toca |
 | `src/diagnostico` | Encontra becos sem saída, ciclos, redundâncias, buracos de horário e o resto da seção 12 do spec |
 
 ## Comandos
