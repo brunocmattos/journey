@@ -32,7 +32,7 @@ describe('validar', () => {
     const p = problemas(
       doc({
         pecas: [peca('h', 'regra_horario'), peca('f', 'regra_feriado')],
-        saidas: [saida('h', 'sim', 'fim:desliga'), saida('f', 'sim', 'fim:desliga')],
+        saidas: [saida('h', 'sim', 'fim:desliga'), saida('f', 'sim', 'fim:desliga'), saida('g', 'sim', 'fim:desliga')],
       }),
     );
     expect(p.filter((x) => x.gravidade === 'erro').map((x) => x.coluna)).toEqual(['horario', 'calendario']);
@@ -65,5 +65,21 @@ describe('validar', () => {
   it('calendário sem nenhum feriado é aviso', () => {
     const p = problemas(doc({ pecas: [peca('f', 'regra_feriado', { calendario: 'nacional' })], saidas: [saida('f', 'nao', 'fim:desliga')] }));
     expect(p).toEqual([expect.objectContaining({ gravidade: 'aviso', coluna: 'calendario' })]);
+  });
+
+  it('todo problema tem um código de regra estável', () => {
+    const d = doc({
+      entradas: [entrada('e', 'peca:nada')],
+      horarios: [janela('h', ['seg'], '18:00', '08:00')],
+      pecas: [peca('m', 'menu', { nome: 'Principal' }), peca('r', 'regra_horario'), peca('f', 'regra_feriado', { calendario: 'vazio' }), peca('g', 'regra_feriado'), peca('s', 'audio')],
+      saidas: [saida('m', '1', 'fila:1'), { ...saida('m', '1', 'fim:desliga'), id: 'outra' }, saida('r', 'sim', 'fim:desliga'), saida('f', 'sim', 'fim:desliga'), saida('g', 'sim', 'fim:desliga')],
+      filas: [fila('1', { toque_por_membro_s: undefined })],
+    });
+    const p = problemas(d);
+    expect(p.length).toBeGreaterThan(8);
+    expect(p.filter((x) => typeof x.regra !== 'string' || !/^[a-z]+(_[a-z]+)*$/.test(x.regra))).toEqual([]);
+    expect(new Set(p.map((x) => x.regra))).toEqual(
+      new Set(['ref_inexistente', 'janela_invertida', 'menu_sem_tempo', 'menu_sem_esgotou', 'regra_sem_horario', 'regra_sem_calendario', 'calendario_sem_feriado', 'peca_sem_saida', 'saida_repetida', 'fila_sem_toque']),
+    );
   });
 });

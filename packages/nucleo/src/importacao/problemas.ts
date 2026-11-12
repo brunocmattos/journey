@@ -9,6 +9,11 @@ export interface Problema {
   id?: string;
   coluna?: string;
   mensagem: string;
+  /**
+   * Código da regra que gerou o problema (ex.: ref_inexistente, menu_sem_tempo), quando vem da validação do documento.
+   * Não muda com nomes de exibição; serve pra comparar problemas entre a base e o efetivo.
+   */
+  regra?: string;
   /** 'ajuste': o problema vem dos ajustes manuais, não do arquivo da central. */
   origem?: 'ajuste';
 }

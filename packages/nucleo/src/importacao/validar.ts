@@ -4,7 +4,7 @@ import { existe, type Indice } from '../formato/indice';
 import type { Problema } from './problemas';
 
 /**
- * Regras que olham o documento inteiro.
+ * Regras que olham o documento inteiro. Cada problema leva o código da regra (`regra`), estável entre imports.
  * Referência que não existe é aviso: o import continua e o diagnóstico marca o problema.
  */
 export function validar(idx: Indice, linhas: Map<string, number> = new Map()): Problema[] {
@@ -13,7 +13,7 @@ export function validar(idx: Indice, linhas: Map<string, number> = new Map()): P
   const onde = (aba: NomeAba, id: string, coluna?: string) => ({ aba, linha: linhas.get(`${aba}/${id}`), id, coluna });
   const checar = (aba: NomeAba, id: string, coluna: string, ref: string | undefined) => {
     if (ref !== undefined && !existe(idx, ref)) {
-      out.push({ gravidade: 'aviso', ...onde(aba, id, coluna), mensagem: `aponta pra ${ref}, que não existe. O import continua e o diagnóstico vai marcar isso` });
+      out.push({ gravidade: 'aviso', ...onde(aba, id, coluna), mensagem: `aponta pra ${ref}, que não existe. O import continua e o diagnóstico vai marcar isso`, regra: 'ref_inexistente' });
     }
   };
 
@@ -34,14 +34,14 @@ export function validar(idx: Indice, linhas: Map<string, number> = new Map()): P
     for (const m of g.membros ?? []) checar('grupos', g.id, 'membros', m);
   }
   for (const p of doc.pecas) {
-    if (p.tipo === 'regra_horario' && !p.horario) out.push({ gravidade: 'erro', ...onde('pecas', p.id, 'horario'), mensagem: 'regra de horário sem a coluna horario' });
-    if (p.tipo === 'regra_feriado' && !p.calendario) out.push({ gravidade: 'erro', ...onde('pecas', p.id, 'calendario'), mensagem: 'regra de feriado sem a coluna calendario' });
+    if (p.tipo === 'regra_horario' && !p.horario) out.push({ gravidade: 'erro', ...onde('pecas', p.id, 'horario'), mensagem: 'regra de horário sem a coluna horario', regra: 'regra_sem_horario' });
+    if (p.tipo === 'regra_feriado' && !p.calendario) out.push({ gravidade: 'erro', ...onde('pecas', p.id, 'calendario'), mensagem: 'regra de feriado sem a coluna calendario', regra: 'regra_sem_calendario' });
     checar('pecas', p.id, 'horario', p.horario);
     if (p.calendario && !idx.feriados.has(p.calendario)) {
-      out.push({ gravidade: 'aviso', ...onde('pecas', p.id, 'calendario'), mensagem: `o calendário "${p.calendario}" não tem nenhum feriado na aba feriados` });
+      out.push({ gravidade: 'aviso', ...onde('pecas', p.id, 'calendario'), mensagem: `o calendário "${p.calendario}" não tem nenhum feriado na aba feriados`, regra: 'calendario_sem_feriado' });
     }
     if (p.tipo !== 'fim' && !(idx.saidasDe.get(p.id)?.length)) {
-      out.push({ gravidade: 'aviso', ...onde('pecas', p.id), mensagem: `a peça "${p.nome ?? p.id}" não tem nenhuma saída` });
+      out.push({ gravidade: 'aviso', ...onde('pecas', p.id), mensagem: `a peça "${p.nome ?? p.id}" não tem nenhuma saída`, regra: 'peca_sem_saida' });
     }
   }
   const combinacoes = new Map<string, string>();
@@ -50,12 +50,12 @@ export function validar(idx: Indice, linhas: Map<string, number> = new Map()): P
     checar('saidas', s.id, 'para', s.para);
     const chave = `${s.de}|${s.opcao}|${s.quando ? `${s.quando.chave}=${s.quando.valor}` : ''}`;
     const outra = combinacoes.get(chave);
-    if (outra) out.push({ gravidade: 'erro', ...onde('saidas', s.id, 'opcao'), mensagem: `a opção "${s.opcao}" de ${s.de} já existe na saída ${outra}` });
+    if (outra) out.push({ gravidade: 'erro', ...onde('saidas', s.id, 'opcao'), mensagem: `a opção "${s.opcao}" de ${s.de} já existe na saída ${outra}`, regra: 'saida_repetida' });
     else combinacoes.set(chave, s.id);
   }
   for (const h of doc.horarios) {
-    if (h.fim <= h.inicio) out.push({ gravidade: 'erro', ...onde('horarios', h.id, 'fim'), mensagem: `a janela termina (${h.fim}) antes de começar (${h.inicio})` });
+    if (h.fim <= h.inicio) out.push({ gravidade: 'erro', ...onde('horarios', h.id, 'fim'), mensagem: `a janela termina (${h.fim}) antes de começar (${h.inicio})`, regra: 'janela_invertida' });
   }
-  for (const p of completude(idx)) out.push({ gravidade: 'aviso', ...onde(p.aba, p.id), mensagem: p.mensagem });
+  for (const p of completude(idx)) out.push({ gravidade: 'aviso', ...onde(p.aba, p.id), mensagem: p.mensagem, regra: p.regra });
   return out;
 }

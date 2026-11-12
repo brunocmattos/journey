@@ -141,6 +141,24 @@ describe('lerArquivos', () => {
       expect(r.tabelas.filas![0]!.valores).toEqual({ id: '1', observacao: 'nota' });
     });
 
+    it('dois cabeçalhos que viram a mesma coluna: avisa com os dois nomes e vale o último', async () => {
+      const r = await lerArquivos([{ nome: 'filas.csv', conteudo: 'id;Observação;estrategia;observacao\n1;primeira;ringall;segunda' }]);
+      expect(r.tabelas.filas).toEqual([{ linha: 2, valores: { id: '1', observacao: 'segunda', estrategia: 'ringall' } }]);
+      expect(r.problemas).toEqual([
+        expect.objectContaining({ gravidade: 'aviso', aba: 'filas', linha: 1, coluna: 'observacao', mensagem: expect.stringMatching(/"Observação" e "observacao".*vale o último, "observacao"/) }),
+      ]);
+    });
+
+    it('xlsx: a mesma checagem de cabeçalho repetido', async () => {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('filas');
+      ws.addRow(['id', 'NOME', 'nome']);
+      ws.addRow(['1', 'a', 'b']);
+      const r = await lerArquivos([{ nome: 'c.xlsx', conteudo: new Uint8Array(await wb.xlsx.writeBuffer()) }]);
+      expect(r.tabelas.filas![0]!.valores.nome).toBe('b');
+      expect(r.problemas).toEqual([expect.objectContaining({ gravidade: 'aviso', aba: 'filas', coluna: 'nome', mensagem: expect.stringContaining('"NOME" e "nome"') })]);
+    });
+
     it('cabeçalho "__proto__" não some: fica como coluna desconhecida', async () => {
       const r = await lerArquivos([{ nome: 'filas.csv', conteudo: 'id;__proto__\n1;x' }]);
       expect(Object.keys(r.tabelas.filas![0]!.valores)).toEqual(['id', '__proto__']);

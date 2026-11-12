@@ -30,9 +30,30 @@ const ehAba = (nome: string): nome is NomeAba => (NOMES_ABAS as readonly string[
 const paraTexto = (c: Uint8Array | string) => (typeof c === 'string' ? c : new TextDecoder('utf-8').decode(c));
 const paraBytes = (c: Uint8Array | string) => (typeof c === 'string' ? new TextEncoder().encode(c) : c);
 
-/** Matriz [cabeçalho, ...linhas] → linhas brutas. Pula linhas totalmente vazias. */
-export function linhasDeMatriz(matriz: string[][]): LinhaBruta[] {
-  const cabecalho = (matriz[0] ?? []).map(normalizar);
+const juntarNomes = (nomes: string[]) => (nomes.length <= 1 ? nomes.join('') : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`);
+
+/**
+ * Matriz [cabeçalho, ...linhas] → linhas brutas. Pula linhas totalmente vazias.
+ * Cabeçalhos que viram a mesma coluna (ex.: "Observação" e "observacao") geram um aviso; vale o último.
+ */
+function linhasDeMatriz(aba: NomeAba, matriz: string[][], problemas: Problema[]): LinhaBruta[] {
+  const originais = matriz[0] ?? [];
+  const cabecalho = originais.map(normalizar);
+  const porColuna = new Map<string, string[]>();
+  cabecalho.forEach((nome, j) => {
+    if (nome) porColuna.set(nome, [...(porColuna.get(nome) ?? []), originais[j]!]);
+  });
+  for (const [coluna, nomes] of porColuna) {
+    if (nomes.length < 2) continue;
+    const citados = nomes.map((n) => `"${n}"`);
+    problemas.push({
+      gravidade: 'aviso',
+      aba,
+      linha: 1,
+      coluna,
+      mensagem: `os cabeçalhos ${juntarNomes(citados)} são a mesma coluna (${coluna}); vale o último, ${citados[citados.length - 1]}, e os outros são ignorados`,
+    });
+  }
   const out: LinhaBruta[] = [];
   for (let i = 1; i < matriz.length; i++) {
     const celulas = matriz[i] ?? [];
@@ -62,7 +83,7 @@ function textoDaCelula(valor: ExcelJS.CellValue): string {
   return String(valor);
 }
 
-async function lerXlsx(bytes: Uint8Array): Promise<[NomeAba, LinhaBruta[]][]> {
+async function lerXlsx(bytes: Uint8Array, problemas: Problema[]): Promise<[NomeAba, LinhaBruta[]][]> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   const out: [NomeAba, LinhaBruta[]][] = [];
@@ -77,7 +98,7 @@ async function lerXlsx(bytes: Uint8Array): Promise<[NomeAba, LinhaBruta[]][]> {
       for (let j = 1; j <= Math.min(row.cellCount, largura); j++) celulas.push(textoDaCelula(row.getCell(j).value));
       matriz[n - 1] = celulas;
     });
-    out.push([aba, linhasDeMatriz(Array.from({ length: matriz.length }, (_, i) => matriz[i] ?? []))]);
+    out.push([aba, linhasDeMatriz(aba, Array.from({ length: matriz.length }, (_, i) => matriz[i] ?? []), problemas)]);
   });
   return out;
 }
@@ -136,7 +157,7 @@ export async function lerArquivos(arquivos: ArquivoEntrada[]): Promise<{ tabelas
     if (ext === 'xlsx') {
       let abas: [NomeAba, LinhaBruta[]][];
       try {
-        abas = await lerXlsx(paraBytes(arquivo.conteudo));
+        abas = await lerXlsx(paraBytes(arquivo.conteudo), problemas);
       } catch {
         problemas.push({ gravidade: 'erro', mensagem: `"${arquivo.nome}" não é uma planilha .xlsx válida` });
         continue;
@@ -147,7 +168,7 @@ export async function lerArquivos(arquivos: ArquivoEntrada[]): Promise<{ tabelas
         problemas.push({ gravidade: 'erro', mensagem: `o arquivo ${arquivo.nome} não corresponde a nenhuma aba. Use um destes nomes: ${NOMES_ABAS.map((a) => `${a}.csv`).join(', ')}` });
         continue;
       }
-      guardar(base, linhasDeMatriz(lerCsv(paraTexto(arquivo.conteudo))), arquivo.nome);
+      guardar(base, linhasDeMatriz(base, lerCsv(paraTexto(arquivo.conteudo)), problemas), arquivo.nome);
     } else if (ext === 'json') {
       for (const [aba, linhas] of lerJson(arquivo, problemas)) guardar(aba, linhas, arquivo.nome);
     } else {

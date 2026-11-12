@@ -16,6 +16,7 @@ describe('importar', () => {
     );
     expect(r.problemas).toEqual([]);
     expect(r.ok).toBe(true);
+    expect(r.okEfetivo).toBe(true);
     expect(r.base.filas[0]!.espera_maxima_s).toBeUndefined();
     expect(r.efetivo.filas[0]!.espera_maxima_s).toBe(120);
     expect(r.diferencas.novos).toHaveLength(5);
@@ -24,6 +25,7 @@ describe('importar', () => {
   it('não fica ok quando há erro', async () => {
     const r = await importar([csv('filas.csv', 'id;estrategia', '100;fila-boba')]);
     expect(r.ok).toBe(false);
+    expect(r.okEfetivo).toBe(false);
   });
 
   it('sem nenhuma aba reconhecida é erro', async () => {
@@ -154,6 +156,47 @@ describe('importar', () => {
       const r = await importar(arquivos(), { ajustes: [{ tipo: 'criar', aba: 'saidas', linha: { id: 'manual-s', de: 'peca:menu', opcao: '1', para: 'fim:desliga' } }] });
       expect(r.ok).toBe(true);
       expect(r.problemas.filter((p) => p.gravidade === 'erro')).toEqual([expect.objectContaining({ aba: 'saidas', id: 'manual-s', origem: 'ajuste' })]);
+      expect(r.okEfetivo).toBe(false);
+    });
+
+    it('okEfetivo: ajuste que apaga o horario de uma regra_horario trava o documento efetivo, não a central', async () => {
+      const r = await importar(
+        [
+          csv('entradas.csv', 'id;numero;destino', 'e1;5130000001;peca:h'),
+          csv('horarios.csv', 'id;grupo;dias;inicio;fim', 'h1;comercial;seg-sex;08:00;18:00'),
+          csv('pecas.csv', 'id;tipo;horario', 'h;regra_horario;horario:comercial'),
+          csv('saidas.csv', 'id;de;opcao;para', 's1;peca:h;sim;fim:atendido', 's2;peca:h;nao;fim:desliga'),
+        ],
+        { ajustes: [{ tipo: 'campo', aba: 'pecas', id: 'h', campo: 'horario', valor: undefined }] },
+      );
+      expect(r.ok).toBe(true);
+      expect(r.okEfetivo).toBe(false);
+      expect(r.problemas.filter((p) => p.gravidade === 'erro')).toEqual([expect.objectContaining({ aba: 'pecas', id: 'h', coluna: 'horario', origem: 'ajuste' })]);
+    });
+
+    it('renomear um item por ajuste não repete o aviso que a central já tem', async () => {
+      const r = await importar(
+        [
+          csv('entradas.csv', 'id;numero;destino', 'e1;5130000001;peca:menu'),
+          csv('pecas.csv', 'id;tipo;nome', 'menu;menu;Principal'),
+          csv('saidas.csv', 'id;de;opcao;para', 's1;peca:menu;1;fim:atendido', 's2;peca:menu;esgotou;fim:desliga'),
+        ],
+        { ajustes: [{ tipo: 'campo', aba: 'pecas', id: 'menu', campo: 'nome', valor: 'Menu de entrada' }] },
+      );
+      const semTempo = r.problemas.filter((p) => p.regra === 'menu_sem_tempo');
+      expect(semTempo).toEqual([expect.objectContaining({ gravidade: 'aviso', aba: 'pecas', id: 'menu' })]);
+      expect(semTempo[0]!.origem).toBeUndefined();
+    });
+
+    it('referência inexistente nova numa coluna de lista aparece, mesmo com outra já avisada na mesma coluna', async () => {
+      const r = await importar([csv('filas.csv', 'id;estrategia;toque_por_membro_s;membros', '100;rrmemory;15;ramal:9')], {
+        ajustes: [{ tipo: 'campo', aba: 'filas', id: '100', campo: 'membros', valor: 'ramal:9 ramal:8' }],
+      });
+      const membros = r.problemas.filter((p) => p.coluna === 'membros');
+      expect(membros.map((p) => [p.mensagem.includes('ramal:9') ? 'ramal:9' : 'ramal:8', p.origem])).toEqual([
+        ['ramal:9', undefined],
+        ['ramal:8', 'ajuste'],
+      ]);
     });
   });
 });

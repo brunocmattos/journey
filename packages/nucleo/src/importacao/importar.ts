@@ -17,6 +17,8 @@ export interface OpcoesImport {
 export interface ResultadoImport {
   /** O arquivo da central entrou sem nenhum erro: pode confirmar. Problemas de origem 'ajuste' não contam. */
   ok: boolean;
+  /** O documento efetivo (central mais ajustes) não tem nenhum erro, contando os de origem 'ajuste'. false: os ajustes travam o efetivo. */
+  okEfetivo: boolean;
   problemas: Problema[];
   /** Nova base: o que a central diz. */
   base: Documento;
@@ -47,6 +49,7 @@ export async function importar(arquivos: ArquivoEntrada[], opcoes: OpcoesImport 
   problemas.push(...problemasNovos(validar(indexar(ajustados.efetivo), analise.linhas), daBase));
   return {
     ok,
+    okEfetivo: !problemas.some((p) => p.gravidade === 'erro'),
     problemas,
     base,
     efetivo: ajustados.efetivo,
@@ -79,9 +82,14 @@ function problemaDoInvalido({ ajuste, coluna, mensagem }: AjusteInvalido): Probl
   };
 }
 
-/** Problemas do efetivo que a base não tem: vieram dos ajustes. */
+/**
+ * Problemas do efetivo que a base não tem: vieram dos ajustes.
+ * Compara pela regra, não pelo texto: renomear um item por ajuste muda a mensagem, não o problema.
+ * Na referência inexistente, o alvo também conta (numa lista, cada alvo é um problema); a mensagem dela só tem a referência, sem nome de exibição.
+ */
 function problemasNovos(doEfetivo: Problema[], daBase: Problema[]): Problema[] {
-  const chave = (p: Problema) => JSON.stringify([p.gravidade, p.aba, p.id, p.coluna, p.mensagem]);
+  const chave = (p: Problema) =>
+    JSON.stringify([p.gravidade, p.aba, p.id, p.coluna, p.regra === undefined || p.regra === 'ref_inexistente' ? p.mensagem : p.regra]);
   const vistos = new Set(daBase.map(chave));
   const out: Problema[] = [];
   for (const p of doEfetivo) {
