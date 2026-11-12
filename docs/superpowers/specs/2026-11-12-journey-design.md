@@ -83,11 +83,13 @@ Mais pra frente, o mesmo desenho vira o pipeline que **executa** de verdade (URA
 
 Regras de fronteira:
 
+- **O esquema não usa biblioteca:** as colunas de `formato/abas.ts` geram a leitura das células, a validação, a planilha modelo e o esquema JSON.
+
 - **Os pacotes internos não conhecem React, Next.js nem Supabase.** Recebem dados e devolvem dados. Isso deixa o motor pronto pra rodar no servidor quando vier a execução real, e deixa tudo testável sem tela.
 - **`formato` é a única definição do modelo.** Validação do import, tipos do app, modelo `.xlsx` e esquema JSON saem dela. Nada é escrito duas vezes.
 - **A tela nunca grava direto nas tabelas do catálogo.** Toda mudança passa por import ou por ajuste.
 
-Bibliotecas previstas: Next.js (App Router), `@xyflow/react` (React Flow), `@supabase/supabase-js`, Zod (esquema), ExcelJS (ler e gerar `.xlsx` com listas de valores), um leitor de XML (`fast-xml-parser`) e `pako` (diagramas compactados do draw.io), Vitest e Playwright.
+Bibliotecas previstas: Next.js (App Router), `@xyflow/react` (React Flow), `@supabase/supabase-js`, ExcelJS (ler e gerar `.xlsx` com listas de valores), um leitor de XML (`fast-xml-parser`) e `pako` (diagramas compactados do draw.io), Vitest e Playwright.
 
 ## 7. Dados
 
@@ -142,16 +144,17 @@ Toda aba tem `id` (obrigatório, único na aba, estável entre imports) e `obser
 | `id` | sim | `did-5133279001` |
 | `numero` | sim | `5133279001` |
 | `nome` | não | `Comercial 9001` |
-| `canal` | sim | `telefonia` |
+| `canal` | não (padrão `telefonia`) | `telefonia` |
 | `destino` | sim | `peca:tc-3` (regra de feriado) |
 | `ativo` | não (padrão `sim`) | `sim` |
 
-**`horarios`**: um grupo de horário pode ter várias linhas (uma por janela).
+**`horarios`**: cada linha é uma janela. Várias janelas com o mesmo `grupo` formam um grupo de horário.
 | Coluna | Obrigatória | Exemplo |
 |---|---|---|
-| `id` | sim | `tg2` |
+| `id` | sim | `tg2-sabado` (a janela) |
+| `grupo` | sim | `tg2` (o que as peças usam: `horario:tg2`) |
 | `nome` | não | `Horário estendido` |
-| `dias` | sim | `sab` ou `seg ter qua qui sex` |
+| `dias` | sim | `sab`, `seg ter qua qui sex` ou `seg-sex` |
 | `inicio`, `fim` | sim | `17:00`, `18:00` |
 
 **`feriados`**
@@ -173,6 +176,7 @@ Toda aba tem `id` (obrigatório, único na aba, estável entre imports) e `obser
 | `siga_me_so_ramal_s`, `siga_me_com_lista_s` | não | `7`, `20` |
 | `siga_me_lista` | não | `ramal:9020 externo:celular` |
 | `ao_nao_atender`, `ao_ocupado`, `ao_indisponivel` | não | `ramal:9507`, `fila:97775` |
+| `transbordo_anti_loop` | não (padrão `nao`) | `sim` quando o transbordo não volta pra fila de onde a ligação veio |
 
 **`filas`** e **`grupos`**
 | Coluna | Obrigatória | Exemplo |
@@ -180,7 +184,7 @@ Toda aba tem `id` (obrigatório, único na aba, estável entre imports) e `obser
 | `id` | sim | `90011` |
 | `nome` | não | `URA-Aluguéis` |
 | `estrategia` | sim | `rrmemory`, `ringall`, `linear` |
-| `toque_por_membro_s` (filas) ou `toque_s` (grupos) | sim | `15` |
+| `toque_por_membro_s` (filas) ou `toque_s` (grupos) | não (sem ele, a fila fica incompleta) | `15` |
 | `espera_maxima_s` (só filas) | não (vazio = sem limite) | `180` |
 | `ao_esgotar` | não | `fila:90012`, `fim:desliga` |
 | `membros` | não | `ramal:9013 ramal:9024` |
@@ -199,6 +203,7 @@ Toda aba tem `id` (obrigatório, único na aba, estável entre imports) e `obser
 | `texto` | não | fala do áudio |
 | `duracao_s` | não | `12` |
 | `guarda_variavel` | não | `tipo` |
+| `canal` | não | `email` (a jornada segue nesse canal a partir desta peça) |
 | `id_central` | não | `wf2 fase 16` |
 | `ativo` | não | `nao` (nó marcado como inativo na central) |
 
@@ -221,14 +226,18 @@ Toda aba tem `id` (obrigatório, único na aba, estável entre imports) e `obser
 ### 8.3 Regras de validação
 
 **Erros (bloqueiam o import):**
-- `id` repetido na aba;
-- referência que não existe no arquivo nem no catálogo atual;
+- `id` repetido na aba, ou com caractere fora de letras, números, ponto, hífen e sublinhado;
+- referência mal escrita, ou de um tipo que a coluna não aceita;
+- campo obrigatório vazio, ou coluna obrigatória ausente;
 - `tipo` ou `opcao` fora da lista;
 - hora ou data inválida;
 - `regra_horario` sem `horario`;
 - duas saídas iguais (mesmo `de`, mesma `opcao`, mesmo `quando`).
 
 **Avisos (não bloqueiam; a peça entra como incompleta):**
+- referência bem escrita que aponta pra algo que não existe. Dado real tem isso (ramal apagado, fase removida), e bloquear o import esconderia o problema; o diagnóstico marca como grave;
+- coluna desconhecida (é ignorada);
+- calendário sem nenhum feriado;
 - menu sem `espera_s` ou `tentativas`;
 - fila sem `toque_por_membro_s`;
 - peça sem nenhuma saída e que não é `fim`;
@@ -362,14 +371,14 @@ A cada versão salva, no servidor, com o resultado guardado na versão. Na tela,
 | Ciclo de transbordo | grave | cadeia de `ao_nao_atender` que volta a um ramal já visitado |
 | Volta sem limite | alerta | atalho de retorno pra um menu anterior sem contador |
 | Redundância | alerta | duas ou mais opções do mesmo menu terminam no mesmo destino (ignora menus com `guarda_variavel`) |
-| Peça sem entrada | alerta | não alcançável a partir de nenhuma entrada |
+| Sem entrada | alerta | peça, fila ou grupo que nenhuma entrada alcança |
 | Nó inativo | alerta | saída ou peça com `ativo = nao` no caminho |
 | Volta pra própria fila | alerta | ramal transborda pra fila da qual é membro |
 | Grupo que desliga | alerta | grupo com `ao_esgotar = fim:desliga` |
 | Buraco no horário | observação | janela menor que 60 min sem atendimento entre duas janelas com atendimento |
 | Espera sem limite | observação | fila sem `espera_maxima_s` |
 | Plano B que não dispara | observação | fila com `ao_esgotar` e sem `espera_maxima_s` |
-| Peça incompleta | observação | avisos da validação que continuam abertos |
+| Dado incompleto | observação | menu sem `espera_s` ou `tentativas`, menu sem saída `esgotou`, fila sem `toque_por_membro_s` |
 
 ### 12.3 Achados que precisam aparecer com a central real
 
@@ -377,7 +386,7 @@ Servem de teste de aceitação (critério 2):
 
 1. Fase 29 apagada, alcançada pelos menus Aluguéis, Condomínios e Estendido ao esgotar.
 2. 25 ramais em ciclo, incluindo 9019 ↔ 9507.
-3. 24 ramais transbordando pra ramal fora da lista.
+3. 24 ramais transbordando pra ramal fora da lista exportada. A confirmar: o export de 11/11 só traz os 180 ramais com transbordo configurado, então parte desses destinos pode existir (ver seção 16).
 4. Emergência POA: teclas 1 e 2 na fila 99951. Fila 99950 sem entrada.
 5. Seg–sex 16h55–17h sem atendimento.
 6. Menu principal: 4, 5 e "não digitar" na 90015. Submenu Aluguéis: 3, 4 e 6 na 90011. Menu NS: tudo na 90019.
@@ -444,7 +453,11 @@ Entregável da primeira versão: uma pasta `extracao/freepbx-ura/` com um README
 | `.45` URA (`c0446_omn_apiapp`): fases vivas de cada fluxo `888x`, com tipo, espera, tentativas, ligações entre fases e destino de esgotou | `pecas`, `saidas` |
 | `.47` monitor: quem logou em cada fila nos últimos 30 dias | `filas.membros_dinamicos` e observação |
 
-O roteiro também precisa trazer o que o export de 11/11 não trouxe. A lista do que faltou está pendente (seção 18).
+O roteiro também precisa trazer o que o export de 11/11 não trouxe:
+
+- **Todos os ramais da central**, inclusive os sem transbordo configurado. O export de 11/11 só tem os 180 com transbordo; por isso 96 números diretos, 29 membros de fila e 24 transbordos apontam pra ramais "fora da lista", e o diagnóstico não consegue dizer se eles existem.
+- O calendário de feriados da central.
+- A lista do que faltou, que está pendente (seção 18).
 
 ## 17. Testes
 
@@ -471,6 +484,7 @@ O roteiro também precisa trazer o que o export de 11/11 não trouxe. A lista do
 | IDs da central mudam quando alguém recria uma fase | Ajustes viram órfãos e aparecem na revisão; dá pra reapontar |
 | React Flow com cara de encanamento | Arestas e peças customizadas desde o primeiro dia; o protótipo serve de referência visual |
 | Calendário real de feriados | Entra pelo roteiro de extração (aba `feriados`); até lá, a simulação avisa que usa feriados nacionais e do RS |
+| Export sem todos os ramais | O diagnóstico marca "destino inexistente" pra ramais que só não vieram no arquivo; a extração (etapa 6) precisa exportar todos |
 | Nomes de colegas no app | Esconder nomes ligado por padrão nos links; dentro do app só membros da empresa veem |
 | Tempo de áudio e espera em fila não vêm da central | Colunas opcionais; quando vazias, a simulação marca o tempo como exemplo |
 
