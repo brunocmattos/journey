@@ -10,7 +10,7 @@ import type { Problema } from './problemas';
 export function validar(idx: Indice, linhas: Map<string, number> = new Map()): Problema[] {
   const out: Problema[] = [];
   const doc = idx.doc;
-  const onde = (aba: NomeAba, id: string, coluna?: string) => ({ aba, linha: linhas.get(`${aba}/${id}`), coluna });
+  const onde = (aba: NomeAba, id: string, coluna?: string) => ({ aba, linha: linhas.get(`${aba}/${id}`), id, coluna });
   const checar = (aba: NomeAba, id: string, coluna: string, ref: string | undefined) => {
     if (ref !== undefined && !existe(idx, ref)) {
       out.push({ gravidade: 'aviso', ...onde(aba, id, coluna), mensagem: `aponta pra ${ref}, que não existe. O import continua e o diagnóstico vai marcar isso` });

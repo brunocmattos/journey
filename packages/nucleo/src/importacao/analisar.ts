@@ -43,24 +43,13 @@ export function analisar(tabelas: Tabelas): Analise {
 
     const vistos = new Map<string, number>();
     for (const bruta of brutas) {
-      const item: Record<string, unknown> = {};
-      for (const c of spec.colunas) {
-        if (faltando.has(c.nome)) continue;
-        const r = lerCelula(c, bruta.valores[c.nome]);
-        if (r === null) {
-          if (c.obrigatoria) problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, coluna: c.nome, mensagem: 'campo obrigatório vazio' });
-          continue;
-        }
-        if (!r.ok) {
-          problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, coluna: c.nome, mensagem: r.erro });
-          continue;
-        }
-        item[c.nome] = r.valor;
-      }
+      const { item, falhas } = lerLinha(aba, bruta.valores, faltando);
+      for (const f of falhas) problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, ...f });
       const id = item.id as string | undefined;
       if (id === undefined) continue;
-      if (!PADRAO_ID.test(id)) {
-        problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, coluna: 'id', mensagem: `o id "${id}" tem caracteres inválidos. Use letras, números, ponto, hífen ou sublinhado` });
+      const erroId = erroDeId(id);
+      if (erroId) {
+        problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, coluna: 'id', mensagem: erroId });
         continue;
       }
       const anterior = vistos.get(id);
@@ -74,4 +63,43 @@ export function analisar(tabelas: Tabelas): Analise {
     }
   }
   return { documento, problemas, presentes, linhas };
+}
+
+export const MSG_OBRIGATORIO_VAZIO = 'campo obrigatório vazio';
+
+export interface FalhaCelula {
+  coluna: string;
+  mensagem: string;
+}
+
+/**
+ * Lê uma linha coluna por coluna, pela regra do import: célula vazia pega o padrão da coluna,
+ * e obrigatória sem padrão vazia é falha. Colunas em `pular` ficam de fora.
+ */
+export function lerLinha(
+  aba: NomeAba,
+  valores: Readonly<Record<string, string | undefined>>,
+  pular: ReadonlySet<string> = new Set(),
+): { item: Record<string, unknown>; falhas: FalhaCelula[] } {
+  const item: Record<string, unknown> = {};
+  const falhas: FalhaCelula[] = [];
+  for (const c of ABAS[aba].colunas) {
+    if (pular.has(c.nome)) continue;
+    const r = lerCelula(c, Object.hasOwn(valores, c.nome) ? valores[c.nome] : undefined);
+    if (r === null) {
+      if (c.obrigatoria) falhas.push({ coluna: c.nome, mensagem: MSG_OBRIGATORIO_VAZIO });
+      continue;
+    }
+    if (!r.ok) {
+      falhas.push({ coluna: c.nome, mensagem: r.erro });
+      continue;
+    }
+    item[c.nome] = r.valor;
+  }
+  return { item, falhas };
+}
+
+/** Mensagem quando o id tem caracteres que não podem; undefined quando o id é válido. */
+export function erroDeId(id: string): string | undefined {
+  return PADRAO_ID.test(id) ? undefined : `o id "${id}" tem caracteres inválidos. Use letras, números, ponto, hífen ou sublinhado`;
 }

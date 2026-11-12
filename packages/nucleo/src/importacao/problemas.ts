@@ -5,12 +5,17 @@ export interface Problema {
   gravidade: 'erro' | 'aviso';
   aba?: NomeAba;
   linha?: number;
+  /** Id do item, quando o problema é de um item só. */
+  id?: string;
   coluna?: string;
   mensagem: string;
+  /** 'ajuste': o problema vem dos ajustes manuais, não do arquivo da central. */
+  origem?: 'ajuste';
 }
 
-/** "saidas, linha 14, coluna para: …" */
+/** "saidas, linha 14, coluna para: …". Sem linha (item criado à mão), mostra o id. */
 export function descrever(p: Problema): string {
-  const onde = [p.aba, p.linha !== undefined ? `linha ${p.linha}` : undefined, p.coluna ? `coluna ${p.coluna}` : undefined].filter(Boolean).join(', ');
+  const item = p.linha !== undefined ? `linha ${p.linha}` : p.id;
+  const onde = [p.aba, item, p.coluna ? `coluna ${p.coluna}` : undefined].filter(Boolean).join(', ');
   return onde ? `${onde}: ${p.mensagem}` : p.mensagem;
 }
