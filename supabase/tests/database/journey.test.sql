@@ -1,7 +1,7 @@
 -- Regras de acesso e funções do Journey. Roda com: npx supabase test db
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(51);
+select plan(57);
 
 -- Duas pessoas, cada uma na sua empresa, mais o Caio (convidado) e o Davi (e-mail ainda não confirmado).
 insert into auth.users (id, email, aud, role, email_confirmed_at) values
@@ -11,9 +11,16 @@ insert into auth.users (id, email, aud, role, email_confirmed_at) values
   ('00000000-0000-0000-0000-00000000000d', 'davi@exemplo.com', 'authenticated', 'authenticated', null);
 
 select is((select file_size_limit from storage.buckets where id = 'imports'), 20971520::bigint, 'o bucket de imports aceita até 20 MB por arquivo');
+select is((select allowed_mime_types from storage.buckets where id = 'imports'), array['application/octet-stream'], 'e só como octet-stream');
 
 create function pg_temp.entrar(p_id uuid, p_email text) returns void language sql as $$
   select set_config('request.jwt.claims', json_build_object('sub', p_id, 'email', p_email, 'role', 'authenticated')::text, true);
+$$;
+
+-- O menor documento journey/1 que o confirmar_import aceita.
+select set_config('teste.doc', '{"formato":"journey/1","entradas":[],"horarios":[],"feriados":[],"ramais":[],"filas":[],"grupos":[],"pecas":[],"saidas":[]}', true);
+create function pg_temp.jornadas(p_doc jsonb, p_nome text default 'Telefonia') returns jsonb language sql as $$
+  select jsonb_build_array(jsonb_build_object('nome', p_nome, 'canal', 'telefonia', 'documento', p_doc, 'diagnostico', '[]'::jsonb, 'refs', '[]'::jsonb));
 $$;
 
 set local role authenticated;
@@ -61,7 +68,8 @@ select throws_ok(
   '42501', null, 'a tela não grava direto no catálogo');
 select lives_ok(
   $$ select public.confirmar_import('10000000-0000-0000-0000-000000000001',
-       '[{"nome":"Telefonia","canal":"telefonia","documento":{"formato":"journey/1"},"diagnostico":[],"refs":["entrada:e1","fila:f1","ramal:r1"]}]') $$,
+       jsonb_build_array(jsonb_build_object('nome', 'Telefonia', 'canal', 'telefonia', 'documento', current_setting('teste.doc')::jsonb,
+         'diagnostico', '[]'::jsonb, 'refs', '["entrada:e1","fila:f1","ramal:r1"]'::jsonb))) $$,
   'membro confirma o import');
 select is((select count(*)::int from public.catalogo), 3, 'o catálogo tem a entrada, o ramal e a fila');
 select is((select membro from public.catalogo_membros), 'ramal:r1', 'os membros da fila vão pra tabela própria');
@@ -111,8 +119,25 @@ select throws_ok(
   '22023', null, 'confirmar sem a lista de jornadas não vale');
 select throws_ok(
   $$ select public.confirmar_import('10000000-0000-0000-0000-000000000003',
-       '[{"nome":"Telefonia","canal":"telefonia","documento":{}},{"nome":"Telefonia","canal":"telefonia","documento":{}}]') $$,
-  '22023', null, 'nem com nome de jornada repetido');
+       pg_temp.jornadas(current_setting('teste.doc')::jsonb) || pg_temp.jornadas(current_setting('teste.doc')::jsonb)) $$,
+  '22023', 'p_jornadas tem nome de jornada repetido', 'nem com nome de jornada repetido');
+select throws_ok(
+  $$ select public.confirmar_import('10000000-0000-0000-0000-000000000003',
+       pg_temp.jornadas(current_setting('teste.doc')::jsonb || '{"formato":"journey/2"}')) $$,
+  '22023', 'p_jornadas tem documento que não é journey/1', 'nem com documento de outro formato');
+select throws_ok(
+  $$ select public.confirmar_import('10000000-0000-0000-0000-000000000003',
+       pg_temp.jornadas(current_setting('teste.doc')::jsonb - 'saidas')) $$,
+  '22023', null, 'nem com documento sem uma das listas');
+select throws_ok(
+  $$ select public.confirmar_import('10000000-0000-0000-0000-000000000003',
+       pg_temp.jornadas(current_setting('teste.doc')::jsonb || '{"pecas":{}}')) $$,
+  '22023', null, 'nem com lista que não é lista');
+select throws_ok(
+  $$ select public.confirmar_import('10000000-0000-0000-0000-000000000003',
+       pg_temp.jornadas(current_setting('teste.doc')::jsonb) || pg_temp.jornadas('"journey/1"', 'WhatsApp')) $$,
+  '22023', null, 'nem com documento que não é objeto, mesmo numa jornada só de várias');
+select is((select status from public.imports where id = '10000000-0000-0000-0000-000000000003'), 'revisao', 'e o import recusado continua em revisão');
 select throws_ok(
   $$ update public.imports set empresa_id = current_setting('teste.empresa_b')::uuid $$,
   '42501', null, 'o rascunho não muda de empresa');

@@ -53,7 +53,8 @@ export async function analisarImport(empresaId: string, _antes: EstadoImport, fo
   const caminhos = await Promise.all(
     arquivos.map(async (f, i) => {
       const caminho = `${empresaId}/${ins.data.id}/${String(i + 1).padStart(2, '0')}-${f.name.replace(/[^\w.-]+/g, '_')}`;
-      const up = await supabase.storage.from('imports').upload(caminho, lidos[i]!.conteudo, { contentType: f.type || 'application/octet-stream' });
+      // Sempre octet-stream (o bucket só aceita esse): o arquivo nunca volta como página que o navegador roda.
+      const up = await supabase.storage.from('imports').upload(caminho, lidos[i]!.conteudo, { contentType: 'application/octet-stream' });
       return up.error ? null : caminho;
     }),
   );

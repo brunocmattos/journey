@@ -248,6 +248,17 @@ begin
   if exists (select 1 from jsonb_array_elements(p_jornadas) j group by j ->> 'nome' having count(*) > 1) then
     raise exception 'p_jornadas tem nome de jornada repetido' using errcode = '22023';
   end if;
+  -- O documento vai direto pra versão e a tela lê como journey/1: com outra forma, a jornada não abre.
+  -- Só a forma (formato e as 8 listas); o conteúdo de cada lista é do app.
+  if exists (
+    select 1 from jsonb_array_elements(p_jornadas) j
+    where j -> 'documento' ->> 'formato' is distinct from 'journey/1'
+       or exists (
+         select 1 from unnest(array['entradas', 'horarios', 'feriados', 'ramais', 'filas', 'grupos', 'pecas', 'saidas']) k
+         where jsonb_typeof(j -> 'documento' -> k) is distinct from 'array')
+  ) then
+    raise exception 'p_jornadas tem documento que não é journey/1' using errcode = '22023';
+  end if;
 
   -- Catálogo: troca tudo pelo efetivo do import.
   delete from public.catalogo where empresa_id = v_imp.empresa_id;
@@ -368,8 +379,10 @@ language sql immutable set search_path = '' as $$
 $$;
 
 -- 20 MB por arquivo: o app já recusa mais que isso somando todos.
-insert into storage.buckets (id, name, public, file_size_limit) values ('imports', 'imports', false, 20971520)
-on conflict (id) do update set file_size_limit = excluded.file_size_limit;
+-- Só octet-stream: o arquivo nunca é servido como HTML/SVG (um membro poderia subir uma página com script).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('imports', 'imports', false, 20971520, '{application/octet-stream}')
+on conflict (id) do update set file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
 create policy "membro lê arquivos de import" on storage.objects for select to authenticated
   using (bucket_id = 'imports' and public.eh_membro(public.empresa_do_caminho(name)));
