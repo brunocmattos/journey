@@ -1,0 +1,24 @@
+{
+  "formato": "journey/1",
+  "entradas": [{ "id": "zap", "numero": "5130000009", "nome": "WhatsApp", "canal": "whatsapp", "destino": "peca:menu" }],
+  "horarios": [],
+  "feriados": [],
+  "ramais": [
+    { "id": "r1", "nome": "Atendente Um", "toque_s": "20", "ao_nao_atender": "ramal:r2" },
+    { "id": "r2", "nome": "Atendente Dois", "toque_s": "15" }
+  ],
+  "filas": [],
+  "grupos": [],
+  "pecas": [
+    { "id": "menu", "tipo": "menu", "nome": "Menu do WhatsApp", "espera_s": "5", "tentativas": "1" },
+    { "id": "aviso", "tipo": "audio", "nome": "Aviso de horário", "duracao_s": "5" },
+    { "id": "perdido", "tipo": "audio", "nome": "Mensagem sem saída", "duracao_s": "3" }
+  ],
+  "saidas": [
+    { "id": "menu-1", "de": "peca:menu", "opcao": "1", "rotulo": "Falar com o Um", "para": "ramal:r1" },
+    { "id": "menu-2", "de": "peca:menu", "opcao": "2", "rotulo": "Horário", "para": "peca:aviso" },
+    { "id": "menu-3", "de": "peca:menu", "opcao": "3", "rotulo": "Outros", "para": "peca:perdido" },
+    { "id": "menu-esgotou", "de": "peca:menu", "opcao": "esgotou", "para": "fim:desliga" },
+    { "id": "aviso-volta", "de": "peca:aviso", "opcao": "sempre", "para": "peca:menu" }
+  ]
+}
