@@ -6,12 +6,16 @@
  * Uso: npx tsx scripts/gerar-fixture.ts <pasta-do-export> test/fixtures/central
  */
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { escreverCsv, lerCsv } from '../src/importacao/csv';
 
 const [origem, destino] = process.argv.slice(2);
 if (!origem || !destino) {
   console.error('uso: npx tsx scripts/gerar-fixture.ts <pasta-do-export> <pasta-da-fixture>');
+  process.exit(1);
+}
+if (resolve(origem) === resolve(destino)) {
+  console.error('a pasta da fixture não pode ser a pasta do export: os arquivos do export seriam sobrescritos');
   process.exit(1);
 }
 
@@ -119,12 +123,23 @@ for (const n of fluxo.nodes) {
   if (id && m) grupos.push([id, m[1] ?? '', m[2] ?? '', m[3] ?? '', 'fim:desliga']);
 }
 
-for (const [nome, linhas] of [
+const saidas = [
   ['entradas', entradas],
   ['ramais', ramais],
   ['filas', filas],
   ['grupos', grupos],
-] as const) {
+] as const;
+
+// Rede de segurança: nada com cara de celular ou e-mail sai daqui (o número das entradas é da empresa e é público).
+const vazamentos = saidas.flatMap(([nome, linhas]) =>
+  linhas.slice(1).flatMap((l, i) => l.flatMap((c, j) => (nome === 'entradas' && j < 2 ? [] : /\d{8,}|@/.test(c) ? [`${nome}.csv linha ${i + 2} coluna ${j + 1}`] : []))),
+);
+if (vazamentos.length > 0) {
+  console.error(`possível celular ou e-mail na fixture, nada foi gravado:\n${vazamentos.join('\n')}`);
+  process.exit(1);
+}
+
+for (const [nome, linhas] of saidas) {
   await writeFile(join(destino, `${nome}.csv`), escreverCsv(linhas));
   console.log(`${nome}.csv: ${linhas.length - 1} linhas`);
 }
