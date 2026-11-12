@@ -29,7 +29,8 @@ export type Evento =
   | { tipo: 'chegou'; ref: string; visita: number; t: number }
   | { tipo: 'trocou_canal'; ref: string; de: Canal; para: Canal; t: number }
   | { tipo: 'decisao'; ref: string; quem: QuemDecide; opcoes: Opcao[]; sugestao?: string; t: number }
-  | { tipo: 'escolheu'; ref: string; opcao: string; como: Como; t: number }
+  /** saida: o id da saída escolhida, quando a opção vem de uma peça. Responder `saida:<id>` repete a escolha exata. */
+  | { tipo: 'escolheu'; ref: string; opcao: string; saida?: string; como: Como; t: number }
   | { tipo: 'definiu'; ref: string; chave: string; valor: string; t: number }
   | { tipo: 'correu'; de: string; para: string; opcao: string; saida?: string; t: number }
   | { tipo: 'resposta_ignorada'; ref: string; resposta: string; motivo: string; t: number }
@@ -45,7 +46,8 @@ export interface OpcoesExecucao {
   /** cenario (padrão): relógio e respostas decidem sozinhos. livre: tudo é perguntado. ninguem_atende: filas, grupos e ramais não atendem. */
   modo?: 'cenario' | 'livre' | 'ninguem_atende';
   /**
-   * Respostas por referência: o id da saída ou a opção. Lista = uma resposta por visita.
+   * Respostas por referência: a opção ('1', 'esgotou', 'atende') ou `saida:<id>`. Lista = uma resposta por visita.
+   * Texto sem prefixo é sempre a opção, nunca o id da saída.
    * Resposta que não serve (não existe, não vale ou é ambígua) vira o evento resposta_ignorada.
    */
   respostas?: Record<string, string | readonly string[]>;
@@ -69,6 +71,8 @@ export class Execucao {
   private readonly vars = new Map<string, string>();
   private visitas = new Map<string, number>();
   private aguardando: { ref: string; opcoes: Opcao[] } | null = null;
+  /** Cópia entregue por `pendente`, refeita só quando a decisão muda. */
+  private foto: { ref: string; opcoes: Opcao[] } | null = null;
   private motivoFim: Motivo | null = null;
   /** O que falta em cada ponto que não dá pra simular. */
   private readonly incompletas = new Map<string, string>();
@@ -96,9 +100,18 @@ export class Execucao {
   get motivo(): Motivo | null {
     return this.motivoFim;
   }
-  /** A decisão esperando resposta, se houver. */
+  /**
+   * A decisão esperando resposta, se houver. É uma cópia: mexer nela não muda a execução.
+   * Duas leituras seguidas devolvem o mesmo objeto; ele só muda quando a decisão muda (nova decisão, resposta aceita, fim).
+   */
   get pendente(): { ref: string; opcoes: Opcao[] } | null {
-    return this.aguardando && { ref: this.aguardando.ref, opcoes: this.aguardando.opcoes.map(copiar) };
+    if (this.aguardando && !this.foto) this.foto = { ref: this.aguardando.ref, opcoes: this.aguardando.opcoes.map(copiar) };
+    return this.foto;
+  }
+
+  private aguardar(decisao: { ref: string; opcoes: Opcao[] } | null): void {
+    this.aguardando = decisao;
+    this.foto = null;
   }
   get variaveis(): Record<string, string> {
     return Object.fromEntries(this.vars);
@@ -110,16 +123,24 @@ export class Execucao {
     return somar(this.inicioMs, t);
   }
 
-  /** Anda até terminar ou parar numa decisão sem resposta. A resposta é o id da saída ou a opção. Devolve os eventos novos. */
+  /**
+   * Anda até terminar ou parar numa decisão sem resposta. Devolve os eventos novos.
+   * A resposta é a opção ('1', 'atende') ou `saida:<id>`; texto sem prefixo é sempre a opção.
+   * Resposta que não serve (não existe, não vale ou é ambígua) não lança erro: vira o evento resposta_ignorada e a decisão continua pendente.
+   * Sem decisão pendente (ainda andando ou já terminou), a resposta é descartada; depois do fim, devolve [] sem emitir nada.
+   */
   avancar(resposta?: string): Evento[] {
     const inicio = this.eventos.length;
     if (this.aguardando) {
       if (resposta === undefined) return [];
       const ref = this.aguardando.ref;
       const o = escolher(ref, this.aguardando.opcoes, resposta);
-      if (typeof o === 'string') throw new Error(o);
-      this.aguardando = null;
-      this.emitir({ tipo: 'escolheu', ref, opcao: o.opcao, como: 'resposta' });
+      if (typeof o === 'string') {
+        this.emitir({ tipo: 'resposta_ignorada', ref, resposta, motivo: o });
+        return this.eventos.slice(inicio);
+      }
+      this.aguardar(null);
+      this.emitirEscolha(ref, o, 'resposta');
       this.visitas.clear();
       this.aplicar(ref, o);
     }
@@ -132,6 +153,10 @@ export class Execucao {
 
   private emitir(e: SemT<Evento>): void {
     this.eventos.push({ ...e, t: this.t } as Evento);
+  }
+
+  private emitirEscolha(ref: string, o: Opcao, como: Como): void {
+    this.emitir(o.saida === undefined ? { tipo: 'escolheu', ref, opcao: o.opcao, como } : { tipo: 'escolheu', ref, opcao: o.opcao, saida: o.saida, como });
   }
 
   private terminar(ref: string, motivo: Motivo, detalhe?: string): void {
@@ -188,11 +213,11 @@ export class Execucao {
     this.emitir(sugestao ? { tipo: 'decisao', ref, quem, opcoes: copias, sugestao } : { tipo: 'decisao', ref, quem, opcoes: copias });
     const auto = this.respostaAutomatica(ref, opcoes, sugestao);
     if (!auto) {
-      this.aguardando = { ref, opcoes };
+      this.aguardar({ ref, opcoes });
       return;
     }
     if (typeof auto.o === 'string') return this.terminar(ref, 'beco', auto.o);
-    this.emitir({ tipo: 'escolheu', ref, opcao: auto.o.opcao, como: auto.como });
+    this.emitirEscolha(ref, auto.o, auto.como);
     // O cenário escolheu: o que vier depois não é repetição automática.
     if (auto.como === 'cenario') this.visitas.clear();
     this.aplicar(ref, auto.o);
@@ -315,19 +340,30 @@ function copiar(o: Opcao): Opcao {
   return o.define ? { ...o, define: { ...o.define } } : { ...o };
 }
 
-/** Opções disponíveis que a resposta indica: primeiro pelo id exato da saída, depois pela opção. */
+/** Prefixo da resposta que escolhe pela saída: `saida:<id>`. Opção nunca tem ":", então não há confusão. */
+const PREFIXO_SAIDA = 'saida:';
+
+/** Opções disponíveis que a resposta indica: `saida:<id>` pelo id da saída; qualquer outro texto, pela opção. */
 function candidatasDe(opcoes: Opcao[], resposta: string): Opcao[] {
   const disponiveis = opcoes.filter((o) => o.disponivel);
-  const porId = disponiveis.find((o) => o.saida === resposta);
-  return porId ? [porId] : disponiveis.filter((o) => o.opcao === resposta);
+  if (resposta.startsWith(PREFIXO_SAIDA)) {
+    const id = resposta.slice(PREFIXO_SAIDA.length);
+    return disponiveis.filter((o) => o.saida === id);
+  }
+  return disponiveis.filter((o) => o.opcao === resposta);
 }
 
 /** A opção que a resposta indica, ou o motivo de não servir. */
 function escolher(ref: string, opcoes: Opcao[], resposta: string): Opcao | string {
   const candidatas = candidatasDe(opcoes, resposta);
   if (candidatas.length === 1) return candidatas[0]!;
-  if (candidatas.length === 0) return `"${resposta}" não é uma opção disponível em ${ref}`;
-  return `"${resposta}" vale pra mais de uma saída em ${ref} (${candidatas.map((o) => o.saida).join(', ')}): responda com o id da saída`;
+  if (candidatas.length > 1) {
+    return `"${resposta}" vale pra mais de uma saída em ${ref} (${candidatas.map((o) => PREFIXO_SAIDA + o.saida).join(', ')}): responda com saida:<id>`;
+  }
+  if (resposta.startsWith(PREFIXO_SAIDA)) return `"${resposta}" não é uma saída disponível em ${ref}`;
+  // Quem mandou o id sem prefixo ganha a dica.
+  const pelaSaida = opcoes.find((o) => o.disponivel && o.saida === resposta);
+  return `"${resposta}" não é uma opção disponível em ${ref}${pelaSaida ? `; pra escolher pela saída, use ${PREFIXO_SAIDA}${resposta}` : ''}`;
 }
 
 /** Cria a execução e anda até terminar ou parar numa decisão. */
