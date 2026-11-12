@@ -135,3 +135,75 @@ describe('montarRetrato', () => {
     expect(r.diagnostico.map((a) => a.chave)).toEqual(jornada!.diagnostico.map((a) => a.chave));
   });
 });
+
+describe('cantos do esconder nomes', () => {
+  it('a entrada direto num ramal que não é setor conhecido perde o nome, mesmo sem nome no ramal ou fora do export', () => {
+    const dd = doc({
+      entradas: [
+        entrada('e1', 'peca:menu', { nome: 'Principal' }),
+        entrada('e2', 'ramal:2001', { nome: 'Carlos direto' }),
+        entrada('e3', 'ramal:9999', { nome: 'Bruna direto' }),
+        entrada('e4', 'ramal:2003', { nome: 'Recepção' }),
+      ],
+      ramais: [ramal('2001'), ramal('2003', { nome: 'Recepção', tipo: 'setor' })],
+      pecas: [peca('menu', 'menu', { espera_s: 5, tentativas: 2 })],
+      saidas: [saida('menu', '1', 'ramal:2003'), saida('menu', 'esgotou', 'fim:desliga')],
+    });
+    const l = link({}, dd);
+    expect(JSON.stringify(l.versao.diagnostico)).toMatch(/Carlos|Bruna/);
+    const r = montarRetrato(l);
+    expect(r.documento.entradas.map((x) => x.nome)).toEqual(['Principal', undefined, undefined, 'Recepção']);
+    expect(JSON.stringify(r)).not.toMatch(/Carlos|Bruna/i);
+    expect(r.diagnostico.map((a) => a.chave)).toEqual(l.versao.diagnostico.map((a) => a.chave));
+  });
+
+  it('o rótulo de uma saída pra ramal sem nome ou fora do export some', () => {
+    const e = esconderNomes(
+      doc({
+        ramais: [ramal('2001'), ramal('2002', { nome: 'Ana' }), ramal('2003', { nome: 'Recepção', tipo: 'setor' })],
+        pecas: [peca('menu', 'menu', { espera_s: 5, tentativas: 2 })],
+        saidas: [
+          saida('menu', '1', 'ramal:9999', { rotulo: 'Bruna' }),
+          saida('menu', '2', 'ramal:2001', { rotulo: 'Carlos' }),
+          saida('menu', '3', 'ramal:2002', { rotulo: 'Falar com a Ana' }),
+          saida('menu', '4', 'ramal:2003', { rotulo: 'Recepção' }),
+          saida('menu', '5', 'fim:desliga', { rotulo: 'Sair' }),
+        ],
+      }),
+    );
+    expect(e.saidas.map((s) => s.rotulo)).toEqual([undefined, undefined, 'Falar com a ramal 2002', 'Recepção', 'Sair']);
+  });
+
+  it('compara em NFC, e um acento combinante não é fim de palavra', () => {
+    const trocar = trocadorDeNomes(nomesDePessoas(doc({ ramais: [ramal('2001', { nome: 'Ana' }), ramal('2002', { nome: 'José' })] })));
+    expect(trocar('Fale com o José'.normalize('NFD'))).toBe('Fale com o ramal 2002');
+    expect(trocar('Rua Anã, 10'.normalize('NFD'))).toBe('Rua Anã, 10'.normalize('NFC'));
+    expect(trocar('Ana̱ e ̱Ana')).toBe('Ana̱ e ̱Ana');
+  });
+
+  it('acha o nome sem depender da caixa do idioma', () => {
+    const trocar = trocadorDeNomes(nomesDePessoas(doc({ ramais: [ramal('2005', { nome: 'İsmail' })] })));
+    expect(trocar('Ligue para İsmail agora')).toBe('Ligue para ramal 2005 agora');
+  });
+
+  it('espaços repetidos contam como um, NBSP é espaço e os apóstrofos são iguais', () => {
+    const dd = doc({
+      ramais: [ramal('2002', { nome: 'Ana  Paula' }), ramal('2004', { nome: 'Ana Paula' }), ramal('2006', { nome: "D'Ávila" })],
+    });
+    expect([...nomesDePessoas(dd)].map(([, troca]) => troca)).toEqual(['ramal 2002', 'ramal 2006']);
+    const trocar = trocadorDeNomes(nomesDePessoas(dd));
+    expect(trocar('Ana Paula, Ana   Paula e Ana Paula')).toBe('ramal 2002, ramal 2002 e ramal 2002');
+    expect(trocar('Fale com d’Ávila ou D\'Ávila')).toBe('Fale com ramal 2006 ou ramal 2006');
+  });
+
+  it('nome de uma letra não troca nada', () => {
+    const e = esconderNomes(
+      doc({
+        ramais: [ramal('2001', { nome: 'A' })],
+        pecas: [peca('menu', 'menu', { texto: 'Digite A para atendimento' })],
+      }),
+    );
+    expect(e.pecas[0]!.texto).toBe('Digite A para atendimento');
+    expect(e.ramais[0]!.nome).toBeUndefined();
+  });
+});
