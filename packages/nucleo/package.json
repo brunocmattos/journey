@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./formato": "./src/formato/index.ts",
+    "./importacao": "./src/importacao/index.ts",
+    "./modelos": "./src/modelos/index.ts",
+    "./motor": "./src/motor/index.ts",
+    "./diagnostico": "./src/diagnostico/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -17,7 +22,7 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "tsx": "^4.19.0",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "3.2.7"
   }

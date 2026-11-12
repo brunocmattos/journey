@@ -23,7 +23,7 @@ describe('lerArquivos', () => {
     const json = JSON.stringify({ formato: 'journey/1', ramais: [{ id: '2001', toque_s: 20, siga_me_lista: ['ramal:1', 'ramal:2'], transbordo_anti_loop: false }] });
     const r = await lerArquivos([{ nome: 'dados.json', conteudo: json }]);
     expect(r.problemas).toEqual([]);
-    expect(r.tabelas.ramais).toEqual([{ linha: 1, valores: { id: '2001', toque_s: '20', siga_me_lista: 'ramal:1 ramal:2', transbordo_anti_loop: 'nao' } }]);
+    expect(r.tabelas.ramais).toEqual([{ linha: 1, presentes: new Set(['id', 'toque_s', 'siga_me_lista', 'transbordo_anti_loop']), valores: { id: '2001', toque_s: '20', siga_me_lista: 'ramal:1 ramal:2', transbordo_anti_loop: 'nao' } }]);
   });
 
   it('recusa json sem "formato": "journey/1" e json quebrado', async () => {
@@ -114,8 +114,52 @@ describe('lerArquivos', () => {
       ['erro', 'filas', 5],
     ]);
     expect(r.tabelas.filas).toEqual([
-      { linha: 1, valores: { id: '1' } },
-      { linha: 6, valores: { id: '2' } },
+      { linha: 1, valores: { id: '1' }, presentes: new Set(['id']) },
+      { linha: 6, valores: { id: '2' }, presentes: new Set(['id']) },
     ]);
+  });
+
+  describe('cabeçalhos sem acento nem caixa', () => {
+    it('csv: "Observação" e " HORÁRIO " viram observacao e horario', async () => {
+      const r = await lerArquivos([{ nome: 'filas.csv', conteudo: 'ID;Observação; HORÁRIO \n1;nota;08:00' }]);
+      expect(r.tabelas.filas).toEqual([{ linha: 2, valores: { id: '1', observacao: 'nota', horario: '08:00' } }]);
+    });
+
+    it('xlsx: cabeçalho com acento e maiúscula', async () => {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Filas');
+      ws.addRow(['Id', 'Observação']);
+      ws.addRow(['1', 'nota']);
+      const bytes = new Uint8Array(await wb.xlsx.writeBuffer());
+      const r = await lerArquivos([{ nome: 'x.xlsx', conteudo: bytes }]);
+      expect(r.tabelas.filas).toEqual([{ linha: 2, valores: { id: '1', observacao: 'nota' } }]);
+    });
+
+    it('json: chaves do item também', async () => {
+      const json = JSON.stringify({ formato: 'journey/1', filas: [{ Id: '1', Observação: 'nota' }] });
+      const r = await lerArquivos([{ nome: 'd.json', conteudo: json }]);
+      expect(r.tabelas.filas![0]!.valores).toEqual({ id: '1', observacao: 'nota' });
+    });
+
+    it('cabeçalho "__proto__" não some: fica como coluna desconhecida', async () => {
+      const r = await lerArquivos([{ nome: 'filas.csv', conteudo: 'id;__proto__\n1;x' }]);
+      expect(Object.keys(r.tabelas.filas![0]!.valores)).toEqual(['id', '__proto__']);
+      const j = await lerArquivos([{ nome: 'd.json', conteudo: '{"formato":"journey/1","filas":[{"id":"1","__proto__":"x"}]}' }]);
+      expect(Object.keys(j.tabelas.filas![0]!.valores)).toEqual(['id', '__proto__']);
+    });
+
+    it('csv e xlsx com cabeçalho acentuado entram no import (a coluna não é perdida)', async () => {
+      const { importar } = await import('../../src/importacao/importar');
+      const r = await importar([{ nome: 'filas.csv', conteudo: 'id;Estratégia;Toque_por_membro_s;Observação\n1;linear;10;nota' }]);
+      expect(r.problemas).toEqual([]);
+      expect(r.base.filas[0]).toMatchObject({ estrategia: 'linear', observacao: 'nota' });
+    });
+  });
+
+  it('json: guarda quais chaves cada item trouxe', async () => {
+    const json = JSON.stringify({ formato: 'journey/1', filas: [{ id: '1', estrategia: 'linear' }, { id: '2' }] });
+    const r = await lerArquivos([{ nome: 'd.json', conteudo: json }]);
+    expect([...r.tabelas.filas![0]!.presentes!]).toEqual(['id', 'estrategia']);
+    expect([...r.tabelas.filas![1]!.presentes!]).toEqual(['id']);
   });
 });

@@ -92,6 +92,34 @@ describe('importar', () => {
       expect(r.base.filas[0]).toMatchObject({ id: '1', estrategia: 'linear', toque_por_membro_s: 10, membros_dinamicos: true });
       expect(r.base.filas[1]).toMatchObject({ id: '2', nome: 'Dois', estrategia: 'ringall', toque_por_membro_s: 20 });
     });
+
+    it('JSON parcial: chave ausente num item mantém o valor anterior desse item', async () => {
+      const r = await importar([json({ filas: [{ id: '1', estrategia: 'linear' }, { id: '2', membros: ['ramal:2001'] }] })], { anterior: await base(), parcial: true });
+      expect(r.problemas.filter((p) => p.gravidade === 'erro')).toEqual([]);
+      expect(r.base.filas[0]).toMatchObject({ estrategia: 'linear', toque_por_membro_s: 10, membros_dinamicos: true });
+      expect(r.base.filas[1]).toMatchObject({ estrategia: 'ringall', membros: ['ramal:2001'], toque_por_membro_s: 20 });
+      expect(r.diferencas.alterados).toEqual([
+        { chave: 'filas/1', campos: ['estrategia'] },
+        { chave: 'filas/2', campos: ['membros'] },
+      ]);
+    });
+
+    it('JSON parcial: null explícito limpa; chave presente com valor vazio limpa só naquele item', async () => {
+      const r = await importar([json({ filas: [{ id: '1', toque_por_membro_s: null }, { id: '2', nome: 'Dois' }] })], { anterior: await base(), parcial: true });
+      expect(r.base.filas[0]!.toque_por_membro_s).toBeUndefined();
+      expect(r.base.filas[1]).toMatchObject({ toque_por_membro_s: 20, nome: 'Dois' });
+    });
+
+    it('JSON parcial: item novo ainda precisa das colunas obrigatórias, mesmo que outro item as traga', async () => {
+      const r = await importar([json({ filas: [{ id: '1', estrategia: 'linear' }, { id: '3', nome: 'Nova' }] })], { anterior: await base(), parcial: true });
+      expect(r.ok).toBe(false);
+      expect(r.problemas.filter((p) => p.gravidade === 'erro')).toEqual([expect.objectContaining({ aba: 'filas', linha: 2, coluna: 'estrategia' })]);
+    });
+
+    it('JSON completo: chave ausente continua valendo como vazio', async () => {
+      const r = await importar([json({ filas: [{ id: '1', estrategia: 'linear' }] })], { anterior: await base() });
+      expect(r.base.filas).toEqual([expect.not.objectContaining({ toque_por_membro_s: expect.anything() })]);
+    });
   });
 
   describe('ajustes e documento efetivo', () => {

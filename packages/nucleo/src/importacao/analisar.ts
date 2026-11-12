@@ -14,6 +14,11 @@ export interface Analise {
   linhas: Map<string, number>;
   /** Colunas conhecidas que vieram em cada aba (união das chaves das linhas). Base do import parcial por coluna. */
   colunas: Partial<Record<NomeAba, Set<string>>>;
+  /**
+   * Só JSON: colunas conhecidas que cada item trouxe, por "aba/id". No import parcial, o que não veio no item
+   * fica como estava (vale no lugar de `colunas` pra esse item). Itens de .xlsx/.csv não aparecem aqui.
+   */
+  colunasPorItem: Map<string, ReadonlySet<string>>;
 }
 
 export interface OpcoesAnalisar {
@@ -33,6 +38,7 @@ export function analisar(tabelas: Tabelas, opcoes: OpcoesAnalisar = {}): Analise
   const presentes: NomeAba[] = [];
   const linhas = new Map<string, number>();
   const colunas: Analise['colunas'] = {};
+  const colunasPorItem = new Map<string, ReadonlySet<string>>();
 
   for (const aba of NOMES_ABAS) {
     const brutas = tabelas[aba];
@@ -60,7 +66,17 @@ export function analisar(tabelas: Tabelas, opcoes: OpcoesAnalisar = {}): Analise
 
     const vistos = new Map<string, number>();
     for (const bruta of brutas) {
-      const { item, falhas } = lerLinha(aba, bruta.valores, faltando);
+      // Ausentes nesta linha: as colunas que faltam na aba e, no JSON parcial, as chaves que o item não trouxe.
+      const ausentes = new Set(faltando);
+      const idBruto = Object.hasOwn(bruta.valores, 'id') ? bruta.valores.id?.trim() : undefined;
+      const nova = porLinha && !(idBruto !== undefined && (opcoes.existentes?.[aba]?.has(idBruto) ?? false));
+      if (porLinha && bruta.presentes) {
+        for (const c of spec.colunas) {
+          if (bruta.presentes.has(c.nome)) continue;
+          if (!nova || (c.obrigatoria && c.nome !== 'id')) ausentes.add(c.nome);
+        }
+      }
+      const { item, falhas } = lerLinha(aba, bruta.valores, ausentes);
       for (const f of falhas) problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, ...f });
       const id = item.id as string | undefined;
       if (id === undefined) continue;
@@ -69,9 +85,9 @@ export function analisar(tabelas: Tabelas, opcoes: OpcoesAnalisar = {}): Analise
         problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, coluna: 'id', mensagem: erroId });
         continue;
       }
-      if (porLinha && !(opcoes.existentes?.[aba]?.has(id) ?? false)) {
+      if (nova) {
         for (const c of spec.colunas) {
-          if (c.obrigatoria && c.nome !== 'id' && faltando.has(c.nome)) {
+          if (c.obrigatoria && c.nome !== 'id' && ausentes.has(c.nome)) {
             problemas.push({ gravidade: 'erro', aba, linha: bruta.linha, coluna: c.nome, mensagem: `falta a coluna obrigatória "${c.nome}" (necessária para criar o item novo "${id}")` });
           }
         }
@@ -82,11 +98,12 @@ export function analisar(tabelas: Tabelas, opcoes: OpcoesAnalisar = {}): Analise
         continue;
       }
       vistos.set(id, bruta.linha);
+      if (bruta.presentes) colunasPorItem.set(`${aba}/${id}`, new Set([...bruta.presentes].filter((n) => conhecidas.has(n))));
       linhas.set(`${aba}/${id}`, bruta.linha);
       destino[aba].push(item as LinhaGenerica);
     }
   }
-  return { documento, problemas, presentes, linhas, colunas };
+  return { documento, problemas, presentes, linhas, colunas, colunasPorItem };
 }
 
 export const MSG_OBRIGATORIO_VAZIO = 'campo obrigatório vazio';

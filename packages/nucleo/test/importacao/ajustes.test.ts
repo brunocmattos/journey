@@ -13,6 +13,18 @@ describe('aplicarAjustes', () => {
     expect(r.conflitos).toEqual([]);
   });
 
+  it('id do alvo que chega como número (JSON de banco) acha o item', () => {
+    const r = aplicarAjustes(base, [{ tipo: 'campo', aba: 'filas', id: 90011 as unknown as string, campo: 'espera_maxima_s', valor: 180 }]);
+    expect(r.orfaos).toEqual([]);
+    expect(r.efetivo.filas[0]!.espera_maxima_s).toBe(180);
+  });
+
+  it('id da linha criada que chega como número vira texto', () => {
+    const r = aplicarAjustes(base, [{ tipo: 'criar', aba: 'filas', linha: { id: 90012 as unknown as string, estrategia: 'linear' } }]);
+    expect(r.invalidos).toEqual([]);
+    expect(r.efetivo.filas.map((f) => f.id)).toContain('90012');
+  });
+
   it('ajuste sem alvo é órfão e não é aplicado', () => {
     const a: Ajuste = { tipo: 'campo', aba: 'filas', id: '999', campo: 'nome', valor: 'X' };
     expect(aplicarAjustes(base, [a]).orfaos).toEqual([a]);

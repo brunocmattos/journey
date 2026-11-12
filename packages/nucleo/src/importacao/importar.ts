@@ -35,7 +35,7 @@ export async function importar(arquivos: ArquivoEntrada[], opcoes: OpcoesImport 
   const lidos = await lerArquivos(arquivos);
   const parcial = opcoes.parcial ?? false;
   const analise = analisar(lidos.tabelas, parcial ? { existentes: idsExistentes(opcoes.anterior) } : {});
-  const base = juntar(opcoes.anterior, analise.documento, { presentes: analise.presentes, parcial, colunas: analise.colunas });
+  const base = juntar(opcoes.anterior, analise.documento, { presentes: analise.presentes, parcial, colunas: analise.colunas, colunasPorItem: analise.colunasPorItem });
   const daBase = validar(indexar(base), analise.linhas);
   const problemas: Problema[] = [...lidos.problemas, ...analise.problemas, ...daBase];
   if (analise.presentes.length === 0 && !problemas.some((p) => p.gravidade === 'erro')) {
@@ -66,7 +66,8 @@ function idsExistentes(anterior: Documento | null | undefined): Partial<Record<N
 
 /** O ajuste não foi aplicado, mas o import da central segue: é aviso. */
 function problemaDoInvalido({ ajuste, coluna, mensagem }: AjusteInvalido): Problema {
-  const alvo = ajuste.tipo === 'campo' ? ajuste.id : ajuste.linha?.id;
+  const idDoAjuste = ajuste.tipo === 'campo' ? ajuste.id : ajuste.linha?.id;
+  const alvo = idDoAjuste === undefined || idDoAjuste === null ? undefined : String(idDoAjuste);
   const aba = (NOMES_ABAS as readonly string[]).includes(ajuste.aba) ? ajuste.aba : undefined;
   return {
     gravidade: 'aviso',

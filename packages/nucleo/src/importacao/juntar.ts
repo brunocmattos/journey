@@ -11,6 +11,8 @@ export interface OpcoesJuntar {
    * (vazia = limpa); as outras ficam como estavam. Sem isto, a linha inteira é substituída.
    */
   colunas?: Partial<Record<NomeAba, ReadonlySet<string>>>;
+  /** Parcial, JSON: colunas que cada item trouxe, por "aba/id". Vale no lugar de `colunas` pra esse item (chave ausente = não informado). */
+  colunasPorItem?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** Linha antiga com as colunas que vieram trocadas pelas da linha nova. */
@@ -45,7 +47,8 @@ export function juntar(anterior: Documento | null | undefined, novo: Documento, 
     const juntas = antes[aba].map((l) => {
       const n = novos.get(l.id);
       if (!n) return structuredClone(l);
-      return colunas ? mesclar(l, n, colunas) : structuredClone(n);
+      const doItem = opcoes.colunasPorItem?.get(`${aba}/${l.id}`) ?? colunas;
+      return doItem ? mesclar(l, n, doItem) : structuredClone(n);
     });
     const jaTinha = new Set(antes[aba].map((l) => l.id));
     for (const l of agora[aba]) if (!jaTinha.has(l.id)) juntas.push(structuredClone(l));

@@ -6,6 +6,8 @@
   ],
   "scripts": {
     "test": "npm test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "modelos": "npm run modelos -w packages/nucleo",
+    "fixture": "npm run fixture -w packages/nucleo --"
   }
 }

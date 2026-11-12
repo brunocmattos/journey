@@ -13,23 +13,31 @@ export interface LinhaBruta {
   /** Número da linha no arquivo (cabeçalho = 1). No JSON, a posição do item (primeiro = 1). */
   linha: number;
   valores: Record<string, string>;
+  /**
+   * Só no JSON: as chaves que este item trouxe. Chave ausente = "não informado" (no import parcial, mantém o valor anterior).
+   * Em .xlsx e .csv as colunas valem pra aba toda e esta lista não existe.
+   */
+  presentes?: ReadonlySet<string>;
 }
 
 export type Tabelas = Partial<Record<NomeAba, LinhaBruta[]>>;
 
 const normalizar = (s: string) => semAcento(s).trim().toLowerCase();
+
+/** Sem protótipo: um cabeçalho "__proto__" é só mais uma coluna (desconhecida), não some. */
+const registroVazio = (): Record<string, string> => Object.create(null) as Record<string, string>;
 const ehAba = (nome: string): nome is NomeAba => (NOMES_ABAS as readonly string[]).includes(nome);
 const paraTexto = (c: Uint8Array | string) => (typeof c === 'string' ? c : new TextDecoder('utf-8').decode(c));
 const paraBytes = (c: Uint8Array | string) => (typeof c === 'string' ? new TextEncoder().encode(c) : c);
 
 /** Matriz [cabeçalho, ...linhas] → linhas brutas. Pula linhas totalmente vazias. */
 export function linhasDeMatriz(matriz: string[][]): LinhaBruta[] {
-  const cabecalho = (matriz[0] ?? []).map((c) => c.trim().toLowerCase());
+  const cabecalho = (matriz[0] ?? []).map(normalizar);
   const out: LinhaBruta[] = [];
   for (let i = 1; i < matriz.length; i++) {
     const celulas = matriz[i] ?? [];
     if (celulas.every((c) => c.trim() === '')) continue;
-    const valores: Record<string, string> = {};
+    const valores = registroVazio();
     cabecalho.forEach((nome, j) => {
       if (nome) valores[nome] = celulas[j] ?? '';
     });
@@ -101,10 +109,9 @@ function lerJson(arquivo: ArquivoEntrada, problemas: Problema[]): [NomeAba, Linh
         problemas.push({ gravidade: 'erro', aba, linha: i + 1, mensagem: 'o item precisa ser um objeto (um registro com colunas)' });
         return;
       }
-      linhas.push({
-        linha: i + 1,
-        valores: Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([k, v]) => [k.toLowerCase(), paraCelula(v)])),
-      });
+      const valores = registroVazio();
+      for (const [k, v] of Object.entries(item as Record<string, unknown>)) valores[normalizar(k)] = paraCelula(v);
+      linhas.push({ linha: i + 1, valores, presentes: new Set(Object.keys(valores)) });
     });
     out.push([aba, linhas]);
   }

@@ -59,6 +59,7 @@ export interface ResultadoAjustes {
  */
 export function aplicarAjustes(base: Documento, ajustes: readonly Ajuste[]): ResultadoAjustes {
   const efetivo = structuredClone(base);
+  // O id do alvo pode chegar como número (JSON vindo de um banco): é comparado como texto.
   const t = tabelasDe(efetivo);
   const conflitos: Conflito[] = [];
   const orfaos: Ajuste[] = [];
@@ -84,7 +85,7 @@ export function aplicarAjustes(base: Documento, ajustes: readonly Ajuste[]): Res
   }
 
   for (const { ajuste: a, aba, valor, valorDaCentral } of campos) {
-    const linha = t[aba].find((l) => l.id === a.id);
+    const linha = t[aba].find((l) => l.id === String(a.id));
     if (!linha) {
       orfaos.push(a);
       continue;
@@ -132,7 +133,7 @@ function checarCriar(a: AjusteCriar): Checagem<CriarChecado> {
   const falhas: FalhaCelula[] = Object.keys(linha)
     .filter((k) => !colunas.some((c) => c.nome === k))
     .map((k) => ({ coluna: k, mensagem: colunaInexistente(k, a.aba) }));
-  const valores = Object.fromEntries(colunas.map((c) => [c.nome, paraCelula(linha[c.nome])]));
+  const valores = Object.fromEntries(colunas.map((c) => [c.nome, paraCelula(linha[c.nome])]));  // id numérico vira texto aqui
   const lida = lerLinha(a.aba, valores);
   falhas.push(...lida.falhas);
   const id = lida.item.id as string | undefined;
