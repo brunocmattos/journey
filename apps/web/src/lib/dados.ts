@@ -72,21 +72,13 @@ export interface JornadaResumo {
   graves: number;
 }
 
+/** Da view jornadas_resumo: só a última versão de cada jornada, com os graves contados no banco. */
 export async function jornadas(empresaId: string): Promise<JornadaResumo[]> {
   const { supabase } = await usuarioAtual();
-  const js = ok(await supabase.from('jornadas').select('id, nome, canal').eq('empresa_id', empresaId).order('nome'));
-  const vs = ok(
-    await supabase.from('jornada_versoes').select('jornada_id, numero, criada_em, diagnostico').eq('empresa_id', empresaId).order('numero', { ascending: false }),
+  const linhas = ok<{ id: string; nome: string; canal: string; numero: number | null; criada_em: string | null; graves: number }>(
+    await supabase.from('jornadas_resumo').select('id, nome, canal, numero, criada_em, graves').eq('empresa_id', empresaId).order('nome'),
   );
-  return js.map((j) => {
-    const v = vs.find((x) => x.jornada_id === j.id);
-    return {
-      ...j,
-      versao: v?.numero ?? null,
-      atualizada: v?.criada_em ?? null,
-      graves: v ? (v.diagnostico as Achado[]).filter((a) => a.gravidade === 'grave').length : 0,
-    };
-  });
+  return linhas.map((l) => ({ id: l.id, nome: l.nome, canal: l.canal, versao: l.numero, atualizada: l.criada_em, graves: l.graves }));
 }
 
 export interface VersaoJornada {

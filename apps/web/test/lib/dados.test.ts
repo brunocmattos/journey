@@ -54,13 +54,28 @@ describe('dados', () => {
   it('id que não é uuid na URL vira "não achado", não erro', async () => {
     respostas.empresas = uuidInvalido;
     await expect(empresa('x')).rejects.toThrow('NAO_ACHADO');
-    respostas.jornadas = uuidInvalido;
+    respostas.jornadas_resumo = uuidInvalido;
     await expect(jornadas('x')).rejects.toThrow('NAO_ACHADO');
   });
 
   it('outro erro do banco continua erro', async () => {
     respostas.empresas = { data: null, error: { code: '42501', message: 'permission denied' } };
     await expect(empresa('e1')).rejects.toThrow('permission denied');
+  });
+
+  it('a lista de jornadas vem da view do resumo (última versão e graves contados no banco)', async () => {
+    respostas.jornadas_resumo = {
+      data: [
+        { id: 'j1', nome: 'Telefonia', canal: 'telefonia', numero: 3, criada_em: '2026-11-12T10:00:00Z', graves: 2 },
+        { id: 'j2', nome: 'WhatsApp', canal: 'whatsapp', numero: null, criada_em: null, graves: 0 },
+      ],
+      error: null,
+    };
+    expect(await jornadas('e1')).toEqual([
+      { id: 'j1', nome: 'Telefonia', canal: 'telefonia', versao: 3, atualizada: '2026-11-12T10:00:00Z', graves: 2 },
+      { id: 'j2', nome: 'WhatsApp', canal: 'whatsapp', versao: null, atualizada: null, graves: 0 },
+    ]);
+    expect(filtros).toContainEqual(['eq', 'empresa_id', 'e1']);
   });
 
   it('versaoAtual devolve o documento journey/1', async () => {

@@ -1,7 +1,7 @@
 -- Regras de acesso e funções do Journey. Roda com: npx supabase test db
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(57);
+select plan(60);
 
 -- Duas pessoas, cada uma na sua empresa, mais o Caio (convidado) e o Davi (e-mail ainda não confirmado).
 insert into auth.users (id, email, aud, role, email_confirmed_at) values
@@ -102,6 +102,20 @@ select is((select count(*)::int from public.catalogo) + (select count(*)::int fr
 select throws_ok(
   $$ select public.confirmar_import('10000000-0000-0000-0000-000000000002', '[]') $$,
   'P0002', 'import não encontrado', 'nem confirma o import dos outros');
+
+-- Resumo das jornadas: só a última versão de cada uma, com os graves contados no banco.
+reset role;
+insert into public.jornada_versoes (empresa_id, jornada_id, numero, documento, diagnostico, origem)
+select empresa_id, id, 2, current_setting('teste.doc')::jsonb,
+  '[{"gravidade":"grave"},{"gravidade":"alerta"},{"gravidade":"grave"}]', 'edicao'
+from public.jornadas;
+set local role authenticated;
+select is((select count(*)::int from public.jornadas_resumo), 0, 'quem não é membro não vê o resumo das jornadas');
+select pg_temp.entrar('00000000-0000-0000-0000-00000000000a', 'ana@exemplo.com');
+select results_eq(
+  $$ select nome, numero, graves from public.jornadas_resumo $$,
+  $$ values ('Telefonia'::text, 2, 2) $$,
+  'o membro vê cada jornada uma vez, na última versão, com os graves dela');
 
 -- Rascunho novo: as escritas que o app faz e as que não pode fazer.
 select pg_temp.entrar('00000000-0000-0000-0000-00000000000a', 'ana@exemplo.com');
@@ -205,6 +219,7 @@ select throws_ok($$ select public.criar_empresa('X') $$, '42501', null, 'anon n�
 select throws_ok($$ select public.aceitar_convites() $$, '42501', null, 'anon não aceita convite');
 select throws_ok($$ select public.confirmar_import('10000000-0000-0000-0000-000000000003', '[]') $$, '42501', null, 'anon não confirma import');
 select throws_ok($$ select * from public.onde_usado(current_setting('teste.empresa_a')::uuid, 'ramal:r1') $$, '42501', null, 'anon não pergunta onde é usado');
+select throws_ok($$ select * from public.jornadas_resumo $$, '42501', null, 'anon não lê o resumo das jornadas');
 
 -- Apagar uma pessoa não trava: o que ela criou fica, sem autor.
 reset role;

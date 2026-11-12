@@ -137,8 +137,9 @@ create policy "membro apaga o rascunho" on public.imports for delete to authenti
 
 -- Catálogo efetivo -----------------------------------------------------------
 -- Uma linha por item das abas do catálogo. As colunas do formato ficam em `dados` (jsonb), pra o
--- formato poder ganhar colunas (etapa 6) sem migração. Membros de filas e grupos ficam numa tabela
--- própria, pra responder "onde é usado" com índice.
+-- formato poder ganhar colunas (etapa 6) sem migração. Membros de filas e grupos ficam também numa
+-- tabela própria (catalogo_membros), pra achar por índice em que filas e grupos um ramal está, nas
+-- telas que vierem depois. O "onde é usado" de hoje (onde_usado) varre catalogo.dados e não usa ela.
 
 create table public.catalogo (
   empresa_id uuid not null references public.empresas (id) on delete cascade,
@@ -213,6 +214,19 @@ alter table public.jornada_refs enable row level security;
 create policy "membro vê as jornadas" on public.jornadas for select to authenticated using (public.eh_membro(empresa_id));
 create policy "membro vê as versões" on public.jornada_versoes for select to authenticated using (public.eh_membro(empresa_id));
 create policy "membro vê as refs" on public.jornada_refs for select to authenticated using (public.eh_membro(empresa_id));
+
+-- A lista de jornadas: cada uma com a última versão e quantos achados graves ela tem, contados aqui
+-- (a tela não precisa trazer o diagnóstico de todas as versões). security_invoker: valem as regras
+-- de acesso de quem pergunta, então quem não é membro não vê nada.
+create view public.jornadas_resumo with (security_invoker = true) as
+  select j.id, j.empresa_id, j.nome, j.canal, v.numero, v.criada_em,
+    coalesce((select count(*)::int from jsonb_array_elements(v.diagnostico) a where a ->> 'gravidade' = 'grave'), 0) as graves
+  from public.jornadas j
+  left join lateral (
+    select x.numero, x.criada_em, x.diagnostico from public.jornada_versoes x where x.jornada_id = j.id order by x.numero desc limit 1
+  ) v on true;
+revoke all on public.jornadas_resumo from anon, authenticated;
+grant select on public.jornadas_resumo to authenticated;
 
 -- Confirma um import em revisão: troca o catálogo e grava uma versão nova em cada jornada.
 -- p_jornadas: [{ nome, canal, documento, diagnostico, refs: [..] }], calculado pelo servidor do app.
