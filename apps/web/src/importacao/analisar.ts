@@ -15,6 +15,7 @@ export interface Analise {
  */
 export async function analisarArquivos(arquivos: { nome: string; conteudo: Uint8Array }[], anterior: Documento | null, parcial: boolean): Promise<Analise> {
   const r = await importar(arquivos, { anterior, parcial, ajustes: [] });
-  const jornadas = jornadasDoImport(r.efetivo);
+  // Com erro, o documento pode ter referência que nem se lê: o diagnóstico não roda e a revisão só lista os erros.
+  const jornadas = r.ok && r.okEfetivo ? jornadasDoImport(r.efetivo) : [];
   return { revisao: revisar(r, jornadas, parcial), base: r.base, efetivo: r.efetivo };
 }
