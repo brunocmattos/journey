@@ -1,0 +1,39 @@
+id;nome;estrategia;toque_por_membro_s;ao_esgotar;membros;membros_dinamicos;pesquisa_ao_desligar;observacao
+2500;NS;rrmemory;15;fim:desliga;ramal:9210 ramal:9528 ramal:9584;nao;;
+25265;GP - Gestão Patrimonial;ringall;20;fim:desliga;ramal:9232 ramal:9537 ramal:9538 ramal:9542 ramal:9543 ramal:9544 ramal:9549 ramal:9553;nao;;
+25266;GP - Assistentes Gestão Patrimonial;ringall;20;fim:desliga;ramal:9217 ramal:9236 ramal:9526 ramal:9532 ramal:9539 ramal:9541;nao;;
+25267;CRI - Operações Administrativas;ringall;12;fim:desliga;;sim;;
+25268;Fila de Atendimento - Comercial;rrmemory;12;fim:desliga;ramal:9066 ramal:9104 ramal:9105 ramal:9106 ramal:9164 ramal:9408;nao;;
+25269;Fila de Atendimento - DP;rrmemory;20;fim:desliga;ramal:9016 ramal:9018 ramal:9021 ramal:9048 ramal:9050 ramal:9051 ramal:9053 ramal:9059 ramal:9182 ramal:9189 ramal:9976;nao;;
+3000;Financeiro - Geral;rrmemory;15;fim:desliga;ramal:9471 ramal:9585 ramal:9943 ramal:9946 ramal:9948 ramal:9949 ramal:9973;nao;;
+3002;Financeiro - Elevadores;rrmemory;15;fim:desliga;ramal:9092 ramal:9353;nao;;
+3003;Financeiro - Concessionarias;rrmemory;15;fim:desliga;ramal:9944 ramal:9945;nao;;
+3004;Financeiro - Exclusive;rrmemory;15;fim:desliga;ramal:9472 ramal:9473;nao;;
+90010;URA-TESTE;rrmemory;;fim:desliga;;sim;;timeout 0 na central: toca sem limite
+90011;URA-Alugueis;rrmemory;15;fila:90012;;sim;peca:nps-8851;
+90012;URA-Cond;rrmemory;15;fila:90011;;sim;peca:nps-8850;
+90013;URA-Vendas;rrmemory;15;fila:90015;;sim;;
+90014;URA-Seguros;rrmemory;15;fim:desliga;;sim;;
+90015;URA-Outros;rrmemory;15;fim:desliga;;sim;peca:nps-8850;
+90016;URA-Administrativo;ringall;15;fim:desliga;;sim;;
+90019;URA-NS;rrmemory;15;fim:desliga;;sim;;
+9002;Seguros;linear;12;fim:desliga;ramal:2000 ramal:2006 ramal:2008;nao;;
+90020;URA-Alug-Prop;rrmemory;15;fila:90011;;sim;peca:nps-8851;
+9003;Seguros antigo;linear;30;fim:desliga;ramal:2006 ramal:2008;nao;;
+97775;Condominio PE - Assistentes;rrmemory;15;fim:desliga;ramal:9013 ramal:9024 ramal:9025 ramal:9030 ramal:9044 ramal:9165 ramal:9177 ramal:9179;nao;;
+97776;ComercialCondominios;rrmemory;15;fim:desliga;externo:celular;nao;;
+97777;Alugueis-Proprietario;rrmemory;12;fim:desliga;ramal:9127 ramal:9164;nao;;
+97778;Alugueis-Inquilino;rrmemory;12;fim:desliga;ramal:9103 ramal:9106 ramal:9144 ramal:9146 ramal:9152 ramal:9153 ramal:9154 ramal:9158 ramal:9198 ramal:9351 ramal:9566 ramal:9568;nao;;
+97779;Vendas;rrmemory;15;fim:desliga;ramal:9121;nao;;
+98500;OutCore-Teste;rrmemory;6;fim:desliga;ramal:8501;nao;;
+99950;Cond-Emerg-POA-Eletricista;rrmemory;24;fim:desliga;externo:celular externo:celular externo:celular;nao;;
+99951;Cond-Emerg-POA-Hidraulico;rrmemory;24;fim:desliga;externo:celular externo:celular externo:celular externo:celular;nao;;
+99952;Cond-Emerg-POA-Chaveiro;rrmemory;24;fim:desliga;externo:celular externo:celular externo:celular;nao;;
+99953;Cond-Emerg-POA-Portao;rrmemory;24;fim:desliga;externo:celular externo:celular externo:celular;nao;;
+99954;Cond-Emerg-POA-Outros;rrmemory;24;fim:desliga;externo:celular externo:celular;nao;;
+99955;Cond-Emerg-Lit-Eletricista;rrmemory;24;fim:desliga;externo:celular externo:celular;nao;;
+99956;Cond-Emerg-Lit-Hidraulico;rrmemory;24;fim:desliga;externo:celular externo:celular externo:celular;nao;;
+99957;Cond-Emerg-Lit-Chaveiro;rrmemory;24;fim:desliga;externo:celular externo:celular;nao;;
+99958;Cond-Emerg-Lit-Portao;rrmemory;24;fim:desliga;externo:celular externo:celular externo:celular;nao;;
+99959;Cond-Emerg-Lit-Outros;rrmemory;24;fim:desliga;externo:celular;nao;;
+99960;Cond-Emerg-Seguro;rrmemory;;fim:desliga;externo:celular;nao;;timeout 0 na central: toca sem limite

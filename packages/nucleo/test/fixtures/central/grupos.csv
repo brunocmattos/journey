@@ -1,0 +1,6 @@
+id;nome;estrategia;toque_s;ao_esgotar
+252614;CRI: Desocupação;ringall;20;fim:desliga
+252615;CRI: Manutenção;ringall;20;fim:desliga
+252616;CRI: Posse;ringall;20;fim:desliga
+2526;CRI - Operações Adm.;ringall;20;fim:desliga
+252617;CRI: Vistoria;ringall;20;fim:desliga

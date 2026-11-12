@@ -1,0 +1,40 @@
+id;tipo;nome;horario;calendario;espera_s;tentativas;guarda_variavel;canal;id_central;observacao
+tc-3;regra_feriado;Feriado?;;padrao;;;;;timeconditions 3;
+tc-2;regra_horario;Seg–sex 8h30–16h55?;horario:tg1;;;;;;timeconditions 2;
+tc-1;regra_horario;Horário estendido?;horario:tg2;;;;;;timeconditions 1;
+fase-11;audio;URA 8889 · entrada padrão;;;;;;;wf2 fase 11;
+fase-305;menu;Oferta WhatsApp;;;4;1;;;wf2 fase 305;
+fase-311;fim;Áudio com o número do WhatsApp;;;;;;whatsapp;wf2 fases 311/310;fala 51 3327-9001 e desliga
+fase-16;menu;Menu principal;;;5;3;;;wf2 fase 16;
+fase-1;audio;URA 8888 · 2ª via do boleto;;;;;;;wf1 fase 1;
+fase-252;menu;Boleto de quê?;;;3;2;tipo;;wf1 fase 252;
+fase-252-fim;fim;Encerra (esgotou);;;;;;;wf1 fase 252;
+fase-206;menu;Digite CPF/CNPJ;;;7;2;;;wf1 fase 206;
+fase-5;consulta;Busca 2ª via e manda por e-mail;;;;;;;wf1 fases 5/7;
+fase-8;fim;Boleto por e-mail · protocolo Plusoft;;;;;;email;wf1 fases 8/209/211;
+fase-341;consulta;Agência Virtual: é proprietário?;;;;;;;wf2 fases 341/340/339;
+fase-30;menu;Submenu Aluguéis;;;4;2;;;wf2 fase 30;
+fase-31;menu;Submenu Condomínios;;;2;2;;;wf2 fase 31;
+fase-62;audio;URA 8887 · fim de semana e estendido;;;;;;;wf3 fase 62;
+fase-64;menu;Menu estendido;;;4;2;;;wf3 fase 64;
+fase-76;menu;Alugar (estendido);;;4;2;;;wf3 fase 76;
+fase-103;regra_feriado;URA 8886 · feriado?;;padrao;;;;;wf4 fase 103;
+fase-342;fim;Áudio de feriado;;;;;;;wf4 fase 342;disparado pelo motor da URA
+fase-105;menu;Menu fora do horário;;;7;2;;;wf4 fase 105;
+fase-160;audio;URA 8885 · boleto fora do horário;;;;;;;wf5 fase 160;
+fase-205;consulta;CPF/CNPJ e busca (fora do horário);;;;;;;wf5 fase 205;
+fase-170;fim;Boleto por e-mail · protocolo Plusoft;;;;;;email;wf5 fases 170/210;
+fase-166;fim;“Ligue no próximo dia útil”;;;;;;;wf5 fases 166/175;
+fase-117;menu;Emergência 24 h (síndico);;;5;2;;;wf4 fase 117;
+fase-180;menu;Emergência POA;;;5;2;;;wf4 fase 180;
+fase-191;menu;Emergência Litoral;;;5;2;;;wf4 fase 191;
+tc-7;regra_feriado;Feriado? (NS);;padrao;;;;;timeconditions 7;
+tc-6;regra_horario;Seg–sex 8h30–16h55? (NS);horario:tg1;;;;;;timeconditions 6;
+fase-265;audio;URA 8882 · NS entrada;;;;;;;wf12 fase 265;
+fase-267;menu;Menu NS;;;;2;;;wf12 fases 267/274/275;o export não traz o tempo de espera
+fase-299;audio;URA 8881 · NS fora do horário;;;;;;;wf11 fase 299;
+fase-300;fim;“Não estamos disponíveis”;;;;;;;wf11 fase 300;
+nps-8851;pesquisa;Pesquisa 8851 (Aluguéis);;;;;;;wf8;
+nps-8850;pesquisa;Pesquisa 8850 (Contact Center);;;;;;;wf9;
+ura-8883;audio;URA 8883 · Corretora fora do horário;;;;;;;miscdests 23;nenhuma rota aponta pra cá
+ura-8890;audio;URA 8890 · áudio de instabilidade;;;;;;;miscdests 34;contingência; nenhuma rota aponta pra cá

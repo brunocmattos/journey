@@ -1,0 +1,4 @@
+id;grupo;nome;dias;inicio;fim;observacao
+tg1-semana;tg1;Dia útil;seg-sex;08:30;16:55;timegroup 1
+tg2-sabado;tg2;Horário estendido;sab;09:00;12:00;timegroup 2
+tg2-semana;tg2;Horário estendido;seg-sex;17:00;18:00;timegroup 2

@@ -17,6 +17,7 @@
 - Trabalhe em `/home/user/journey` (o repositório já existe, com o spec commitado). Todos os comandos rodam a partir dessa pasta.
 - **Todo o código deste plano já foi escrito e testado num ensaio**: 142 testes passando, `tsc --noEmit` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Commits:** a tarefa 1 cria `.git/atribuicao.txt` com as linhas de atribuição. Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
+- **Fixture já pronta:** os 8 arquivos de `packages/nucleo/test/fixtures/central/` já estão no repositório, sem nomes. Numa sessão sem o export, a tarefa 21 só cria `scripts/gerar-fixture.ts` e pula o passo 3 (gerar); os passos 1 e 4 continuam valendo (o conteúdo é idêntico).
 - **Dados reais:** a tarefa 21 lê o export da central em `/tmp/claude-0/-home-user/0302ec4b-b3f8-5cbc-96d5-dba779a4b010/scratchpad/export`. Esse export tem nomes de pessoas; ele **não** entra no repositório. A fixture gerada troca os nomes por "Pessoa NNN" e não tem nenhum número de celular.
 - Os testes rodam com `npm test -w packages/nucleo -- <arquivo>` (um arquivo) ou `npm test` (tudo).
 
@@ -4557,6 +4558,8 @@ for (const [nome, linhas] of [
 ```
 
 - [ ] **Passo 3: Gerar a parte das tabelas**
+
+Se o export não estiver nesta máquina, pule este passo: `entradas.csv`, `ramais.csv`, `filas.csv` e `grupos.csv` já estão commitados.
 
 Rodar: `npm run fixture -w packages/nucleo -- /tmp/claude-0/-home-user/0302ec4b-b3f8-5cbc-96d5-dba779a4b010/scratchpad/export test/fixtures/central`
 

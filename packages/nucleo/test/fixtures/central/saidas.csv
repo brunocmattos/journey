@@ -1,0 +1,81 @@
+id;de;opcao;rotulo;quando;define;para;ativo
+tc-3-sim;peca:tc-3;sim;É feriado;;;peca:fase-103;
+tc-3-nao;peca:tc-3;nao;Não é feriado;;;peca:tc-2;
+tc-2-sim;peca:tc-2;sim;Dia útil;;;peca:fase-11;
+tc-2-nao;peca:tc-2;nao;Fora do dia útil;;;peca:tc-1;
+tc-1-sim;peca:tc-1;sim;Horário estendido;;;peca:fase-62;
+tc-1-nao;peca:tc-1;nao;Fora do horário;;;peca:fase-103;
+fase-11-sempre;peca:fase-11;sempre;;;;peca:fase-305;
+fase-305-1;peca:fase-305;1;Ouvir o número do WhatsApp;;;peca:fase-311;
+fase-305-esgotou;peca:fase-305;esgotou;Nada ou outra tecla;;;peca:fase-16;
+fase-16-1;peca:fase-16;1;Boleto;;;peca:fase-1;
+fase-16-2;peca:fase-16;2;Aluguéis;;;peca:fase-341;
+fase-16-3;peca:fase-16;3;Condomínios;;;peca:fase-31;
+fase-16-4;peca:fase-16;4;Vendas;;;fila:90015;
+fase-16-5;peca:fase-16;5;Seguros;;;fila:90015;
+fase-16-esgotou;peca:fase-16;esgotou;;;;fila:90015;
+fase-1-sempre;peca:fase-1;sempre;;;;peca:fase-252;
+fase-252-1;peca:fase-252;1;Aluguel;;tipo=aluguel;peca:fase-206;
+fase-252-2;peca:fase-252;2;Condomínio;;tipo=condominio;peca:fase-206;
+fase-252-esgotou;peca:fase-252;esgotou;;;;peca:fase-252-fim;
+fase-206-ok;peca:fase-206;ok;Digita o documento;;;peca:fase-5;
+fase-206-esgotou;peca:fase-206;esgotou;;tipo=aluguel;;fila:90015;
+fase-5-ok;peca:fase-5;ok;Achou e mandou;;;peca:fase-8;
+fase-5-sem-cadastro-aluguel;peca:fase-5;sem_cadastro;Sem cadastro;tipo=aluguel;;fila:90011;
+fase-5-falha-email-aluguel;peca:fase-5;falha_email;Falha no e-mail;tipo=aluguel;;fila:90015;
+fase-5-sem-cadastro-condominio;peca:fase-5;sem_cadastro;Sem cadastro;tipo=condominio;;fila:90012;
+fase-5-falha-email-condominio;peca:fase-5;falha_email;Falha no e-mail;tipo=condominio;;fila:90012;
+fase-341-sim;peca:fase-341;sim;É proprietário;;;fila:90020;
+fase-341-nao;peca:fase-341;nao;Não é proprietário;;;peca:fase-30;
+fase-30-1;peca:fase-30;1;Alugar;;;fila:97778;
+fase-30-2;peca:fase-30;2;Disponibilizar imóvel;;;fila:97777;
+fase-30-3;peca:fase-30;3;Proprietário;;;fila:90011;
+fase-30-4;peca:fase-30;4;Inquilino;;;fila:90011;
+fase-30-6;peca:fase-30;6;Atendente;;;fila:90011;
+fase-30-8;peca:fase-30;8;Oculto (TI);;;ramal:9594;
+fase-30-0;peca:fase-30;0;Voltar;;;peca:fase-16;
+fase-30-esgotou;peca:fase-30;esgotou;;;;peca:fase-29;
+fase-31-1;peca:fase-31;1;Proposta de administração;;;fila:97776;
+fase-31-6;peca:fase-31;6;Atendente;;;fila:90012;
+fase-31-0;peca:fase-31;0;Voltar;;;peca:fase-16;
+fase-31-esgotou;peca:fase-31;esgotou;;;;peca:fase-29;
+fase-62-sempre;peca:fase-62;sempre;;;;peca:fase-64;
+fase-64-1;peca:fase-64;1;Boleto;;;peca:fase-160;
+fase-64-2;peca:fase-64;2;Alugar imóvel;;;peca:fase-76;
+fase-64-3;peca:fase-64;3;Condomínios (emergência);;;peca:fase-117;
+fase-64-esgotou;peca:fase-64;esgotou;;;;peca:fase-29;
+fase-76-1;peca:fase-76;1;Alugar;;;fila:97778;
+fase-76-2;peca:fase-76;2;Disponibilizar imóvel;;;fila:97779;
+fase-76-0;peca:fase-76;0;Voltar;;;peca:fase-64;
+fase-103-sim;peca:fase-103;sim;Feriado;;;peca:fase-342;
+fase-103-nao;peca:fase-103;nao;Não é feriado;;;peca:fase-105;
+fase-105-1;peca:fase-105;1;Boleto;;;peca:fase-160;
+fase-105-2;peca:fase-105;2;Emergência no condomínio;;;peca:fase-117;
+fase-160-sempre;peca:fase-160;sempre;;;;peca:fase-205;
+fase-205-ok;peca:fase-205;ok;Achou e mandou;;;peca:fase-170;
+fase-205-nao;peca:fase-205;nao_encontrado;Sem boleto, falha ou esgotou;;;peca:fase-166;
+fase-117-1;peca:fase-117;1;Porto Alegre;;;peca:fase-180;
+fase-117-2;peca:fase-117;2;Litoral;;;peca:fase-191;
+fase-117-3;peca:fase-117;3;Seguro;;;fila:99960;nao
+fase-180-1;peca:fase-180;1;Elétrica;;;fila:99951;
+fase-180-2;peca:fase-180;2;Hidráulica;;;fila:99951;
+fase-180-3;peca:fase-180;3;Chaveiro;;;fila:99952;
+fase-180-4;peca:fase-180;4;Portão;;;fila:99953;
+fase-180-5;peca:fase-180;5;Outros;;;fila:99954;nao
+fase-191-1;peca:fase-191;1;Elétrica;;;fila:99955;nao
+fase-191-2;peca:fase-191;2;Hidráulica;;;fila:99956;nao
+fase-191-3;peca:fase-191;3;Chaveiro;;;fila:99957;nao
+fase-191-4;peca:fase-191;4;Portão;;;fila:99958;nao
+fase-191-5;peca:fase-191;5;Outros;;;fila:99959;nao
+tc-7-sim;peca:tc-7;sim;É feriado;;;peca:fase-299;
+tc-7-nao;peca:tc-7;nao;Não é feriado;;;peca:tc-6;
+tc-6-sim;peca:tc-6;sim;Dia útil;;;peca:fase-265;
+tc-6-nao;peca:tc-6;nao;Fora do dia útil;;;peca:fase-299;
+fase-265-sempre;peca:fase-265;sempre;;;;peca:fase-267;
+fase-267-1;peca:fase-267;1;Aluguéis;;;fila:90019;
+fase-267-2;peca:fase-267;2;Condomínios;;;fila:90019;
+fase-267-9;peca:fase-267;9;Atendente;;;fila:90019;
+fase-267-esgotou;peca:fase-267;esgotou;;;;fila:90019;
+fase-299-sempre;peca:fase-299;sempre;;;;peca:fase-300;
+nps-8851-sempre;peca:nps-8851;sempre;;;;fim:desliga;
+nps-8850-sempre;peca:nps-8850;sempre;;;;fim:desliga;

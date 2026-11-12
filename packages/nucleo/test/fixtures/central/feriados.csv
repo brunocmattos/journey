@@ -1,0 +1,12 @@
+id;calendario;data;nome;todo_ano;observacao
+padrao-confraternizacao;padrao;2026-01-01;Confraternização Universal;sim;o calendário real da central não veio no export: nacionais e do RS
+padrao-sexta-santa-2026;padrao;2026-04-03;Sexta-feira Santa;nao;
+padrao-tiradentes;padrao;2026-04-21;Tiradentes;sim;
+padrao-trabalho;padrao;2026-05-01;Dia do Trabalho;sim;
+padrao-independencia;padrao;2026-09-07;Independência;sim;
+padrao-farroupilha;padrao;2026-09-20;Revolução Farroupilha (RS);sim;
+padrao-aparecida;padrao;2026-10-12;Nossa Senhora Aparecida;sim;
+padrao-finados;padrao;2026-11-02;Finados;sim;
+padrao-republica;padrao;2026-11-15;Proclamação da República;sim;
+padrao-consciencia-negra;padrao;2026-11-20;Consciência Negra;sim;
+padrao-natal;padrao;2026-12-25;Natal;sim;
