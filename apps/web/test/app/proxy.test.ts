@@ -27,4 +27,10 @@ describe('proxy no link público', () => {
     const r = await proxy(new NextRequest('http://127.0.0.1:3000/l/abcdefghijklmnopqrstuvwx', { headers: { host: '127.0.0.1:3000' } }));
     expect(r.headers.get('location')).toBeNull();
   });
+
+  // O prefixo livre é '/l/': rota que só começa com "l" continua pedindo sessão.
+  it.each(['/lx', '/l'])('manda %s pro entrar sem sessão', async (caminho) => {
+    const r = await proxy(new NextRequest(`http://127.0.0.1:3000${caminho}`, { headers: { host: '127.0.0.1:3000' } }));
+    expect(r.headers.get('location')).toBe('http://127.0.0.1:3000/entrar');
+  });
 });

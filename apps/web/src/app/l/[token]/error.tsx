@@ -10,10 +10,12 @@ export default function ErroDoLink({ error, retry }: { error: unknown; retry: ()
   const codigo = error instanceof Error && 'digest' in error ? String(error.digest) : null;
   return (
     <main className="entrar">
+      {/* Sem metadata num componente cliente: o React 19 leva o <title> pro <head>. */}
+      <title>Link indisponível · Journey</title>
       <div className="cartao">
         <Marca href={null} />
         <h1>Não deu pra abrir este link agora</h1>
-        <p className="mudo" style={{ margin: 0 }}>
+        <p style={{ margin: 0, color: 'var(--ink-2)' }}>
           Tenta de novo em instantes. Se continuar, avisa quem te mandou o link.
           {codigo && <span className="mono"> (código {codigo})</span>}
         </p>

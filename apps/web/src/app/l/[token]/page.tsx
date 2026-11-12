@@ -7,9 +7,12 @@ import { abrirLink, type LinkAberto } from '@/lib/link';
 
 type Props = { params: Promise<{ token: string }> };
 
+const INDISPONIVEL = { title: 'Link indisponível · Journey' };
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const l = await abrirLink((await params).token);
-  if (l.estado !== 'ok') return { title: 'Link indisponível · Journey' };
+  // Se o link não abre por falha, o título não fica vazio: a página estoura o mesmo erro e cai no error.tsx.
+  const l = await abrirLink((await params).token).catch(() => null);
+  if (l?.estado !== 'ok') return INDISPONIVEL;
   return { title: `${l.retrato.cenario?.nome ?? l.retrato.jornada.nome} · Journey` };
 }
 
@@ -27,7 +30,7 @@ function Indisponivel({ l }: { l: Exclude<LinkAberto, { estado: 'ok' }> }) {
       <div className="cartao" data-testid="link-indisponivel">
         <Marca href={null} />
         <h1>{a.titulo}</h1>
-        <p className="mudo" style={{ margin: 0 }}>
+        <p style={{ margin: 0, color: 'var(--ink-2)' }}>
           {a.texto('quando' in l ? l.quando : undefined)}
         </p>
       </div>
@@ -47,15 +50,21 @@ export default async function PaginaLink({ params }: Props) {
     <div className="casca cheia">
       <header className="topo">
         <Marca href={null} />
-        <span className="migalhas">
-          {r.jornada.nome}
-          <span className="barra">/</span>
+        {/* O nome da jornada é o título da página, no tamanho das migalhas. */}
+        <div className="migalhas">
+          <h1>{r.jornada.nome}</h1>
+          <span className="barra" aria-hidden="true">
+            /
+          </span>
           versão {r.versao}
           {r.maisRecente && ', a mais recente'}
+        </div>
+        {/* A validade vai junto dos selos: no celular não ocupa uma linha sozinha. */}
+        <span className="selos-link">
+          <span className="selo info">só leitura</span>
+          {r.esconderNomes && <span className="selo info">nomes escondidos</span>}
+          {r.expiraEm && <span className="validade">vale até {dataCurta(r.expiraEm)}</span>}
         </span>
-        <span className="selo info">só leitura</span>
-        {r.esconderNomes && <span className="selo info">nomes escondidos</span>}
-        {r.expiraEm && <span className="mudo empurra">vale até {dataCurta(r.expiraEm)}</span>}
       </header>
       <Suspense>
         <Jornada

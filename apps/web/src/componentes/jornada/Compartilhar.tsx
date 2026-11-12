@@ -18,6 +18,8 @@ export interface PropsCompartilhar {
 
 const FALHOU = 'Não deu certo agora. Tenta de novo em instantes.';
 const COPIE_A_MAO = 'Não deu pra copiar: seleciona o endereço e copia.';
+// A cópia automática do link novo (logo depois de criar) o Safari recusa: o botão Copiar ao lado resolve.
+const COPIE_DE_NOVO = 'Clica em Copiar ou seleciona o endereço.';
 
 /** Copia; sem a API de área de transferência (página fora de HTTPS, permissão negada), devolve false. */
 async function copiar(texto: string): Promise<boolean> {
@@ -53,8 +55,8 @@ export function Compartilhar(p: PropsCompartilhar) {
   /** Um erro por ação ('novo' ou o id do link). */
   const [erros, setErros] = useState<Record<string, string>>({});
   const [novo, setNovo] = useState<string | null>(null);
-  /** A última cópia: de onde ('novo' ou o id do link) e se deu certo. */
-  const [copia, setCopia] = useState<{ de: string; ok: boolean } | null>(null);
+  /** A última cópia: de onde ('novo' ou o id do link), se deu certo e se foi a automática do link novo. */
+  const [copia, setCopia] = useState<{ de: string; ok: boolean; auto: boolean } | null>(null);
 
   const estaAberto = aberto !== null;
   // O showModal vem depois do render: o diálogo abre já com as opções no padrão, e o foco cai no primeiro controle.
@@ -104,9 +106,9 @@ export function Compartilhar(p: PropsCompartilhar) {
     });
   const atualizarHora = () => setAberto((a) => a && { ...a, agora: new Date() });
 
-  const copiarDe = async (de: string, endereco: string, v = vez.current) => {
+  const copiarDe = async (de: string, endereco: string, v = vez.current, auto = false) => {
     const ok = await copiar(endereco);
-    if (vigente(v)) setCopia({ de, ok });
+    if (vigente(v)) setCopia({ de, ok, auto });
   };
 
   const criar = async () => {
@@ -123,7 +125,7 @@ export function Compartilhar(p: PropsCompartilhar) {
       const endereco = enderecoDoLink(window.location.origin, r.token);
       setNovo(endereco);
       atualizarHora();
-      await copiarDe('novo', endereco, v);
+      await copiarDe('novo', endereco, v, true);
     } catch {
       if (vigente(v)) mostrarErro('novo', FALHOU);
     } finally {
@@ -148,6 +150,17 @@ export function Compartilhar(p: PropsCompartilhar) {
       if (vez.current === v) mudarEnvio(l.id, false);
     }
   };
+
+  /** O aviso de uma cópia que falhou. */
+  const avisoFalha = copia?.auto ? COPIE_DE_NOVO : COPIE_A_MAO;
+  /** O que o leitor de tela ouve: diz qual link foi, pra que copiar outro link também seja anunciado. */
+  const anuncio = (() => {
+    if (!copia) return '';
+    if (!copia.ok) return avisoFalha;
+    if (copia.de === 'novo') return 'Copiado: o link novo.';
+    const l = p.links.find((x) => x.id === copia.de);
+    return `Copiado: o link “${l?.cenario_nome ?? 'sem cenário'}”.`;
+  })();
 
   const erroDe = (de: string) =>
     erros[de] && (
@@ -234,14 +247,14 @@ export function Compartilhar(p: PropsCompartilhar) {
               </div>
               {copia?.de === 'novo' && !copia.ok && (
                 <p className="dica" style={{ margin: 0 }}>
-                  {COPIE_A_MAO}
+                  {avisoFalha}
                 </p>
               )}
             </div>
           )}
-          {/* Uma região de status só, sempre no diálogo: o leitor de tela anuncia "Copiado" e a cópia que falhou. */}
+          {/* Uma região de status só, sempre no diálogo: o leitor de tela anuncia cada cópia e a que falhou. */}
           <p role="status" className="so-leitor">
-            {copia ? (copia.ok ? 'Copiado.' : COPIE_A_MAO) : ''}
+            {anuncio}
           </p>
           <div className="rotulo-secao">Links desta jornada</div>
           {aberto &&
