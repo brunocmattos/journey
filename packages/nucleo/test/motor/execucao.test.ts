@@ -187,6 +187,21 @@ describe('motor', () => {
     expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'peca:a' });
   });
 
+  it('decisão sem nenhuma saída válida termina como beco, sem esperar resposta', () => {
+    const d = doc({
+      pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('c', 'consulta')],
+      saidas: [
+        saida('m', '1', 'peca:c', { define: { chave: 'tipo', valor: 'y' } }),
+        saida('c', 'ok', 'fim:atendido', { quando: { chave: 'tipo', valor: 'x' } }),
+        saida('c', 'falha', 'fim:desliga', { quando: { chave: 'tipo', valor: 'z' } }),
+      ],
+    });
+    const e = executar(d, { entrada: 'peca:m', inicio: '2026-11-24T10:00', respostas: { 'peca:m': '1' } });
+    expect(e.pendente).toBeNull();
+    expect(e.motivo).toBe('beco');
+    expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'peca:c' });
+  });
+
   describe('voltar ao menu por escolha não é ciclo', () => {
     const repete = doc({
       pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('r', 'audio', { duracao_s: 4 })],

@@ -187,6 +187,7 @@ export class Execucao {
     }
 
     const disponiveis = opcoes.filter((o) => o.disponivel);
+    if (disponiveis.length === 0) return this.terminar(ref, 'beco', 'nenhuma saída vale com as variáveis atuais');
     const auto = this.respostaAutomatica(ref, disponiveis, opcoes.length);
     const sugestao = this.respostaDoRelogio(ref);
     this.emitir(sugestao ? { tipo: 'decisao', ref, quem, opcoes, sugestao } : { tipo: 'decisao', ref, quem, opcoes });
