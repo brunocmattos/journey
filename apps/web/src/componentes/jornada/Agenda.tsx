@@ -1,22 +1,11 @@
 'use client';
 
-import { lerRef, type Indice } from '@journey/nucleo/formato';
+import type { Indice } from '@journey/nucleo/formato';
 import { agendaSemanal, destinoFinal, DIAS_AGENDA } from '@journey/nucleo/diagnostico';
 import { nomeLegivel } from '@/simulacao/descrever';
 
 const CORES = ['var(--agenda-1)', 'var(--agenda-2)', 'var(--agenda-3)', 'var(--agenda-4)', 'var(--agenda-5)', 'var(--agenda-6)'];
 const hora = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-
-/** Destinos das entradas que passam por uma regra de horário: cada um ganha uma agenda. */
-export function pontosComAgenda(idx: Indice): string[] {
-  const vistos = new Set<string>();
-  for (const e of idx.doc.entradas) {
-    const r = lerRef(e.destino);
-    const p = r?.tipo === 'peca' ? idx.pecas.get(r.id) : undefined;
-    if (p && (p.tipo === 'regra_horario' || p.tipo === 'regra_feriado')) vistos.add(e.destino);
-  }
-  return [...vistos];
-}
 
 /** "Quem atende quando": uma barra por dia, cor pelo destino depois das regras (spec, 12.4). */
 export function Agenda({ idx, ponto }: { idx: Indice; ponto: string }) {

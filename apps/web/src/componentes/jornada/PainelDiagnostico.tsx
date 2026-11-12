@@ -4,7 +4,8 @@ import { useState } from 'react';
 import type { Indice } from '@journey/nucleo/formato';
 import type { Achado } from '@journey/nucleo/diagnostico';
 import type { Intencional } from '@/lib/dados';
-import { Agenda, pontosComAgenda } from './Agenda';
+import { pontosComAgenda } from '@/diagnostico/agenda';
+import { Agenda } from './Agenda';
 
 const ORDEM = { grave: 0, alerta: 1, observacao: 2 } as const;
 const NOME_GRAVIDADE = { grave: 'grave', alerta: 'alerta', observacao: 'observação' } as const;
