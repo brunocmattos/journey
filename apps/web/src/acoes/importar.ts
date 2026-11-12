@@ -5,9 +5,8 @@ import { revalidatePath } from 'next/cache';
 import type { Documento } from '@journey/nucleo';
 import { analisarArquivos } from '@/importacao/analisar';
 import { jornadasDoImport } from '@/importacao/jornadas';
+import { ERRO_LIMITE, passaDoLimite } from '@/importacao/limite';
 import { usuarioAtual } from '@/lib/dados';
-
-const LIMITE_BYTES = 20 * 1024 * 1024;
 
 export type EstadoImport = { erro: string } | null;
 
@@ -16,7 +15,7 @@ export async function analisarImport(empresaId: string, _antes: EstadoImport, fo
   const { supabase } = await usuarioAtual();
   const arquivos = form.getAll('arquivos').filter((f): f is File => f instanceof File && f.size > 0);
   if (arquivos.length === 0) return { erro: 'Escolhe pelo menos um arquivo (.xlsx, .csv ou .json).' };
-  if (arquivos.reduce((s, f) => s + f.size, 0) > LIMITE_BYTES) return { erro: 'Os arquivos passam de 20 MB juntos.' };
+  if (passaDoLimite(arquivos.map((f) => f.size))) return { erro: ERRO_LIMITE };
   const parcial = form.get('parcial') === 'sim';
 
   const ultimo = await supabase
