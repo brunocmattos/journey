@@ -1,0 +1,24 @@
+{
+  "name": "@journey/nucleo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "modelos": "tsx scripts/gerar-modelos.ts",
+    "fixture": "tsx scripts/gerar-fixture.ts"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsx": "^4.19.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
