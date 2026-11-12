@@ -1,2 +1,2 @@
-export * from './json';
-export * from './xlsx';
+export { gerarModeloJson, gerarEsquemaJson } from './json';
+export { gerarModeloXlsx } from './xlsx';

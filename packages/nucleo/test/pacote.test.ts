@@ -61,12 +61,30 @@ describe('subpacotes', () => {
     expect(alcance.some((a) => a.externos.includes('exceljs'))).toBe(true);
   });
 
-  it('cada índice de pasta exporta o mesmo que o índice geral exporta dela', () => {
+  it('o índice geral só reexporta os índices das pastas', () => {
     const geral = readFileSync(resolve(raiz, 'src/index.ts'), 'utf8');
+    const alvos = [...geral.matchAll(/from '([^']+)'/g)].map((m) => m[1]).sort();
+    expect(alvos).toEqual(['./diagnostico', './formato', './importacao', './modelos', './motor']);
+  });
+});
+
+describe('API pública', () => {
+  it('o índice geral exporta tudo o que os índices das pastas exportam', async () => {
+    const geral = await import('../src/index');
     for (const pasta of ['formato', 'importacao', 'modelos', 'motor', 'diagnostico']) {
-      const doGeral = [...geral.matchAll(new RegExp(`from '\\./${pasta}/([^']+)'`, 'g'))].map((m) => m[1]).sort();
-      const doIndice = [...readFileSync(resolve(raiz, 'src', pasta, 'index.ts'), 'utf8').matchAll(/from '\.\/([^']+)'/g)].map((m) => m[1]).sort();
-      expect(doIndice).toEqual(doGeral);
+      const indice = (await import(`../src/${pasta}/index.ts`)) as Record<string, unknown>;
+      expect(Object.keys(indice).length).toBeGreaterThan(0);
+      for (const nome of Object.keys(indice)) expect(geral).toHaveProperty(nome, indice[nome]);
+    }
+  });
+
+  it('o que é de uso interno não vaza', async () => {
+    const geral = (await import('../src/index')) as Record<string, unknown>;
+    for (const nome of ['lerLinha', 'erroDeId', 'MSG_OBRIGATORIO_VAZIO', 'linhasDeMatriz', 'achado', 'igual', 'semAcento', 'somar', 'buracosDeHorario']) {
+      expect(geral, nome).not.toHaveProperty(nome);
+    }
+    for (const nome of ['importar', 'analisar', 'validar', 'aplicarAjustes', 'descrever', 'lerArquivos', 'executar', 'Execucao', 'diagnosticar', 'GRAVIDADE', 'indexar', 'lerRef', 'ABAS', 'gerarModeloXlsx']) {
+      expect(geral, nome).toHaveProperty(nome);
     }
   });
 });
