@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+import { join } from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -6,12 +8,26 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
  */
 export const URL_LOCAL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
 const CHAVE_PUBLICA = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
-const CHAVE_SECRETA = process.env.SUPABASE_SECRET_KEY ?? '';
+const CHAVE_SECRETA = process.env.SUPABASE_SECRET_KEY ?? chaveDaCli();
+
+/**
+ * A chave secreta do Supabase local, lida da própria CLI (`supabase status`). Não fica no código:
+ * mesmo sendo a chave de demonstração de toda instalação local, a proteção de segredos do GitHub barra o push.
+ */
+function chaveDaCli(): string {
+  try {
+    const raiz = join(import.meta.dirname, '..', '..', '..', '..');
+    const saida = execSync('npx supabase status -o json', { cwd: raiz, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    return (JSON.parse(saida) as { SECRET_KEY?: string }).SECRET_KEY ?? '';
+  } catch {
+    return '';
+  }
+}
 
 export async function bancoNoAr(): Promise<boolean> {
   try {
     const r = await fetch(`${URL_LOCAL}/auth/v1/health`, { headers: { apikey: CHAVE_PUBLICA } });
-    return r.ok;
+    return r.ok && CHAVE_SECRETA !== '';
   } catch {
     return false;
   }
