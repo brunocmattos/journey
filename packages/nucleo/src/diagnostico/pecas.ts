@@ -53,6 +53,8 @@ export function voltasSemLimite(idx: Indice, alc: Set<string>): Achado[] {
     for (const s of idx.saidasDe.get(pecaId) ?? []) {
       const r = lerRef(s.para);
       if (r?.tipo !== 'peca' || !idx.pecas.has(r.id)) continue;
+      // O menu que repete a si mesmo ao esgotar já tem contador: as tentativas.
+      if (s.opcao === 'esgotou' && r.id === pecaId && idx.pecas.get(pecaId)?.tipo === 'menu') continue;
       const e = estado.get(r.id);
       if (e === 'aberto') {
         out.push(
@@ -72,6 +74,8 @@ export function voltasSemLimite(idx: Indice, alc: Set<string>): Achado[] {
     const r = lerRef(e.destino);
     if (r?.tipo === 'peca' && idx.pecas.has(r.id) && !estado.has(r.id) && alc.has(e.destino)) visitar(r.id);
   }
+  // Peças que só se alcançam depois de fila, grupo ou ramal.
+  for (const p of idx.doc.pecas) if (!estado.has(p.id) && alc.has(`peca:${p.id}`)) visitar(p.id);
   return out;
 }
 

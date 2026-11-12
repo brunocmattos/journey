@@ -39,6 +39,18 @@ describe('diagnóstico das peças', () => {
     expect(voltasSemLimite(idx, alc).map((a) => a.chave)).toEqual(['volta_sem_limite:saida:sub-0']);
   });
 
+  it('volta sem limite também depois de fila, e não no menu que repete ao esgotar', () => {
+    const i = indexar(
+      doc({
+        entradas: [entrada('e', 'fila:1')],
+        filas: [fila('1', { ao_esgotar: 'peca:a' })],
+        pecas: [peca('a', 'audio'), peca('b', 'audio'), peca('m', 'menu', { espera_s: 5, tentativas: 2 })],
+        saidas: [saida('a', 'sempre', 'peca:b', { id: 'a-b' }), saida('b', 'sempre', 'peca:a', { id: 'b-a' }), saida('b', '1', 'peca:m', { id: 'b-m' }), saida('m', 'esgotou', 'peca:m', { id: 'm-m' })],
+      }),
+    );
+    expect(voltasSemLimite(i, alcancaveis(i)).map((a) => a.chave)).toEqual(['volta_sem_limite:saida:b-a']);
+  });
+
   it('redundância atravessa peças de saída única', () => {
     const r = redundancias(idx, alc);
     expect(r.map((a) => a.chave)).toEqual(['redundancia:peca:menu>fila:1']);
