@@ -1,4 +1,5 @@
-import { alcancaveis, diagnosticar, indexar, lerRef, type Achado, type Canal, type Documento } from '@journey/nucleo';
+import { alcancaveis, diagnosticar, type Achado } from '@journey/nucleo/diagnostico';
+import { indexar, lerRef, type Canal, type Documento } from '@journey/nucleo/formato';
 
 export interface JornadaCalculada {
   nome: string;
@@ -19,13 +20,17 @@ export const NOME_DO_CANAL: Record<Canal, string> = {
 /**
  * Uma jornada por canal das entradas, cada uma com as entradas daquele canal e o resto do documento.
  * Sem nenhuma entrada, uma jornada só, de telefonia (o canal padrão).
+ * "Não recebe ligação" olha o documento inteiro: o que só outro canal alcança não é órfão.
  */
 export function jornadasDoImport(efetivo: Documento): JornadaCalculada[] {
   const canais = [...new Set(efetivo.entradas.map((e) => e.canal))];
   if (canais.length === 0) canais.push('telefonia');
+  const alcancadoPorAlguem = canais.length > 1 ? alcancaveis(indexar(efetivo)) : undefined;
   return canais.map((canal) => {
     const documento: Documento = canais.length === 1 ? efetivo : { ...efetivo, entradas: efetivo.entradas.filter((e) => e.canal === canal) };
-    return { nome: NOME_DO_CANAL[canal], canal, documento, diagnostico: diagnosticar(documento), refs: refsUsadas(documento) };
+    let diagnostico = diagnosticar(documento);
+    if (alcancadoPorAlguem) diagnostico = diagnostico.filter((a) => a.tipo !== 'sem_entrada' || !alcancadoPorAlguem.has(a.refs[0]!));
+    return { nome: NOME_DO_CANAL[canal], canal, documento, diagnostico, refs: refsUsadas(documento) };
   });
 }
 

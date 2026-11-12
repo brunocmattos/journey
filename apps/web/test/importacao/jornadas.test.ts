@@ -12,6 +12,21 @@ describe('jornadasDoImport', () => {
     ]);
   });
 
+  it('o que só outro canal alcança não é "não recebe ligação"; o órfão de verdade aparece nas duas', () => {
+    const d = doc({
+      entradas: [entrada('t', 'peca:mt'), entrada('w', 'peca:mw', { canal: 'whatsapp' })],
+      pecas: [peca('mt', 'audio'), peca('mw', 'audio'), peca('orfa', 'audio')],
+      saidas: [saida('mt', 'fim', 'fim:desliga'), saida('mw', 'fim', 'fim:desliga'), saida('orfa', 'fim', 'fim:desliga')],
+    });
+    const semEntrada = (nome: string) =>
+      jornadasDoImport(d)
+        .find((j) => j.nome === nome)!
+        .diagnostico.filter((a) => a.tipo === 'sem_entrada')
+        .map((a) => a.refs[0]);
+    expect(semEntrada('Telefonia')).toEqual(['peca:orfa']);
+    expect(semEntrada('WhatsApp')).toEqual(['peca:orfa']);
+  });
+
   it('sem entradas, uma jornada de telefonia com o documento inteiro', () => {
     const d = doc({ filas: [fila('f')] });
     const [j] = jornadasDoImport(d);
