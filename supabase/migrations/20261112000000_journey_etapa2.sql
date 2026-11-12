@@ -348,7 +348,14 @@ create policy "membro muda cenário" on public.cenarios for update to authentica
 create policy "membro apaga cenário" on public.cenarios for delete to authenticated using (public.eh_membro(empresa_id));
 create policy "membro vê os intencionais" on public.achados_intencionais for select to authenticated using (public.eh_membro(empresa_id));
 create policy "membro marca intencional" on public.achados_intencionais for insert to authenticated with check (public.eh_membro(empresa_id) and autor = auth.uid());
+create policy "membro muda a nota do intencional" on public.achados_intencionais for update to authenticated
+  using (public.eh_membro(empresa_id)) with check (public.eh_membro(empresa_id));
 create policy "membro desmarca intencional" on public.achados_intencionais for delete to authenticated using (public.eh_membro(empresa_id));
+-- Marcar de novo (upsert) troca a nota. As quatro colunas porque o upsert do PostgREST põe no
+-- "do update set" toda coluna enviada, e sem permissão em alguma delas até o primeiro upsert falha.
+-- A regra e a FK composta seguram a empresa; autor e criado_em ficam como estão.
+revoke update on public.achados_intencionais from anon, authenticated;
+grant update (empresa_id, jornada_id, chave, nota) on public.achados_intencionais to authenticated;
 
 -- Arquivos importados (Storage, privado) -------------------------------------
 -- Caminho: <empresa_id>/<import_id>/<nome do arquivo>.

@@ -1,7 +1,7 @@
 -- Regras de acesso e funções do Journey. Roda com: npx supabase test db
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(48);
+select plan(51);
 
 -- Duas pessoas, cada uma na sua empresa, mais o Caio (convidado) e o Davi (e-mail ainda não confirmado).
 insert into auth.users (id, email, aud, role, email_confirmed_at) values
@@ -149,6 +149,21 @@ select throws_ok(
   $$ insert into public.achados_intencionais (empresa_id, jornada_id, chave)
      values (current_setting('teste.empresa_b')::uuid, current_setting('teste.jornada_a')::uuid, 'outra-chave') $$,
   '23503', null, 'nem achado intencional');
+-- Marcar de novo, como o upsert do app (todas as colunas enviadas no "do update set").
+select throws_ok(
+  $$ insert into public.achados_intencionais (empresa_id, jornada_id, chave, nota)
+     values (current_setting('teste.empresa_a')::uuid, current_setting('teste.jornada_a')::uuid, 'fila-sem-transbordo', 'invasão')
+     on conflict (jornada_id, chave) do update
+       set empresa_id = excluded.empresa_id, jornada_id = excluded.jornada_id, chave = excluded.chave, nota = excluded.nota $$,
+  '42501', null, 'quem não é membro não muda a nota do intencional');
+select pg_temp.entrar('00000000-0000-0000-0000-00000000000a', 'ana@exemplo.com');
+select lives_ok(
+  $$ insert into public.achados_intencionais (empresa_id, jornada_id, chave, nota)
+     values (current_setting('teste.empresa_a')::uuid, current_setting('teste.jornada_a')::uuid, 'fila-sem-transbordo', 'nota nova')
+     on conflict (jornada_id, chave) do update
+       set empresa_id = excluded.empresa_id, jornada_id = excluded.jornada_id, chave = excluded.chave, nota = excluded.nota $$,
+  'membro marca de novo o mesmo achado');
+select is((select nota from public.achados_intencionais where chave = 'fila-sem-transbordo'), 'nota nova', 'e a nota é atualizada');
 
 -- Empresa: só o nome muda. E ninguém esvazia tabela por fora das regras.
 select pg_temp.entrar('00000000-0000-0000-0000-00000000000a', 'ana@exemplo.com');
