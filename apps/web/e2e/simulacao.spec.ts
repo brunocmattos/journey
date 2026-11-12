@@ -161,6 +161,7 @@ test('fora do horário, o relógio decide sozinho', async ({ page }) => {
 test('ramais diretos: ninguém atende e o transbordo vira ciclo', async ({ page }) => {
   await page.getByRole('tab', { name: 'Ramais' }).click();
   await page.getByTestId('ramais').getByRole('button', { name: /r1 Atendente Um/ }).click();
+  await expect(page.getByTestId('ramais')).toContainText('Toca 20 s.');
   await expect(page.getByTestId('fim')).toContainText('Ciclo sem fim', { timeout: 30_000 });
 });
 

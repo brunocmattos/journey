@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { lerRef, nomeDe, type Indice } from '@journey/nucleo/formato';
+import { toqueDoRamal } from '@journey/nucleo/motor';
 
 /**
  * Ramais diretos (spec, 7.3): vem do catálogo, não é documento. Cada ramal mostra pra onde transborda,
@@ -27,8 +28,8 @@ export function PainelRamais({ idx, atual, abrir }: { idx: Indice; atual: string
             {sel.nome ?? `Ramal ${sel.id}`} <span className="mono mudo">{sel.id}</span>
           </b>
           <p>
-            Toca {sel.toque_s ?? 20} s
-            {sel.siga_me_so_ramal_s !== undefined && `; siga-me: ${sel.siga_me_so_ramal_s} s só o ramal, ${sel.siga_me_com_lista_s ?? 0} s com a lista`}.
+            Toca {toqueDoRamal(sel)} s
+            {sel.siga_me_so_ramal_s !== undefined && sel.siga_me_com_lista_s !== undefined && ` (siga-me: ${sel.siga_me_so_ramal_s} s só o ramal + ${sel.siga_me_com_lista_s} s com a lista)`}.
           </p>
           <p>Não atende → {sel.ao_nao_atender ? nomeDe(idx, sel.ao_nao_atender) : 'desliga (sem transbordo)'}</p>
           {diretos.get(`ramal:${sel.id}`) && <p>Discam direto: {diretos.get(`ramal:${sel.id}`)!.join(', ')}</p>}
