@@ -4,7 +4,7 @@ import { alcancaveis } from './alcance';
 import { buracosDeHorario } from './horario';
 import { becos, dadosIncompletos, nosInativos, redundancias, semEntrada, voltasSemLimite } from './pecas';
 import type { Achado } from './tipos';
-import { ciclosDeTransbordo, destinosInexistentes, esperaSemLimite, gruposQueDesligam, planoBQueNaoDispara, voltaPropriaFila } from './transbordo';
+import { ciclosDeTransbordo, destinosInexistentes, esperaSemLimite, gruposQueDesligam, planoBQueNaoDispara, semTransbordo, voltaPropriaFila } from './transbordo';
 
 const ORDEM = { grave: 0, alerta: 1, observacao: 2 } as const;
 
@@ -25,6 +25,7 @@ export function diagnosticar(fonte: Documento | Indice): Achado[] {
     ...buracosDeHorario(idx, alc),
     ...esperaSemLimite(idx),
     ...planoBQueNaoDispara(idx),
+    ...semTransbordo(idx, alc),
     ...dadosIncompletos(idx),
   ];
   return todos.sort((a, b) => ORDEM[a.gravidade] - ORDEM[b.gravidade] || a.chave.localeCompare(b.chave));

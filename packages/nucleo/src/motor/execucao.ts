@@ -10,6 +10,8 @@ export type Como = 'cenario' | 'relogio' | 'unica' | 'resposta' | 'ninguem_atend
 
 export interface Opcao {
   opcao: string;
+  /** Id da saída (aba saidas), quando a opção vem de uma peça. Distingue saídas com a mesma opção e "quando" diferente. */
+  saida?: string;
   rotulo: string;
   /** Pra onde leva. Sem para e sem termina = beco sem saída. */
   para?: string;
@@ -29,7 +31,8 @@ export type Evento =
   | { tipo: 'decisao'; ref: string; quem: QuemDecide; opcoes: Opcao[]; sugestao?: string; t: number }
   | { tipo: 'escolheu'; ref: string; opcao: string; como: Como; t: number }
   | { tipo: 'definiu'; ref: string; chave: string; valor: string; t: number }
-  | { tipo: 'correu'; de: string; para: string; opcao: string; t: number }
+  | { tipo: 'correu'; de: string; para: string; opcao: string; saida?: string; t: number }
+  | { tipo: 'resposta_ignorada'; ref: string; resposta: string; motivo: string; t: number }
   | { tipo: 'terminou'; ref: string; motivo: Motivo; detalhe?: string; t: number };
 
 type SemT<E> = E extends unknown ? Omit<E, 't'> : never;
@@ -41,7 +44,10 @@ export interface OpcoesExecucao {
   inicio: string;
   /** cenario (padrão): relógio e respostas decidem sozinhos. livre: tudo é perguntado. ninguem_atende: filas, grupos e ramais não atendem. */
   modo?: 'cenario' | 'livre' | 'ninguem_atende';
-  /** Respostas por referência. Lista = uma resposta por visita. */
+  /**
+   * Respostas por referência: o id da saída ou a opção. Lista = uma resposta por visita.
+   * Resposta que não serve (não existe, não vale ou é ambígua) vira o evento resposta_ignorada.
+   */
   respostas?: Record<string, string | readonly string[]>;
   /**
    * Termina como ciclo quando um ponto é alcançado esta quantidade de vezes. Padrão 3; no modo livre, sem limite.
@@ -60,7 +66,7 @@ export class Execucao {
   private atual: string;
   private t = 0;
   private canal: Canal = 'telefonia';
-  private vars: Record<string, string> = {};
+  private readonly vars = new Map<string, string>();
   private visitas = new Map<string, number>();
   private aguardando: { ref: string; opcoes: Opcao[] } | null = null;
   private motivoFim: Motivo | null = null;
@@ -102,10 +108,10 @@ export class Execucao {
   }
   /** A decisão esperando resposta, se houver. */
   get pendente(): { ref: string; opcoes: Opcao[] } | null {
-    return this.aguardando;
+    return this.aguardando && { ref: this.aguardando.ref, opcoes: this.aguardando.opcoes.map(copiar) };
   }
   get variaveis(): Record<string, string> {
-    return { ...this.vars };
+    return Object.fromEntries(this.vars);
   }
   get segundos(): number {
     return this.t;
@@ -114,14 +120,14 @@ export class Execucao {
     return somar(this.inicioMs, t);
   }
 
-  /** Anda até terminar ou parar numa decisão sem resposta. Devolve os eventos novos. */
+  /** Anda até terminar ou parar numa decisão sem resposta. A resposta é o id da saída ou a opção. Devolve os eventos novos. */
   avancar(resposta?: string): Evento[] {
     const inicio = this.eventos.length;
     if (this.aguardando) {
       if (resposta === undefined) return [];
-      const o = this.aguardando.opcoes.find((x) => x.opcao === resposta && x.disponivel);
-      if (!o) throw new Error(`"${resposta}" não é uma opção disponível em ${this.aguardando.ref}`);
       const ref = this.aguardando.ref;
+      const o = escolher(ref, this.aguardando.opcoes, resposta);
+      if (typeof o === 'string') throw new Error(o);
       this.aguardando = null;
       this.emitir({ tipo: 'escolheu', ref, opcao: o.opcao, como: 'resposta' });
       this.visitas.clear();
@@ -143,8 +149,8 @@ export class Execucao {
     this.emitir(detalhe ? { tipo: 'terminou', ref, motivo, detalhe } : { tipo: 'terminou', ref, motivo });
   }
 
-  private seguir(de: string, para: string, opcao: string): void {
-    this.emitir({ tipo: 'correu', de, para, opcao });
+  private seguir(de: string, para: string, opcao: string, saida?: string): void {
+    this.emitir(saida === undefined ? { tipo: 'correu', de, para, opcao } : { tipo: 'correu', de, para, opcao, saida });
     this.atual = para;
   }
 
@@ -186,32 +192,31 @@ export class Execucao {
       return this.aplicar(ref, unica);
     }
 
-    const disponiveis = opcoes.filter((o) => o.disponivel);
-    if (disponiveis.length === 0) return this.terminar(ref, 'beco', 'nenhuma saída vale com as variáveis atuais');
-    const auto = this.respostaAutomatica(ref, disponiveis, opcoes.length);
+    if (!opcoes.some((o) => o.disponivel)) return this.terminar(ref, 'beco', 'nenhuma saída vale com as variáveis atuais');
     const sugestao = this.respostaDoRelogio(ref);
-    this.emitir(sugestao ? { tipo: 'decisao', ref, quem, opcoes, sugestao } : { tipo: 'decisao', ref, quem, opcoes });
+    const copias = opcoes.map(copiar);
+    this.emitir(sugestao ? { tipo: 'decisao', ref, quem, opcoes: copias, sugestao } : { tipo: 'decisao', ref, quem, opcoes: copias });
+    const auto = this.respostaAutomatica(ref, opcoes, sugestao);
     if (!auto) {
       this.aguardando = { ref, opcoes };
       return;
     }
-    const o = disponiveis.find((x) => x.opcao === auto.opcao);
-    if (!o) return this.terminar(ref, 'beco', `não existe saída "${auto.opcao}"`);
-    this.emitir({ tipo: 'escolheu', ref, opcao: o.opcao, como: auto.como });
+    if (typeof auto.o === 'string') return this.terminar(ref, 'beco', auto.o);
+    this.emitir({ tipo: 'escolheu', ref, opcao: auto.o.opcao, como: auto.como });
     // O cenário escolheu: o que vier depois não é repetição automática.
     if (auto.como === 'cenario') this.visitas.clear();
-    this.aplicar(ref, o);
+    this.aplicar(ref, auto.o);
   }
 
   private aplicar(ref: string, o: Opcao): void {
     this.t += o.segundos;
     if (o.define) {
-      this.vars[o.define.chave] = o.define.valor;
+      this.vars.set(o.define.chave, o.define.valor);
       this.emitir({ tipo: 'definiu', ref, chave: o.define.chave, valor: o.define.valor });
     }
     if (o.termina) return this.terminar(ref, o.termina);
     if (!o.para) return this.terminar(ref, 'beco', `"${o.rotulo}" não leva a lugar nenhum`);
-    this.seguir(ref, o.para, o.opcao);
+    this.seguir(ref, o.para, o.opcao, o.saida);
   }
 
   private quemDecide(ref: string): QuemDecide | null {
@@ -229,12 +234,15 @@ export class Execucao {
     if (r.tipo === 'peca') {
       const p = this.idx.pecas.get(r.id)!;
       return (this.idx.saidasDe.get(r.id) ?? []).map((s) => {
+        const valor = s.quando && this.vars.get(s.quando.chave);
         const o: Opcao = {
           opcao: s.opcao,
+          saida: s.id,
           rotulo: s.rotulo ?? s.opcao,
           para: s.para,
-          disponivel: !s.quando || this.vars[s.quando.chave] === undefined || this.vars[s.quando.chave] === s.quando.valor,
-          segundos: p.tipo === 'menu' ? (s.opcao === 'esgotou' ? (p.espera_s ?? 5) * (p.tentativas ?? 1) : 3) : 0,
+          disponivel: !s.quando || valor === undefined || valor === s.quando.valor,
+          // Menu sem espera_s ou tentativas para antes, como incompleto.
+          segundos: p.tipo === 'menu' ? (s.opcao === 'esgotou' ? p.espera_s! * p.tentativas! : 3) : 0,
         };
         if (s.define) o.define = s.define;
         return o;
@@ -246,7 +254,7 @@ export class Execucao {
       return [
         { opcao: 'atende', rotulo: 'Alguém atende', termina: 'atendido', disponivel: true, segundos: 30, exemplo: true },
         espera !== undefined
-          ? { opcao: 'nao_atende', rotulo: `Ninguém atende em ${espera} s`, para: f.ao_esgotar ?? 'fim:desliga', disponivel: true, segundos: espera }
+          ? { opcao: 'nao_atende', rotulo: rotuloSemTransbordo(`Ninguém atende em ${espera} s`, f.ao_esgotar), para: f.ao_esgotar ?? 'fim:desliga', disponivel: true, segundos: espera }
           : { opcao: 'nao_atende', rotulo: 'Ninguém atende e a fila não tem tempo máximo', termina: 'desistiu', disponivel: true, segundos: 180, exemplo: true },
       ];
     }
@@ -255,7 +263,7 @@ export class Execucao {
       const toque = g.toque_s ?? 20;
       return [
         { opcao: 'atende', rotulo: 'Alguém atende', termina: 'atendido', disponivel: true, segundos: Math.min(toque, 10), exemplo: true },
-        { opcao: 'nao_atende', rotulo: `Ninguém atende em ${toque} s`, para: g.ao_esgotar, disponivel: true, segundos: toque },
+        { opcao: 'nao_atende', rotulo: rotuloSemTransbordo(`Ninguém atende em ${toque} s`, g.ao_esgotar), para: g.ao_esgotar ?? 'fim:desliga', disponivel: true, segundos: toque },
       ];
     }
     if (r.tipo === 'ramal') {
@@ -263,7 +271,7 @@ export class Execucao {
       const toque = x.siga_me_so_ramal_s !== undefined && x.siga_me_com_lista_s !== undefined ? x.siga_me_so_ramal_s + x.siga_me_com_lista_s : (x.toque_s ?? 20);
       return [
         { opcao: 'atende', rotulo: 'Atende', termina: 'atendido', disponivel: true, segundos: Math.min(toque, 8), exemplo: true },
-        { opcao: 'nao_atende', rotulo: `Não atende em ${toque} s`, para: x.ao_nao_atender, disponivel: true, segundos: toque },
+        { opcao: 'nao_atende', rotulo: rotuloSemTransbordo(`Não atende em ${toque} s`, x.ao_nao_atender), para: x.ao_nao_atender ?? 'fim:desliga', disponivel: true, segundos: toque },
       ];
     }
     return [];
@@ -282,21 +290,54 @@ export class Execucao {
     return undefined;
   }
 
-  private respostaAutomatica(ref: string, disponiveis: Opcao[], total: number): { opcao: string; como: Como } | null {
+  /**
+   * Quem responde sozinho: o cenário, o relógio, o modo "ninguém atende" ou a única saída que vale.
+   * Resposta do cenário que não serve é avisada e descartada. Uma string em `o` é o motivo do beco.
+   */
+  private respostaAutomatica(ref: string, opcoes: Opcao[], doRelogio: string | undefined): { o: Opcao | string; como: Como } | null {
     const fila = this.respostas.get(ref);
     if (fila && fila.length > 0) {
-      const opcao = fila.shift()!;
-      if (disponiveis.some((o) => o.opcao === opcao)) return { opcao, como: 'cenario' };
+      const resposta = fila.shift()!;
+      const o = escolher(ref, opcoes, resposta);
+      if (typeof o !== 'string') return { o, como: 'cenario' };
+      this.emitir({ tipo: 'resposta_ignorada', ref, resposta, motivo: o });
     }
-    if (this.modo !== 'livre') {
-      const doRelogio = this.respostaDoRelogio(ref);
-      if (doRelogio) return { opcao: doRelogio, como: 'relogio' };
+    if (this.modo !== 'livre' && doRelogio) {
+      const candidatas = candidatasDe(opcoes, doRelogio);
+      if (candidatas.length === 0) return { o: `não existe saída "${doRelogio}"`, como: 'relogio' };
+      // Mais de uma saída com a mesma resposta do relógio: quem decide é quem simula.
+      if (candidatas.length === 1) return { o: candidatas[0]!, como: 'relogio' };
     }
     const tipo = lerRef(ref)?.tipo;
-    if (this.modo === 'ninguem_atende' && (tipo === 'fila' || tipo === 'grupo' || tipo === 'ramal')) return { opcao: 'nao_atende', como: 'ninguem_atende' };
-    if (disponiveis.length === 1 && total > 1) return { opcao: disponiveis[0]!.opcao, como: 'unica' };
+    if (this.modo === 'ninguem_atende' && (tipo === 'fila' || tipo === 'grupo' || tipo === 'ramal')) {
+      return { o: opcoes.find((x) => x.opcao === 'nao_atende')!, como: 'ninguem_atende' };
+    }
+    const disponiveis = opcoes.filter((x) => x.disponivel);
+    if (disponiveis.length === 1 && opcoes.length > 1) return { o: disponiveis[0]!, como: 'unica' };
     return null;
   }
+}
+
+/** "Ninguém atende em 20 s: desliga (sem transbordo)" quando não há destino configurado. */
+const rotuloSemTransbordo = (rotulo: string, destino: string | undefined) => (destino === undefined ? `${rotulo}: desliga (sem transbordo)` : rotulo);
+
+function copiar(o: Opcao): Opcao {
+  return o.define ? { ...o, define: { ...o.define } } : { ...o };
+}
+
+/** Opções disponíveis que a resposta indica: primeiro pelo id exato da saída, depois pela opção. */
+function candidatasDe(opcoes: Opcao[], resposta: string): Opcao[] {
+  const disponiveis = opcoes.filter((o) => o.disponivel);
+  const porId = disponiveis.find((o) => o.saida === resposta);
+  return porId ? [porId] : disponiveis.filter((o) => o.opcao === resposta);
+}
+
+/** A opção que a resposta indica, ou o motivo de não servir. */
+function escolher(ref: string, opcoes: Opcao[], resposta: string): Opcao | string {
+  const candidatas = candidatasDe(opcoes, resposta);
+  if (candidatas.length === 1) return candidatas[0]!;
+  if (candidatas.length === 0) return `"${resposta}" não é uma opção disponível em ${ref}`;
+  return `"${resposta}" vale pra mais de uma saída em ${ref} (${candidatas.map((o) => o.saida).join(', ')}): responda com o id da saída`;
 }
 
 /** Cria a execução e anda até terminar ou parar numa decisão. */

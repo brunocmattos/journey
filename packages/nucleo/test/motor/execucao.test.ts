@@ -121,7 +121,6 @@ describe('motor', () => {
   });
 
   it('becos, destinos que saem da central e peça sem saída', () => {
-    expect(executar(doc({ ramais: [ramal('1')] }), { entrada: 'ramal:1', inicio: '2026-11-24T10:00', modo: 'ninguem_atende' }).motivo).toBe('beco');
     expect(executar(doc({ pecas: [peca('a', 'audio')] }), { entrada: 'peca:a', inicio: '2026-11-24T10:00' }).motivo).toBe('beco');
     expect(executar(doc({}), { entrada: 'externo:celular', inicio: '2026-11-24T10:00' }).motivo).toBe('saiu_da_central');
   });
@@ -224,5 +223,134 @@ describe('motor', () => {
       e.avancar('1');
       expect(e.motivo).toBe('atendido');
     });
+  });
+
+  describe('id da saída', () => {
+    const inicio = '2026-11-24T10:00';
+    const naBusca = { ...terca10h, respostas: { 'peca:menu': '3', 'peca:tipo': '1' } };
+
+    it('opções de peça e o evento "correu" trazem o id da saída; entrada, fila, grupo e ramal não', () => {
+      const e = executar(base, { ...terca10h, modo: 'ninguem_atende', respostas: { 'peca:menu': '1' } });
+      const correu = e.eventos.filter((x) => x.tipo === 'correu');
+      expect(correu[0]).not.toHaveProperty('saida');
+      expect(correu).toContainEqual(expect.objectContaining({ de: 'peca:menu', para: 'fila:100', opcao: '1', saida: 'menu-1' }));
+      expect(correu.find((x) => x.de === 'fila:100')).not.toHaveProperty('saida');
+      const menu = e.eventos.find((x) => x.tipo === 'decisao' && x.ref === 'peca:menu');
+      expect(menu).toMatchObject({ opcoes: expect.arrayContaining([expect.objectContaining({ opcao: 'esgotou', saida: 'menu-esgotou' })]) });
+    });
+
+    it('avancar aceita o id da saída e recusa a opção ambígua', () => {
+      const d = doc({
+        pecas: [peca('c', 'consulta')],
+        saidas: [
+          saida('c', 'falha', 'fim:atendido', { quando: { chave: 'tipo', valor: 'x' } }),
+          saida('c', 'falha', 'fim:desliga', { quando: { chave: 'tipo', valor: 'y' } }),
+        ],
+      });
+      const e = executar(d, { entrada: 'peca:c', inicio });
+      expect(e.pendente?.opcoes.map((o) => o.saida)).toEqual(['c-falha-x', 'c-falha-y']);
+      expect(() => e.avancar('falha')).toThrow('c-falha-x, c-falha-y');
+      expect(e.pendente?.ref).toBe('peca:c');
+      e.avancar('c-falha-y');
+      expect(e.eventos).toContainEqual(expect.objectContaining({ tipo: 'correu', de: 'peca:c', para: 'fim:desliga', saida: 'c-falha-y' }));
+      expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'fim:desliga' });
+    });
+
+    it('a opção sem ambiguidade continua valendo', () => {
+      const e = executar(base, naBusca);
+      expect(e.pendente?.ref).toBe('peca:busca');
+      e.avancar('falha');
+      expect(chegadas(e).at(-1)).toBe('fila:100');
+    });
+
+    it('o cenário aceita o id da saída', () => {
+      const d = doc({
+        pecas: [peca('c', 'consulta')],
+        saidas: [
+          saida('c', 'falha', 'fim:atendido', { quando: { chave: 'tipo', valor: 'x' } }),
+          saida('c', 'falha', 'fim:desliga', { quando: { chave: 'tipo', valor: 'y' } }),
+        ],
+      });
+      const e = executar(d, { entrada: 'peca:c', inicio, respostas: { 'peca:c': 'c-falha-y' } });
+      expect(e.eventos).toContainEqual(expect.objectContaining({ tipo: 'escolheu', ref: 'peca:c', opcao: 'falha', como: 'cenario' }));
+      expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'fim:desliga' });
+    });
+
+    it('pendente e decisão entregam cópias: mexer nelas não muda o que avancar aceita', () => {
+      const e = executar(base, terca10h);
+      const decisao = e.eventos.at(-1);
+      if (decisao?.tipo !== 'decisao') throw new Error('esperava decisão');
+      decisao.opcoes.forEach((o) => (o.disponivel = false));
+      e.pendente!.opcoes.forEach((o) => {
+        o.disponivel = false;
+        o.para = 'fim:desliga';
+      });
+      e.pendente!.opcoes.length = 0;
+      e.avancar('1');
+      expect(e.pendente?.ref).toBe('fila:100');
+    });
+  });
+
+  describe('ninguém atende e não há transbordo: desliga', () => {
+    const inicio = '2026-11-24T10:00';
+    const casos = [
+      ['ramal', doc({ ramais: [ramal('1', { toque_s: 20 })] }), 'ramal:1', 'Não atende em 20 s: desliga (sem transbordo)'],
+      ['grupo', doc({ grupos: [grupo('1', { toque_s: 20 })] }), 'grupo:1', 'Ninguém atende em 20 s: desliga (sem transbordo)'],
+      ['fila', doc({ filas: [fila('1', { espera_maxima_s: 60 })] }), 'fila:1', 'Ninguém atende em 60 s: desliga (sem transbordo)'],
+    ] as const;
+    for (const [nome, d, ref, rotulo] of casos) {
+      it(nome, () => {
+        const e = executar(d, { entrada: ref, inicio, modo: 'ninguem_atende' });
+        expect(e.motivo).toBe('fim');
+        expect(e.eventos.at(-1)).toMatchObject({ tipo: 'terminou', ref: 'fim:desliga' });
+        const decisao = e.eventos.find((x) => x.tipo === 'decisao');
+        expect(decisao).toMatchObject({ opcoes: expect.arrayContaining([expect.objectContaining({ opcao: 'nao_atende', para: 'fim:desliga', rotulo })]) });
+      });
+    }
+  });
+
+  describe('resposta do cenário que não serve deixa rastro', () => {
+    it('opção que não existe: avisa e segue como se não houvesse resposta', () => {
+      const e = executar(base, { ...terca10h, respostas: { 'peca:menu': '9' } });
+      expect(e.eventos).toContainEqual(expect.objectContaining({ tipo: 'resposta_ignorada', ref: 'peca:menu', resposta: '9', motivo: expect.stringContaining('não é uma opção') }));
+      expect(e.pendente?.ref).toBe('peca:menu');
+      expect(e.eventos.filter((x) => x.tipo === 'decisao' && x.ref === 'peca:menu')).toHaveLength(1);
+    });
+
+    it('o relógio decide depois da resposta ignorada', () => {
+      const e = executar(base, { ...terca10h, respostas: { 'peca:horario': 'talvez' } });
+      const i = e.eventos.findIndex((x) => x.tipo === 'resposta_ignorada');
+      expect(i).toBeGreaterThan(0);
+      expect(e.eventos[i - 1]).toMatchObject({ tipo: 'decisao', ref: 'peca:horario' });
+      expect(e.eventos[i + 1]).toMatchObject({ tipo: 'escolheu', ref: 'peca:horario', opcao: 'sim', como: 'relogio' });
+    });
+
+    it('opção ambígua no cenário também é ignorada', () => {
+      const d = doc({
+        pecas: [peca('c', 'consulta')],
+        saidas: [
+          saida('c', 'ok', 'fim:atendido'),
+          saida('c', 'falha', 'fim:atendido', { quando: { chave: 'tipo', valor: 'x' } }),
+          saida('c', 'falha', 'fim:desliga', { quando: { chave: 'tipo', valor: 'y' } }),
+        ],
+      });
+      const e = executar(d, { entrada: 'peca:c', inicio: '2026-11-24T10:00', respostas: { 'peca:c': 'falha' } });
+      expect(e.eventos).toContainEqual(expect.objectContaining({ tipo: 'resposta_ignorada', ref: 'peca:c', resposta: 'falha', motivo: expect.stringContaining('c-falha-x, c-falha-y') }));
+      expect(e.pendente?.ref).toBe('peca:c');
+    });
+  });
+
+  it('variáveis com nome de propriedade de objeto são variáveis comuns', () => {
+    const d = doc({
+      pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('a', 'audio')],
+      saidas: [
+        saida('m', '1', 'peca:a', { define: { chave: '__proto__', valor: 'p' } }),
+        saida('m', 'esgotou', 'fim:desliga'),
+        saida('a', 'sempre', 'fim:atendido', { quando: { chave: 'constructor', valor: 'x' } }),
+      ],
+    });
+    const e = executar(d, { entrada: 'peca:m', inicio: '2026-11-24T10:00', respostas: { 'peca:m': '1' } });
+    expect(e.motivo).toBe('atendido');
+    expect(Object.entries(e.variaveis)).toEqual([['__proto__', 'p']]);
   });
 });

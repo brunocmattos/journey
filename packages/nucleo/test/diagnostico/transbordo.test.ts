@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { indexar } from '../../src/formato/indice';
-import { ciclosDeTransbordo, destinosInexistentes, esperaSemLimite, gruposQueDesligam, planoBQueNaoDispara, voltaPropriaFila } from '../../src/diagnostico/transbordo';
-import { doc, fila, grupo, ramal } from '../apoio';
+import { alcancaveis } from '../../src/diagnostico/alcance';
+import { ciclosDeTransbordo, destinosInexistentes, esperaSemLimite, gruposQueDesligam, planoBQueNaoDispara, semTransbordo, voltaPropriaFila } from '../../src/diagnostico/transbordo';
+import { GRAVIDADE } from '../../src/diagnostico/tipos';
+import { doc, entrada, fila, grupo, peca, ramal, saida } from '../apoio';
 
 describe('diagnóstico de transbordo', () => {
   const idx = indexar(
@@ -45,5 +47,38 @@ describe('diagnóstico de transbordo', () => {
   it('espera sem limite e plano B que não dispara', () => {
     expect(esperaSemLimite(idx).map((a) => a.chave)).toEqual(['espera_sem_limite:fila:10']);
     expect(planoBQueNaoDispara(idx).map((a) => a.chave)).toEqual(['plano_b_nao_dispara:fila:10']);
+  });
+
+  it('sem transbordo: fila, grupo e ramal alcançáveis que desligam por falta de destino', () => {
+    const d = indexar(
+      doc({
+        entradas: [entrada('e', 'peca:m')],
+        pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 })],
+        saidas: [
+          saida('m', '1', 'fila:1'),
+          saida('m', '2', 'fila:2'),
+          saida('m', '3', 'fila:3'),
+          saida('m', '4', 'grupo:1'),
+          saida('m', '5', 'grupo:2'),
+          saida('m', '6', 'ramal:1'),
+          saida('m', 'esgotou', 'ramal:2'),
+        ],
+        filas: [
+          fila('1', { espera_maxima_s: 60 }),
+          // Sem tempo máximo a espera nunca acaba: quem avisa é espera_sem_limite.
+          fila('2'),
+          fila('3', { espera_maxima_s: 60, ao_esgotar: 'fim:caixa_postal' }),
+          fila('9', { espera_maxima_s: 60 }),
+        ],
+        grupos: [grupo('1'), grupo('2', { ao_esgotar: 'fim:desliga' }), grupo('9')],
+        ramais: [ramal('1'), ramal('2', { ao_nao_atender: 'fim:caixa_postal' }), ramal('9')],
+      }),
+    );
+    const achados = semTransbordo(d, alcancaveis(d));
+    expect(achados.map((a) => a.chave)).toEqual(['sem_transbordo:ramal:1', 'sem_transbordo:fila:1', 'sem_transbordo:grupo:1']);
+    expect(achados.map((a) => a.campos)).toEqual([['ao_nao_atender'], ['ao_esgotar'], ['ao_esgotar']]);
+    expect(achados[1]!.texto).toContain('60 s');
+    expect(achados.every((a) => a.gravidade === 'observacao')).toBe(true);
+    expect(GRAVIDADE.sem_transbordo).toBe('observacao');
   });
 });

@@ -145,3 +145,34 @@ export function planoBQueNaoDispara(idx: Indice): Achado[] {
       ),
     );
 }
+
+/**
+ * Ramais, filas e grupos alcançáveis sem destino pra quando ninguém atende: a ligação desliga.
+ * Fila sem tempo máximo fica de fora: a espera não acaba, e quem avisa é espera_sem_limite.
+ */
+export function semTransbordo(idx: Indice, alc: Set<string>): Achado[] {
+  const out: Achado[] = [];
+  const registrar = (ref: string, campo: string, quando: string) =>
+    out.push(
+      achado(
+        'sem_transbordo',
+        ref,
+        `${nomeDe(idx, ref)} desliga se ninguém atende`,
+        `${quando}, a central desliga a ligação: não há destino em ${campo}.`,
+        [ref],
+        [campo],
+      ),
+    );
+  for (const r of idx.doc.ramais) {
+    if (alc.has(`ramal:${r.id}`) && r.ao_nao_atender === undefined) registrar(`ramal:${r.id}`, 'ao_nao_atender', 'Se ninguém atende o ramal');
+  }
+  for (const f of idx.doc.filas) {
+    if (alc.has(`fila:${f.id}`) && f.ao_esgotar === undefined && f.espera_maxima_s !== undefined) {
+      registrar(`fila:${f.id}`, 'ao_esgotar', `Se ninguém atende em ${f.espera_maxima_s} s`);
+    }
+  }
+  for (const g of idx.doc.grupos) {
+    if (alc.has(`grupo:${g.id}`) && g.ao_esgotar === undefined) registrar(`grupo:${g.id}`, 'ao_esgotar', `Se ninguém atende em ${g.toque_s ?? 20} s`);
+  }
+  return out;
+}

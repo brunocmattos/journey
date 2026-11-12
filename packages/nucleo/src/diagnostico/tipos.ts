@@ -13,7 +13,8 @@ export type TipoAchado =
   | 'buraco_horario'
   | 'espera_sem_limite'
   | 'plano_b_nao_dispara'
-  | 'dado_incompleto';
+  | 'dado_incompleto'
+  | 'sem_transbordo';
 
 export const GRAVIDADE: Record<TipoAchado, Gravidade> = {
   beco_sem_saida: 'grave',
@@ -29,6 +30,7 @@ export const GRAVIDADE: Record<TipoAchado, Gravidade> = {
   espera_sem_limite: 'observacao',
   plano_b_nao_dispara: 'observacao',
   dado_incompleto: 'observacao',
+  sem_transbordo: 'observacao',
 };
 
 export interface Achado {
