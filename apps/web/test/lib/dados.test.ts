@@ -28,7 +28,7 @@ function consulta(tabela: string) {
     maybeSingle: async () => r(),
     single: async () => r(),
   };
-  for (const m of ['select', 'eq', 'order', 'limit', 'range'])
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'range'])
     q[m] = (...args: unknown[]) => {
       filtros.push([m, ...args]);
       return q;
@@ -39,7 +39,7 @@ vi.mock('@/lib/supabase/servidor', () => ({
   supabaseServidor: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) }, from: consulta }),
 }));
 
-const { catalogo, contagemCatalogo, empresa, jornadas, versaoAtual } = await import('@/lib/dados');
+const { catalogo, contagemCatalogo, empresa, intencionais, jornadas, versaoAtual } = await import('@/lib/dados');
 
 const JORNADA = { id: 'j1', nome: 'Telefonia', canal: 'telefonia' };
 const versao = (documento: unknown): Resposta => ({ data: { numero: 1, criada_em: '2026-11-12T10:00:00Z', documento, diagnostico: [] }, error: null });
@@ -76,6 +76,25 @@ describe('dados', () => {
       { id: 'j2', nome: 'WhatsApp', canal: 'whatsapp', versao: null, atualizada: null, graves: 0 },
     ]);
     expect(filtros).toContainEqual(['eq', 'empresa_id', 'e1']);
+  });
+
+  it('intencionais trazem o e-mail de quem marcou; quem saiu (ou foi apagado) fica null', async () => {
+    respostas.achados_intencionais = {
+      data: [
+        { chave: 'k1', nota: 'de propósito', criado_em: '2026-11-12T10:00:00Z', autor: 'u1' },
+        { chave: 'k2', nota: '', criado_em: '2026-11-12T11:00:00Z', autor: 'u-saiu' },
+        { chave: 'k3', nota: '', criado_em: '2026-11-12T12:00:00Z', autor: null },
+      ],
+      error: null,
+    };
+    respostas.membros = { data: [{ usuario_id: 'u1', email: 'ana@exemplo.com' }], error: null };
+    expect((await intencionais('e1', 'j1')).map((i) => [i.chave, i.autor])).toEqual([
+      ['k1', 'ana@exemplo.com'],
+      ['k2', null],
+      ['k3', null],
+    ]);
+    expect(filtros).toContainEqual(['in', 'usuario_id', ['u1', 'u-saiu']]);
+    expect(filtros.filter((f) => f[0] === 'eq' && f[1] === 'empresa_id')).toHaveLength(2);
   });
 
   it('versaoAtual devolve o documento journey/1', async () => {

@@ -175,5 +175,8 @@ test('diagnóstico: simular leva a água até o achado; intencional sai da conta
   await ciclo.getByLabel('Nota').fill('é assim de propósito');
   await ciclo.getByRole('button', { name: 'Marcar', exact: true }).click();
   await expect(page.locator('[data-chave="ciclo_transbordo:r1+r2"]')).toHaveCount(0);
-  await expect(page.getByText('Intencionais (1)')).toBeVisible();
+  await page.getByText('Intencionais (1)').click();
+  const marcado = page.locator('[data-intencional="ciclo_transbordo:r1+r2"]');
+  await expect(marcado).toContainText('é assim de propósito');
+  await expect(marcado).toContainText(/por simula-.+@exemplo\.com/);
 });

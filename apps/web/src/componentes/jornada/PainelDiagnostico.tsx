@@ -108,6 +108,9 @@ export function PainelDiagnostico({ idx, achados, intencionais, verNoMapa, simul
                 <div className="achado" key={a.chave} data-intencional={a.chave}>
                   <b>{a.titulo}</b>
                   <p>{marcadas.get(a.chave)!.nota || 'Sem nota.'}</p>
+                  <p className="mudo" style={{ fontSize: 12 }}>
+                    por {marcadas.get(a.chave)!.autor ?? 'alguém que saiu'}
+                  </p>
                   <div className="acoes">
                     <button
                       className="botao pequeno"

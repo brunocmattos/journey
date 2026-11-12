@@ -121,11 +121,23 @@ export interface Intencional {
   chave: string;
   nota: string;
   criado_em: string;
+  /** E-mail de quem marcou; null se a pessoa não é mais membro da empresa (ou foi apagada). */
+  autor: string | null;
 }
 
-export async function intencionais(jornadaId: string): Promise<Intencional[]> {
+/** As marcações da jornada, com o e-mail de quem marcou (pelos membros da mesma empresa). */
+export async function intencionais(empresaId: string, jornadaId: string): Promise<Intencional[]> {
   const { supabase } = await usuarioAtual();
-  return ok(await supabase.from('achados_intencionais').select('chave, nota, criado_em').eq('jornada_id', jornadaId));
+  const linhas = ok<{ chave: string; nota: string; criado_em: string; autor: string | null }>(
+    await supabase.from('achados_intencionais').select('chave, nota, criado_em, autor').eq('empresa_id', empresaId).eq('jornada_id', jornadaId),
+  );
+  const ids = [...new Set(linhas.flatMap((l) => (l.autor ? [l.autor] : [])))];
+  const emails = new Map<string, string>();
+  if (ids.length > 0) {
+    const ms = ok<{ usuario_id: string; email: string }>(await supabase.from('membros').select('usuario_id, email').eq('empresa_id', empresaId).in('usuario_id', ids));
+    for (const m of ms) emails.set(m.usuario_id, m.email);
+  }
+  return linhas.map((l) => ({ chave: l.chave, nota: l.nota, criado_em: l.criado_em, autor: (l.autor && emails.get(l.autor)) ?? null }));
 }
 
 export interface ImportRevisao {
