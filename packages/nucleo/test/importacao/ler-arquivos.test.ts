@@ -63,4 +63,59 @@ describe('lerArquivos', () => {
     ]);
     expect(r.problemas[0]?.mensagem).toContain('mais de um arquivo');
   });
+
+  it('aceita nomes de aba com acento (xlsx) e csv em NFC ou NFD', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet(' Horários ').addRow(['id']);
+    wb.getWorksheet(' Horários ')!.addRow(['h1']);
+    wb.addWorksheet('Peças').addRow(['id']);
+    wb.addWorksheet('SAÍDAS').addRow(['id']);
+    const bytes = new Uint8Array(await wb.xlsx.writeBuffer());
+    const r = await lerArquivos([
+      { nome: 'modelo.xlsx', conteudo: bytes },
+      { nome: 'Saídas.csv'.normalize('NFC'), conteudo: 'id\n1' },
+      { nome: 'Saídas.csv'.normalize('NFD'), conteudo: 'id\n2' },
+    ]);
+    expect(Object.keys(r.tabelas).sort()).toEqual(['horarios', 'pecas', 'saidas']);
+    expect(r.tabelas.horarios).toEqual([{ linha: 2, valores: { id: 'h1' } }]);
+    expect(r.problemas).toEqual([expect.objectContaining({ aba: 'saidas', mensagem: expect.stringContaining('mais de um arquivo') }), expect.objectContaining({ aba: 'saidas' })]);
+  });
+
+  it('csv com nome acentuado vira a aba sem acento', async () => {
+    const r = await lerArquivos([{ nome: 'Horários.csv'.normalize('NFD'), conteudo: 'id\nh1' }]);
+    expect(r.problemas).toEqual([]);
+    expect(r.tabelas.horarios).toEqual([{ linha: 2, valores: { id: 'h1' } }]);
+  });
+
+  it('xlsx corrompido vira problema em vez de rejeitar', async () => {
+    const r = await lerArquivos([{ nome: 'quebrado.xlsx', conteudo: new Uint8Array([1, 2, 3]) }, { nome: 'filas.csv', conteudo: 'id\n1' }]);
+    expect(r.problemas).toEqual([{ gravidade: 'erro', mensagem: '"quebrado.xlsx" não é uma planilha .xlsx válida' }]);
+    expect(r.tabelas.filas).toHaveLength(1);
+  });
+
+  it('xlsx lê só até a largura do cabeçalho, ignorando célula perdida à direita', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('filas');
+    ws.addRow(['id', 'estrategia']);
+    ws.addRow(['100', 'rrmemory']);
+    ws.getCell('XFD2').value = 'perdido';
+    const bytes = new Uint8Array(await wb.xlsx.writeBuffer());
+    const r = await lerArquivos([{ nome: 'm.xlsx', conteudo: bytes }]);
+    expect(r.tabelas.filas).toEqual([{ linha: 2, valores: { id: '100', estrategia: 'rrmemory' } }]);
+  });
+
+  it('json: item que não é objeto vira erro com aba e linha', async () => {
+    const json = JSON.stringify({ formato: 'journey/1', filas: [{ id: '1' }, 'x', 3, null, [1], { id: '2' }] });
+    const r = await lerArquivos([{ nome: 'd.json', conteudo: json }]);
+    expect(r.problemas.map((p) => [p.gravidade, p.aba, p.linha])).toEqual([
+      ['erro', 'filas', 2],
+      ['erro', 'filas', 3],
+      ['erro', 'filas', 4],
+      ['erro', 'filas', 5],
+    ]);
+    expect(r.tabelas.filas).toEqual([
+      { linha: 1, valores: { id: '1' } },
+      { linha: 6, valores: { id: '2' } },
+    ]);
+  });
 });

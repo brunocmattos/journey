@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { paraCelula } from '../formato/celulas';
+import { paraCelula, semAcento } from '../formato/celulas';
 import { NOMES_ABAS, type NomeAba } from '../formato/documento';
 import { lerCsv } from './csv';
 import type { Problema } from './problemas';
@@ -17,6 +17,7 @@ export interface LinhaBruta {
 
 export type Tabelas = Partial<Record<NomeAba, LinhaBruta[]>>;
 
+const normalizar = (s: string) => semAcento(s).trim().toLowerCase();
 const ehAba = (nome: string): nome is NomeAba => (NOMES_ABAS as readonly string[]).includes(nome);
 const paraTexto = (c: Uint8Array | string) => (typeof c === 'string' ? c : new TextDecoder('utf-8').decode(c));
 const paraBytes = (c: Uint8Array | string) => (typeof c === 'string' ? new TextEncoder().encode(c) : c);
@@ -58,12 +59,14 @@ async function lerXlsx(bytes: Uint8Array): Promise<[NomeAba, LinhaBruta[]][]> {
   await wb.xlsx.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   const out: [NomeAba, LinhaBruta[]][] = [];
   wb.eachSheet((ws) => {
-    const aba = ws.name.trim().toLowerCase();
+    const aba = normalizar(ws.name);
     if (!ehAba(aba)) return;
     const matriz: string[][] = [];
+    let largura = 0;
     ws.eachRow({ includeEmpty: true }, (row, n) => {
       const celulas: string[] = [];
-      for (let j = 1; j <= row.cellCount; j++) celulas.push(textoDaCelula(row.getCell(j).value));
+      if (n === 1) largura = row.cellCount;
+      for (let j = 1; j <= Math.min(row.cellCount, largura); j++) celulas.push(textoDaCelula(row.getCell(j).value));
       matriz[n - 1] = celulas;
     });
     out.push([aba, linhasDeMatriz(Array.from({ length: matriz.length }, (_, i) => matriz[i] ?? []))]);
@@ -92,13 +95,18 @@ function lerJson(arquivo: ArquivoEntrada, problemas: Problema[]): [NomeAba, Linh
       problemas.push({ gravidade: 'erro', aba, mensagem: `"${aba}" precisa ser uma lista` });
       continue;
     }
-    out.push([
-      aba,
-      lista.map((item, i) => ({
+    const linhas: LinhaBruta[] = [];
+    lista.forEach((item, i) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        problemas.push({ gravidade: 'erro', aba, linha: i + 1, mensagem: 'o item precisa ser um objeto (um registro com colunas)' });
+        return;
+      }
+      linhas.push({
         linha: i + 1,
-        valores: Object.fromEntries(Object.entries((item ?? {}) as Record<string, unknown>).map(([k, v]) => [k.toLowerCase(), paraCelula(v)])),
-      })),
-    ]);
+        valores: Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([k, v]) => [k.toLowerCase(), paraCelula(v)])),
+      });
+    });
+    out.push([aba, linhas]);
   }
   return out;
 }
@@ -117,9 +125,16 @@ export async function lerArquivos(arquivos: ArquivoEntrada[]): Promise<{ tabelas
   for (const arquivo of arquivos) {
     const partes = arquivo.nome.split(/[\\/]/).pop()!.split('.');
     const ext = partes.length > 1 ? partes.pop()!.toLowerCase() : '';
-    const base = partes.join('.').trim().toLowerCase();
+    const base = normalizar(partes.join('.'));
     if (ext === 'xlsx') {
-      for (const [aba, linhas] of await lerXlsx(paraBytes(arquivo.conteudo))) guardar(aba, linhas, arquivo.nome);
+      let abas: [NomeAba, LinhaBruta[]][];
+      try {
+        abas = await lerXlsx(paraBytes(arquivo.conteudo));
+      } catch {
+        problemas.push({ gravidade: 'erro', mensagem: `"${arquivo.nome}" não é uma planilha .xlsx válida` });
+        continue;
+      }
+      for (const [aba, linhas] of abas) guardar(aba, linhas, arquivo.nome);
     } else if (ext === 'csv') {
       if (!ehAba(base)) {
         problemas.push({ gravidade: 'erro', mensagem: `o arquivo ${arquivo.nome} não corresponde a nenhuma aba. Use um destes nomes: ${NOMES_ABAS.map((a) => `${a}.csv`).join(', ')}` });

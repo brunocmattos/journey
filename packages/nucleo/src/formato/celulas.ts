@@ -4,7 +4,7 @@ import { TIPOS_REF, lerRef, montarRef } from './refs';
 
 export type ResultadoCelula = { ok: true; valor: unknown } | { ok: false; erro: string };
 
-const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+export const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 /**
  * Converte o texto de uma célula no valor tipado da coluna.
