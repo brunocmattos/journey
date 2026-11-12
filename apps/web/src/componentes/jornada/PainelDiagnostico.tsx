@@ -12,18 +12,31 @@ export interface PropsDiagnostico {
   idx: Indice;
   achados: Achado[];
   intencionais: Intencional[];
-  verNoMapa: (a: Achado) => void;
-  simular: (a: Achado) => void;
-  marcar: (chave: string, nota: string) => Promise<void>;
-  desmarcar: (chave: string) => Promise<void>;
+  /** As quatro devolvem o aviso pra mostrar junto do achado, quando há. */
+  verNoMapa: (a: Achado) => string | undefined;
+  simular: (a: Achado) => string | undefined;
+  marcar: (chave: string, nota: string) => Promise<string | undefined>;
+  desmarcar: (chave: string) => Promise<string | undefined>;
 }
 
 export function PainelDiagnostico({ idx, achados, intencionais, verNoMapa, simular, marcar, desmarcar }: PropsDiagnostico) {
   const [notaDe, setNotaDe] = useState<string | null>(null);
   const [nota, setNota] = useState('');
-  const marcadas = new Map(intencionais.map((i) => [i.chave, i]));
+  const [enviando, setEnviando] = useState<string | null>(null);
+  /** Aviso ou erro de uma ação, mostrado no próprio achado. */
+  const [aviso, setAviso] = useState<{ chave: string; texto: string } | null>(null);
+  // Só as marcações de achados que este diagnóstico ainda tem: as de achados que sumiram num import não contam.
+  const chaves = new Set(achados.map((a) => a.chave));
+  const marcadas = new Map(intencionais.filter((i) => chaves.has(i.chave)).map((i) => [i.chave, i]));
   const abertos = achados.filter((a) => !marcadas.has(a.chave)).sort((a, b) => ORDEM[a.gravidade] - ORDEM[b.gravidade]);
   const conta = (g: Achado['gravidade']) => abertos.filter((a) => a.gravidade === g).length;
+  const avisar = (chave: string, texto: string | undefined) => setAviso(texto ? { chave, texto } : null);
+  const avisoDe = (chave: string) =>
+    aviso?.chave === chave && (
+      <p className="aviso-caixa erro" role="alert">
+        {aviso.texto}
+      </p>
+    );
   return (
     <div data-testid="diagnostico">
       <p className="mudo" style={{ margin: '12px 0 10px' }}>
@@ -47,10 +60,10 @@ export function PainelDiagnostico({ idx, achados, intencionais, verNoMapa, simul
             <b>{a.titulo}</b>
             <p>{a.texto}</p>
             <div className="acoes">
-              <button className="botao pequeno" type="button" onClick={() => verNoMapa(a)}>
+              <button className="botao pequeno" type="button" onClick={() => avisar(a.chave, verNoMapa(a))}>
                 Ver no mapa
               </button>
-              <button className="botao pequeno" type="button" onClick={() => simular(a)}>
+              <button className="botao pequeno" type="button" onClick={() => avisar(a.chave, simular(a))}>
                 Simular
               </button>
               <button className="botao pequeno" type="button" onClick={() => setNotaDe(notaDe === a.chave ? null : a.chave)}>
@@ -62,15 +75,22 @@ export function PainelDiagnostico({ idx, achados, intencionais, verNoMapa, simul
                 className="linha-form"
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  await marcar(a.chave, nota);
+                  setEnviando(a.chave);
+                  const erro = await marcar(a.chave, nota);
+                  setEnviando(null);
+                  avisar(a.chave, erro);
+                  if (erro) return;
                   setNotaDe(null);
                   setNota('');
                 }}
               >
                 <input className="entrada-texto" style={{ flex: '1 1 160px' }} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Por que é assim?" aria-label="Nota" />
-                <button className="botao pequeno primario">Marcar</button>
+                <button className="botao pequeno primario" disabled={enviando === a.chave}>
+                  Marcar
+                </button>
               </form>
             )}
+            {avisoDe(a.chave)}
           </div>
         ))}
       </div>
@@ -83,14 +103,25 @@ export function PainelDiagnostico({ idx, achados, intencionais, verNoMapa, simul
             {achados
               .filter((a) => marcadas.has(a.chave))
               .map((a) => (
-                <div className="achado" key={a.chave}>
+                <div className="achado" key={a.chave} data-intencional={a.chave}>
                   <b>{a.titulo}</b>
                   <p>{marcadas.get(a.chave)!.nota || 'Sem nota.'}</p>
                   <div className="acoes">
-                    <button className="botao pequeno" type="button" onClick={() => desmarcar(a.chave)}>
+                    <button
+                      className="botao pequeno"
+                      type="button"
+                      disabled={enviando === a.chave}
+                      onClick={async () => {
+                        setEnviando(a.chave);
+                        const erro = await desmarcar(a.chave);
+                        setEnviando(null);
+                        avisar(a.chave, erro);
+                      }}
+                    >
                       Voltar pra contagem
                     </button>
                   </div>
+                  {avisoDe(a.chave)}
                 </div>
               ))}
           </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { doc, entrada, fila, peca, ramal, saida } from '@journey/nucleo/teste';
 import { montarMapa } from '@/mapa/montar';
-import { passosDe } from '@/simulacao/passos';
+import { passosComOrigem, passosDe } from '@/simulacao/passos';
 import { canalInicial, escolher, rodar, type Sessao } from '@/simulacao/sessao';
 
 const d = doc({
@@ -80,5 +80,29 @@ describe('passosDe', () => {
     const p = passosDe(montarMapa(dw), rodar(dw, sw).eventos, canalInicial(dw, sw.entrada));
     expect(p.slice(0, 3)).toMatchObject([{ tipo: 'saltar' }, { tipo: 'chegar', no: 'entrada:w' }, { tipo: 'trocar_canal', no: 'entrada:w', de: 'telefonia', para: 'whatsapp' }]);
     expect(p.filter((x) => x.tipo === 'trocar_canal')).toHaveLength(1);
+  });
+});
+
+describe('passosComOrigem', () => {
+  it('cada passo aponta pro evento que o gerou, em ordem', () => {
+    const s1 = escolher(s0, rodar(d, s0).pendente!.opcoes[0]!);
+    const eventos = rodar(d, s1).eventos;
+    const { passos, evento } = passosComOrigem(mapa, eventos);
+    expect(passos).toEqual(passosDe(mapa, eventos));
+    expect(evento).toHaveLength(passos.length);
+    for (let j = 1; j < evento.length; j++) expect(evento[j]!).toBeGreaterThanOrEqual(evento[j - 1]!);
+    const par = { decidir: 'decisao', escolher: 'escolheu', terminar: 'terminou', ignorar: 'resposta_ignorada' } as const;
+    passos.forEach((p, j) => {
+      if (p.tipo in par) expect(eventos[evento[j]!]!.tipo).toBe(par[p.tipo as keyof typeof par]);
+    });
+  });
+
+  it('a troca de canal da entrada vem do evento de chegada', () => {
+    const dw = doc({ entradas: [entrada('w', 'fim:desliga', { canal: 'whatsapp' })] });
+    const m = montarMapa(dw);
+    const eventos = rodar(dw, { ...s0, entrada: 'entrada:w' }).eventos;
+    const { passos, evento } = passosComOrigem(m, eventos, 'whatsapp');
+    const j = passos.findIndex((p) => p.tipo === 'trocar_canal');
+    expect(eventos[evento[j]!]!.tipo).toBe('chegou');
   });
 });

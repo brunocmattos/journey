@@ -27,7 +27,16 @@ export type Passo =
  * Só se corre por cano simulável: o que o motor nunca usa (ex.: "nunca: sem espera máxima") não acende.
  */
 export function passosDe(mapa: Mapa, eventos: readonly Evento[], canalInicial: Canal = 'telefonia'): Passo[] {
+  return passosComOrigem(mapa, eventos, canalInicial).passos;
+}
+
+/**
+ * Os passos e, pra cada um, a posição do evento que o gerou (`evento[j]` é o índice em `eventos` do passo j).
+ * A linha do tempo usa isso pra mostrar só os eventos que a animação já mostrou.
+ */
+export function passosComOrigem(mapa: Mapa, eventos: readonly Evento[], canalInicial: Canal = 'telefonia'): { passos: Passo[]; evento: number[] } {
   const passos: Passo[] = [];
+  const evento: number[] = [];
   const porId = new Map(mapa.nos.map((n) => [n.id, n]));
   let atual: string | null = null;
   /** Ponto fora do mapa onde a água está (pra não repetir o fora_do_mapa na chegada). */
@@ -56,7 +65,7 @@ export function passosDe(mapa: Mapa, eventos: readonly Evento[], canalInicial: C
       (c) => c.de === de && c.simulavel && (!comDestino || c.para !== null) && (e.saida ? c.saidas.includes(e.saida) : c.opcoes.includes(e.opcao)),
     );
 
-  for (const e of eventos) {
+  for (const [i, e] of eventos.entries()) {
     switch (e.tipo) {
       case 'chegou':
         if (atual === null || porId.get(atual)?.ref !== e.ref) posicionar(e.ref, e.t);
@@ -101,6 +110,7 @@ export function passosDe(mapa: Mapa, eventos: readonly Evento[], canalInicial: C
       case 'definiu':
         break;
     }
+    while (evento.length < passos.length) evento.push(i);
   }
-  return passos;
+  return { passos, evento };
 }

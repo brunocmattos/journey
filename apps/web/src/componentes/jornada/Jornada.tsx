@@ -1,21 +1,21 @@
 'use client';
 
 import './jornada.css';
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { indexar, lerRef, type Achado, type Documento, type Opcao } from '@journey/nucleo';
 import { Icone } from '@/componentes/Icone';
 import { MapaFluxo } from '@/componentes/mapa/MapaFluxo';
 import { cenarioAte } from '@/diagnostico/caminho';
 import type { Cenario, Intencional } from '@/lib/dados';
-import { montarMapa } from '@/mapa/montar';
+import { montarMapa, type Mapa } from '@/mapa/montar';
 import { comparar } from '@/simulacao/comparar';
 import { descrever, duracao, horaEm } from '@/simulacao/descrever';
 import { estadoAte } from '@/simulacao/estado';
-import { passosDe } from '@/simulacao/passos';
+import { passosComOrigem, passosDe } from '@/simulacao/passos';
 import { canalInicial, escolher as escolherNa, inicioDe, rodar, voltar as voltarNa, type Modo, type Sessao } from '@/simulacao/sessao';
+import { vinculo } from '@/simulacao/vinculo';
 import { aprovarResultado, apagarCenario, desmarcarIntencional, marcarIntencional, salvarCenario } from '@/acoes/jornada';
-import { Cartao } from './Cartao';
+import { Cartao, opcaoDaTecla, type CenarioNoCartao } from './Cartao';
 import { PainelDiagnostico } from './PainelDiagnostico';
 import { PainelRamais } from './PainelRamais';
 import { usePlayer, useSemMovimento } from './usePlayer';
@@ -32,23 +32,80 @@ export interface PropsJornada {
 
 type Aba = 'simular' | 'diagnostico' | 'ramais';
 const VELOCIDADES = [1, 2, 4];
+/** Achado que dá pra ver como cadeia a partir dele quando não está no fluxo das entradas. */
+const TIPOS_COM_CADEIA = ['ramal', 'fila', 'grupo', 'peca'];
+
+/** Põe (ou tira) o ?cenario= da barra de endereço sem navegar: o Next acompanha o history nativo. */
+function marcarUrl(cenarioId: string | null) {
+  const u = new URL(window.location.href);
+  if (cenarioId) u.searchParams.set('cenario', cenarioId);
+  else u.searchParams.delete('cenario');
+  if (u.href !== window.location.href) window.history.replaceState(null, '', u);
+}
+
+/** Entrada que não é uma entrada (ramal no modo "ninguém atende") começa no mapa daquele ponto. */
+const raizDoCenario = (entrada: string) => (lerRef(entrada)?.tipo === 'entrada' ? null : entrada);
+
+const sessaoDo = (c: Cenario): Sessao => ({ entrada: c.entrada, inicio: c.inicio, modo: c.modo, escolhas: c.escolhas });
+
+/** Os nós e canos de um achado num mapa. */
+function idsDoAchado(mapa: Mapa, a: Achado): string[] {
+  const ids = new Set<string>();
+  for (const r of a.refs) {
+    for (const id of mapa.porRef.get(r) ?? []) ids.add(id);
+    const cano = r.startsWith('saida:') ? mapa.porSaida.get(r.slice(6)) : undefined;
+    if (cano) {
+      ids.add(cano);
+      const c = mapa.canos.find((x) => x.id === cano)!;
+      ids.add(c.de);
+      if (c.para) ids.add(c.para);
+    }
+  }
+  return [...ids];
+}
 
 export function Jornada(p: PropsJornada) {
-  const router = useRouter();
-  const busca = useSearchParams();
-  const [, iniciar] = useTransition();
-  const idx = useMemo(() => indexar(p.documento), [p.documento]);
+  // O documento só troca quando a versão troca: um refresh com a mesma versão (depois de salvar ou aprovar)
+  // traz um objeto novo, e refazer o mapa no meio da simulação mexeria na câmera e na animação.
+  const [base, setBase] = useState({ versao: p.versao, documento: p.documento });
+  if (base.versao !== p.versao) setBase({ versao: p.versao, documento: p.documento });
+  const documento = base.documento;
+  const idx = useMemo(() => indexar(documento), [documento]);
 
   // O que o mapa mostra: o fluxo das entradas, ou a cadeia a partir de um ponto (ramal, fila…).
+  // Um mapa por raiz, guardado enquanto o documento é o mesmo ("ver no mapa" procura em outro mapa antes de trocar).
   const [raiz, setRaiz] = useState<string | null>(null);
-  const mapa = useMemo(() => montarMapa(p.documento, raiz ? { raizes: [raiz] } : {}), [p.documento, raiz]);
+  const mapas = useMemo(() => new Map<string | null, Mapa>(), [documento]);
+  const mapaPara = useCallback(
+    (r: string | null) => {
+      let m = mapas.get(r);
+      if (!m) {
+        m = montarMapa(documento, r ? { raizes: [r] } : {});
+        mapas.set(r, m);
+      }
+      return m;
+    },
+    [mapas, documento],
+  );
+  const mapa = useMemo(() => mapaPara(raiz), [mapaPara, raiz]);
 
   const [sessao, setSessao] = useState<Sessao | null>(null);
-  const [cenarioAberto, setCenarioAberto] = useState<Cenario | null>(null);
+  /** Cada play novo conta uma rodada: o cartão começa limpo (nome do cenário, mensagem). */
+  const [rodada, setRodada] = useState(0);
+  // Só o id: o cenário vem sempre da lista mais recente (aprovar e apagar atualizam a lista).
+  const [cenarioId, setCenarioId] = useState<string | null>(null);
+  const cenarioAberto = cenarioId ? (p.cenarios.find((c) => c.id === cenarioId) ?? null) : null;
+  /** Se a simulação ainda é o caminho do cenário aberto; quando não é, ele não vale (e é solto em `mudarSessao`). */
+  const ligacao = cenarioAberto && sessao ? vinculo(sessaoDo(cenarioAberto), sessao) : null;
+  const cenario = ligacao ? cenarioAberto : null;
+
   const execucao = useMemo(() => (sessao ? rodar(idx, sessao) : null), [idx, sessao]);
   /** O canal da entrada: o motor o assume calado, então o desenho e o resumo precisam dele. */
   const canal = useMemo(() => (sessao ? canalInicial(idx, sessao.entrada) : 'telefonia'), [idx, sessao]);
-  const passos = useMemo(() => (execucao ? passosDe(mapa, execucao.eventos, canal) : []), [mapa, execucao, canal]);
+  const { passos, evento: origem } = useMemo(
+    () => (execucao ? passosComOrigem(mapa, execucao.eventos, canal) : { passos: [], evento: [] }),
+    [mapa, execucao, canal],
+  );
 
   const [velocidade, setVelocidade] = useState(1);
   const [pausado, setPausado] = useState(false);
@@ -62,6 +119,7 @@ export function Jornada(p: PropsJornada) {
   const [destaque, setDestaque] = useState<Set<string> | null>(null);
   const [enquadrar, setEnquadrar] = useState<{ tipo: 'tudo' | 'nos'; ids?: string[]; n: number }>({ tipo: 'tudo', n: 0 });
   const pedirEnquadrar = (tipo: 'tudo' | 'nos', ids?: string[]) => setEnquadrar((e) => ({ tipo, ...(ids && { ids }), n: e.n + 1 }));
+  const [erroCenarios, setErroCenarios] = useState<{ id: string; texto: string } | null>(null);
 
   const [inicio, setInicio] = useState('');
   // Padrão: a primeira entrada que vai pra uma peça (passa pela URA); senão, a primeira.
@@ -72,14 +130,21 @@ export function Jornada(p: PropsJornada) {
   const [modo, setModo] = useState<Modo>('cenario');
   useEffect(() => setInicio(inicioDe(new Date())), []);
 
-  /** Começa uma simulação nova. */
+  const soltarCenario = () => {
+    setCenarioId(null);
+    marcarUrl(null);
+  };
+
+  /** Começa uma simulação nova; com cenário, ele fica aberto (e no link) enquanto a simulação for o caminho dele. */
   const comecar = useCallback(
-    (s: Sessao, novaRaiz: string | null, cenario: Cenario | null = null) => {
+    (s: Sessao, novaRaiz: string | null, c: Cenario | null = null) => {
       setRaiz(novaRaiz);
       setDestaque(null);
-      setCenarioAberto(cenario);
+      setCenarioId(c?.id ?? null);
+      marcarUrl(c?.id ?? null);
       setPausado(false);
       setSessao(s);
+      setRodada((n) => n + 1);
       irPara(0);
     },
     [irPara],
@@ -87,62 +152,73 @@ export function Jornada(p: PropsJornada) {
 
   // ?cenario=<id> abre e toca o cenário.
   useEffect(() => {
-    const id = busca.get('cenario');
+    const id = new URLSearchParams(window.location.search).get('cenario');
     const c = id ? p.cenarios.find((x) => x.id === id) : undefined;
-    if (c) comecar({ entrada: c.entrada, inicio: c.inicio, modo: c.modo, escolhas: c.escolhas }, raizDoCenario(c.entrada), c);
+    if (c) comecar(sessaoDo(c), raizDoCenario(c.entrada), c);
     // Só quando a página abre.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Entrada que não é uma entrada (ramal no modo "ninguém atende") começa no mapa daquele ponto. */
-  const raizDoCenario = (entrada: string) => (lerRef(entrada)?.tipo === 'entrada' ? null : entrada);
+  /** Escolher e voltar mudam as escolhas: o cenário aberto continua só se ainda for o caminho dele. */
+  const mudarSessao = (s: Sessao) => {
+    if (cenarioAberto && !vinculo(sessaoDo(cenarioAberto), s)) soltarCenario();
+    setSessao(s);
+  };
 
-  const escolher = useCallback(
-    (o: Opcao) => {
-      if (!sessao) return;
-      setSessao(escolherNa(sessao, o));
-    },
-    [sessao],
-  );
+  const escolher = (o: Opcao) => {
+    if (!sessao) return;
+    setDestaque(null);
+    mudarSessao(escolherNa(sessao, o));
+  };
 
   const voltar = () => {
     if (!sessao || sessao.escolhas.length === 0) return;
     const s = voltarNa(sessao);
     const ps = passosDe(mapa, rodar(idx, s).eventos, canalInicial(idx, s.entrada));
-    setSessao(s);
+    mudarSessao(s);
     irPara(ps.length);
   };
 
-  // Teclado numérico: quando quem liga decide, a tecla escolhe.
+  const recomecar = () => {
+    setPausado(false);
+    irPara(0);
+  };
+
+  // Teclado: quando a decisão está na tela, a tecla do selo (dígito, *, #, S ou N) escolhe.
+  const perguntando = estado.perguntando;
+  // Sem lista de dependências: a cada render, o ouvinte usa a sessão e a pergunta de agora.
   useEffect(() => {
+    if (!perguntando || !noFim) return;
     const aoTeclar = (e: KeyboardEvent) => {
-      const alvo = e.target as HTMLElement;
-      if (alvo.closest('input, textarea, select')) return;
-      const pg = estado.perguntando;
-      if (!pg || !noFim || pg.quem !== 'quem_liga') return;
-      const o = pg.opcoes.find((x) => x.disponivel && x.opcao === e.key);
-      if (o) escolher(o);
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const alvo = e.target as HTMLElement | null;
+      if (alvo?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      const o = opcaoDaTecla(perguntando.opcoes, e.key);
+      if (!o) return;
+      e.preventDefault();
+      escolher(o);
     };
     window.addEventListener('keydown', aoTeclar);
     return () => window.removeEventListener('keydown', aoTeclar);
-  }, [estado.perguntando, noFim, escolher]);
+  });
 
   const foco = useMemo(() => {
     if (destaque) return destaque;
-    const pg = estado.perguntando;
     // Decisão num ponto fora deste mapa: não há válvula pra acender.
-    if (!pg || !noFim || pg.no === null) return null;
-    const canos = mapa.canos.filter((c) => c.de === pg.no);
-    return new Set<string>([pg.no, ...canos.map((c) => c.id), ...canos.flatMap((c) => (c.para ? [c.para] : []))]);
-  }, [destaque, estado.perguntando, noFim, mapa]);
+    if (!perguntando || !noFim || perguntando.no === null) return null;
+    const canos = mapa.canos.filter((c) => c.de === perguntando.no);
+    return new Set<string>([perguntando.no, ...canos.map((c) => c.id), ...canos.flatMap((c) => (c.para ? [c.para] : []))]);
+  }, [destaque, perguntando, noFim, mapa]);
 
   // Na decisão, a câmera mostra a válvula e pra onde cada opção leva (os chips ficam à vista).
-  const perguntaNo = noFim ? (estado.perguntando?.no ?? undefined) : undefined;
+  const perguntaNo = noFim ? (perguntando?.no ?? undefined) : undefined;
   useEffect(() => {
     if (!perguntaNo || !seguir) return;
     const destinos = mapa.canos.filter((c) => c.de === perguntaNo && c.para).map((c) => c.para!);
     pedirEnquadrar('nos', [perguntaNo, ...destinos]);
   }, [perguntaNo, seguir, mapa]);
+
+  const agora = () => inicio || inicioDe(new Date());
 
   const tocar = (noId: string) => {
     const n = mapa.nos.find((x) => x.id === noId);
@@ -152,73 +228,103 @@ export function Jornada(p: PropsJornada) {
       return;
     }
     const entrada = n.entradas?.[0] ?? n.ref;
-    comecar({ entrada, inicio: inicio || inicioDe(new Date()), modo, escolhas: [] }, raiz);
+    comecar({ entrada, inicio: agora(), modo, escolhas: [] }, raiz);
   };
 
   const abrirPonto = (ref: string, m: 'ninguem_atende' | 'cenario') => {
-    comecar({ entrada: ref, inicio: inicio || inicioDe(new Date()), modo: m, escolhas: [] }, ref);
+    comecar({ entrada: ref, inicio: agora(), modo: m, escolhas: [] }, ref);
   };
 
-  const refsDoAchado = (a: Achado) => {
-    const ids = new Set<string>();
-    for (const r of a.refs) {
-      for (const id of mapa.porRef.get(r) ?? []) ids.add(id);
-      const cano = r.startsWith('saida:') ? mapa.porSaida.get(r.slice(6)) : undefined;
-      if (cano) {
-        ids.add(cano);
-        const c = mapa.canos.find((x) => x.id === cano)!;
-        ids.add(c.de);
-        if (c.para) ids.add(c.para);
-      }
+  /**
+   * Holofote nas peças do achado. Procura no mapa da tela; se não está e a tela mostra a cadeia de um ponto,
+   * no fluxo das entradas; se ainda não, na cadeia a partir do próprio ponto (ramal, fila, grupo, peça).
+   * Devolve o aviso quando o achado não aparece em mapa nenhum.
+   */
+  const verNoMapa = (a: Achado): string | undefined => {
+    let r = raiz;
+    let ids = idsDoAchado(mapaPara(r), a);
+    if (ids.length === 0 && r !== null) {
+      r = null;
+      ids = idsDoAchado(mapaPara(r), a);
     }
-    return ids;
-  };
-
-  const verNoMapa = (a: Achado) => {
-    let ids = refsDoAchado(a);
-    if (ids.size === 0 && raiz === null) {
-      // O ponto não está no fluxo das entradas: mostra a cadeia a partir dele.
-      const principal = a.refs[0]!;
-      if (['ramal', 'fila', 'grupo', 'peca'].includes(lerRef(principal)?.tipo ?? '')) {
-        setRaiz(principal);
-        setDestaque(new Set([principal]));
-        pedirEnquadrar('nos', [principal]);
-        return;
-      }
+    const principal = a.refs[0];
+    if (ids.length === 0 && principal && TIPOS_COM_CADEIA.includes(lerRef(principal)?.tipo ?? '')) {
+      r = principal;
+      ids = idsDoAchado(mapaPara(r), a);
     }
-    if (ids.size === 0) ids = new Set();
-    setDestaque(ids);
-    pedirEnquadrar('nos', [...ids].filter((id) => mapa.nos.some((n) => n.id === id)));
+    const m = mapaPara(r);
+    const nos = ids.filter((id) => m.nos.some((n) => n.id === id));
+    if (nos.length === 0) return 'Este achado não aparece no mapa.';
+    setRaiz(r);
+    setDestaque(new Set(ids));
+    pedirEnquadrar('nos', nos);
+    return undefined;
   };
 
   /**
    * "Simular" de um achado. Ramal, fila ou grupo: o que acontece quando ninguém atende ali (ciclos e transbordos aparecem).
    * O resto: um caminho de alguma entrada até o ponto, no modo livre (as escolhas forçam o caminho, sem depender da hora).
    */
-  const simularAchado = (a: Achado) => {
+  const simularAchado = (a: Achado): string | undefined => {
     const alvo = a.refs[0]!;
+    if (['ramal', 'fila', 'grupo'].includes(lerRef(alvo)?.tipo ?? '')) {
+      setAba('simular');
+      abrirPonto(alvo, 'ninguem_atende');
+      return undefined;
+    }
+    const c = cenarioAte(documento, alvo);
+    if (!c) return verNoMapa(a);
     setAba('simular');
-    if (['ramal', 'fila', 'grupo'].includes(lerRef(alvo)?.tipo ?? '')) return abrirPonto(alvo, 'ninguem_atende');
-    const c = cenarioAte(p.documento, alvo);
-    if (c) comecar({ entrada: c.entrada, inicio: inicio || inicioDe(new Date()), modo: 'livre', escolhas: c.escolhas }, null);
-    else verNoMapa(a);
+    comecar({ entrada: c.entrada, inicio: agora(), modo: 'livre', escolhas: c.escolhas }, null);
+    return undefined;
   };
 
   const encerrar = () => {
     setSessao(null);
-    setCenarioAberto(null);
+    soltarCenario();
     irPara(0);
   };
 
-  const divergencia = cenarioAberto && execucao && noFim ? comparar(cenarioAberto.esperado, execucao.eventos) : null;
+  const apagar = async (c: Cenario) => {
+    if (!window.confirm(`Apagar o cenário “${c.nome}”?`)) return;
+    setErroCenarios(null);
+    const r = await apagarCenario(p.empresaId, p.jornadaId, c.id);
+    if (r.erro) setErroCenarios({ id: c.id, texto: r.erro });
+    else if (cenarioId === c.id) soltarCenario();
+  };
+
+  // Comparação: quando a simulação refez todas as escolhas do cenário e a animação chegou ao fim dos passos
+  // (no fim da ligação ou numa decisão que ficou pendente, como depois de um import que tirou uma opção).
+  const cartaoCenario: CenarioNoCartao | null =
+    cenario && ligacao === 'completo' && sessao && execucao && noFim
+      ? {
+          nome: cenario.nome,
+          versao: cenario.versao_aprovada,
+          divergencia: comparar(cenario.esperado, execucao.eventos),
+          aprovar: async () =>
+            (
+              await aprovarResultado(p.empresaId, p.jornadaId, cenario.id, {
+                entrada: sessao.entrada,
+                inicio: sessao.inicio,
+                modo: sessao.modo,
+                escolhas: [...sessao.escolhas],
+                esperado: execucao.eventos,
+                versao: p.versao,
+              })
+            ).erro,
+        }
+      : null;
+
+  // A linha do tempo acompanha a animação: os eventos até o que gerou o último passo na tela.
+  const mostrados = !execucao ? 0 : noFim ? execucao.eventos.length : k === 0 ? 0 : origem[k - 1]! + 1;
   const linhas = execucao
     ? execucao.eventos
-        .filter((e) => noFim || e.t <= estado.t)
+        .slice(0, mostrados)
         .map((e) => descrever(idx, execucao.inicioMs, e))
         .filter((l) => l !== null)
     : [];
   const abertos = p.diagnostico.filter((a) => !p.intencionais.some((i) => i.chave === a.chave) && a.gravidade !== 'observacao').length;
-  const entradas = p.documento.entradas;
+  const entradas = documento.entradas;
 
   return (
     <main className="jornada">
@@ -229,7 +335,7 @@ export function Jornada(p: PropsJornada) {
           estado={estado}
           foco={foco}
           duracaoCano={semMovimento ? 0 : 750 / velocidade}
-          podeEscolher={noFim && estado.perguntando !== null}
+          podeEscolher={noFim && perguntando !== null}
           tocar={tocar}
           escolher={escolher}
           irPara={(id) => {
@@ -240,7 +346,7 @@ export function Jornada(p: PropsJornada) {
           semMovimento={semMovimento}
           enquadrar={enquadrar}
         />
-        <div className="hud" aria-live="polite">
+        <div className="hud">
           <span className="pilula" style={{ ['--c' as string]: `var(--w-${estado.canal})` }}>
             <span className="ponto-cor" />
             {estado.canal}
@@ -282,11 +388,11 @@ export function Jornada(p: PropsJornada) {
             <button className="bi" type="button" aria-label="Voltar uma decisão" title="Voltar uma decisão" disabled={sessao.escolhas.length === 0} onClick={voltar}>
               <Icone nome="desfazer" />
             </button>
-            <button className="bi" type="button" aria-label="Recomeçar" title="Recomeçar" onClick={() => irPara(0)}>
+            <button className="bi" type="button" aria-label="Recomeçar" title="Recomeçar" onClick={recomecar}>
               <Icone nome="recomecar" />
             </button>
             <span className="sep" />
-            <button className="bi largo" type="button" aria-label="Velocidade" onClick={() => setVelocidade(VELOCIDADES[(VELOCIDADES.indexOf(velocidade) + 1) % VELOCIDADES.length]!)}>
+            <button className="bi largo" type="button" aria-label={`Velocidade ${velocidade}×`} onClick={() => setVelocidade(VELOCIDADES[(VELOCIDADES.indexOf(velocidade) + 1) % VELOCIDADES.length]!)}>
               {velocidade}×
             </button>
             <button className="bi" type="button" aria-label="Câmera segue a água" aria-pressed={seguir} onClick={() => setSeguir(!seguir)}>
@@ -300,6 +406,7 @@ export function Jornada(p: PropsJornada) {
         )}
         </div>
         <Cartao
+          key={rodada}
           idx={idx}
           rodando={sessao !== null}
           estado={estado}
@@ -308,25 +415,12 @@ export function Jornada(p: PropsJornada) {
           canal={canal}
           livre={sessao?.modo === 'livre'}
           escolher={escolher}
-          recomecar={() => irPara(0)}
+          recomecar={recomecar}
           verRamal={(ref) => sessao && comecar({ ...sessao, entrada: ref, escolhas: [], modo: 'ninguem_atende' }, ref)}
-          cenario={
-            cenarioAberto && execucao
-              ? {
-                  nome: cenarioAberto.nome,
-                  versao: cenarioAberto.versao_aprovada,
-                  divergencia,
-                  aprovar: () => iniciar(async () => void (await aprovarResultado(p.empresaId, p.jornadaId, cenarioAberto.id, execucao.eventos, p.versao), router.refresh())),
-                }
-              : null
-          }
+          cenario={cartaoCenario}
           salvar={
             sessao && execucao
-              ? async (nome) => {
-                  const r = await salvarCenario(p.empresaId, p.jornadaId, { nome, ...sessao, escolhas: [...sessao.escolhas], esperado: execucao.eventos, versao: p.versao });
-                  router.refresh();
-                  return r.erro;
-                }
+              ? async (nome) => (await salvarCenario(p.empresaId, p.jornadaId, { nome, ...sessao, escolhas: [...sessao.escolhas], esperado: execucao.eventos, versao: p.versao })).erro
               : null
           }
         />
@@ -352,7 +446,7 @@ export function Jornada(p: PropsJornada) {
               style={{ display: 'grid', gap: 8 }}
               onSubmit={(e) => {
                 e.preventDefault();
-                if (entradaEscolhida) comecar({ entrada: entradaEscolhida, inicio: inicio || inicioDe(new Date()), modo, escolhas: [] }, null);
+                if (entradaEscolhida) comecar({ entrada: entradaEscolhida, inicio: agora(), modo, escolhas: [] }, null);
               }}
             >
               <label className="campo">
@@ -389,24 +483,28 @@ export function Jornada(p: PropsJornada) {
             ) : (
               <div className="lista-botoes">
                 {p.cenarios.map((c) => (
-                  <div key={c.id} style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      className="item-lista"
-                      aria-pressed={cenarioAberto?.id === c.id}
-                      onClick={() => {
-                        comecar({ entrada: c.entrada, inicio: c.inicio, modo: c.modo, escolhas: c.escolhas }, raizDoCenario(c.entrada), c);
-                        router.replace(`?cenario=${c.id}`, { scroll: false });
-                      }}
-                    >
-                      <b>{c.nome}</b>
-                      <span>
-                        {c.inicio.replace('T', ' ')} · versão {c.versao_aprovada}
-                      </span>
-                    </button>
-                    <button className="bi" type="button" aria-label={`Apagar ${c.nome}`} onClick={() => iniciar(async () => void (await apagarCenario(p.empresaId, p.jornadaId, c.id)))}>
-                      <Icone nome="fechar" />
-                    </button>
+                  <div key={c.id}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="item-lista"
+                        aria-pressed={cenario?.id === c.id}
+                        onClick={() => comecar(sessaoDo(c), raizDoCenario(c.entrada), c)}
+                      >
+                        <b>{c.nome}</b>
+                        <span>
+                          {c.inicio.replace('T', ' ')} · versão {c.versao_aprovada}
+                        </span>
+                      </button>
+                      <button className="bi" type="button" aria-label={`Apagar ${c.nome}`} onClick={() => void apagar(c)}>
+                        <Icone nome="fechar" />
+                      </button>
+                    </div>
+                    {erroCenarios?.id === c.id && (
+                      <p className="aviso-caixa erro" role="alert" style={{ marginTop: 6 }}>
+                        {erroCenarios.texto}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -436,14 +534,8 @@ export function Jornada(p: PropsJornada) {
             intencionais={p.intencionais}
             verNoMapa={verNoMapa}
             simular={simularAchado}
-            marcar={async (chave, nota) => {
-              await marcarIntencional(p.empresaId, p.jornadaId, chave, nota);
-              router.refresh();
-            }}
-            desmarcar={async (chave) => {
-              await desmarcarIntencional(p.empresaId, p.jornadaId, chave);
-              router.refresh();
-            }}
+            marcar={async (chave, nota) => (await marcarIntencional(p.empresaId, p.jornadaId, chave, nota)).erro}
+            desmarcar={async (chave) => (await desmarcarIntencional(p.empresaId, p.jornadaId, chave)).erro}
           />
         )}
 
