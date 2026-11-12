@@ -1,4 +1,5 @@
-import { lerRef, nomeDe, type Canal, type Evento, type Indice, type Motivo, type QuemDecide } from '@journey/nucleo';
+import { lerRef, nomeDe, type Canal, type Indice } from '@journey/nucleo/formato';
+import type { Evento, Motivo, QuemDecide } from '@journey/nucleo/motor';
 
 export type Tom = 'normal' | 'meta' | 'aviso' | 'grave' | 'fim';
 

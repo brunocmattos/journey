@@ -2,7 +2,9 @@
 
 import './jornada.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { indexar, lerRef, type Achado, type Documento, type Opcao } from '@journey/nucleo';
+import { indexar, lerRef, type Documento } from '@journey/nucleo/formato';
+import type { Opcao } from '@journey/nucleo/motor';
+import type { Achado } from '@journey/nucleo/diagnostico';
 import { Icone } from '@/componentes/Icone';
 import { MapaFluxo } from '@/componentes/mapa/MapaFluxo';
 import { cenarioAte } from '@/diagnostico/caminho';

@@ -1,6 +1,7 @@
 'use client';
 
-import { agendaSemanal, destinoFinal, DIAS_AGENDA, lerRef, type Indice } from '@journey/nucleo';
+import { lerRef, type Indice } from '@journey/nucleo/formato';
+import { agendaSemanal, destinoFinal, DIAS_AGENDA } from '@journey/nucleo/diagnostico';
 import { nomeLegivel } from '@/simulacao/descrever';
 
 const CORES = ['var(--agenda-1)', 'var(--agenda-2)', 'var(--agenda-3)', 'var(--agenda-4)', 'var(--agenda-5)', 'var(--agenda-6)'];

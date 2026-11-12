@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { Achado, Indice } from '@journey/nucleo';
+import type { Indice } from '@journey/nucleo/formato';
+import type { Achado } from '@journey/nucleo/diagnostico';
 import type { Intencional } from '@/lib/dados';
 import { Agenda, pontosComAgenda } from './Agenda';
 

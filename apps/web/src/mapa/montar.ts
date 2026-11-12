@@ -1,4 +1,4 @@
-import { indexar, lerRef, nomeDe, existe, type Canal, type Documento, type Indice, type TipoPeca } from '@journey/nucleo';
+import { indexar, lerRef, nomeDe, existe, type Canal, type Documento, type Indice, type TipoPeca } from '@journey/nucleo/formato';
 
 /**
  * O mapa de uma jornada: o grafo do documento desenhado como árvore, da esquerda pra direita.

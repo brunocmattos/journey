@@ -1,4 +1,5 @@
-import type { Canal, Evento, Motivo, Opcao, QuemDecide } from '@journey/nucleo';
+import type { Canal } from '@journey/nucleo/formato';
+import type { Evento, Motivo, Opcao, QuemDecide } from '@journey/nucleo/motor';
 import type { CanoMapa, Mapa, NoMapa } from '@/mapa/montar';
 
 /**

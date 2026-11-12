@@ -1,4 +1,5 @@
-import { executar, indexar, lerRef, type Canal, type Documento, type Execucao, type Indice, type Opcao } from '@journey/nucleo';
+import { indexar, lerRef, type Canal, type Documento, type Indice } from '@journey/nucleo/formato';
+import { executar, type Execucao, type Opcao } from '@journey/nucleo/motor';
 
 export type Modo = 'cenario' | 'livre' | 'ninguem_atende';
 

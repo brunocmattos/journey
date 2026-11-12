@@ -1,4 +1,4 @@
-import type { Evento } from '@journey/nucleo';
+import type { Evento } from '@journey/nucleo/motor';
 
 export interface Divergencia {
   /** Posição do primeiro evento diferente. */

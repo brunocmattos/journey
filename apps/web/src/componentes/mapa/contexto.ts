@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext } from 'react';
-import type { Opcao } from '@journey/nucleo';
+import type { Opcao } from '@journey/nucleo/motor';
 import type { Mapa } from '@/mapa/montar';
 import type { EstadoVisual } from '@/simulacao/estado';
 

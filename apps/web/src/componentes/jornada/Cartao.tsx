@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { Canal, Evento, Indice, Opcao } from '@journey/nucleo';
+import type { Canal, Indice } from '@journey/nucleo/formato';
+import type { Evento, Opcao } from '@journey/nucleo/motor';
 import type { Divergencia } from '@/simulacao/comparar';
 import { duracao, FIM, nomeLegivel, pergunta, QUEM, resumir } from '@/simulacao/descrever';
 import type { EstadoVisual } from '@/simulacao/estado';

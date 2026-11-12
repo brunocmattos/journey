@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { lerRef, nomeDe, type Indice } from '@journey/nucleo';
+import { lerRef, nomeDe, type Indice } from '@journey/nucleo/formato';
 
 /**
  * Ramais diretos (spec, 7.3): vem do catálogo, não é documento. Cada ramal mostra pra onde transborda,

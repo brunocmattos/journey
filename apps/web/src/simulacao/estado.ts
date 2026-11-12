@@ -1,4 +1,5 @@
-import type { Canal, Motivo, Opcao, QuemDecide } from '@journey/nucleo';
+import type { Canal } from '@journey/nucleo/formato';
+import type { Motivo, Opcao, QuemDecide } from '@journey/nucleo/motor';
 import type { Passo } from './passos';
 
 /** O que o mapa mostra depois dos primeiros k passos. */

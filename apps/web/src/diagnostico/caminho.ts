@@ -1,4 +1,4 @@
-import { indexar, lerRef, type Documento } from '@journey/nucleo';
+import { indexar, lerRef, type Documento } from '@journey/nucleo/formato';
 import { ramos } from '@/mapa/montar';
 
 /**
