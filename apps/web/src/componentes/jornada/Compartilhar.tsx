@@ -208,7 +208,7 @@ export function Compartilhar(p: PropsCompartilhar) {
             </label>
             <p id={dica} className="dica" style={{ margin: '-6px 0 0 24px' }}>
               {esconder
-                ? 'O nome de quem usa cada ramal sai do link, também dos textos e das opções do mapa. O número do ramal continua.'
+                ? 'Sai o nome de quem usa cada ramal e, nos textos e opções do mapa, o nome completo escrito como está no ramal. Apelido, primeiro nome sozinho ou nome escrito de outro jeito nos textos continuam.'
                 : 'Quem abrir vê os nomes das pessoas nos ramais.'}
             </p>
             <label className="campo">

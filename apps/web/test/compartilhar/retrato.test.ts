@@ -26,6 +26,9 @@ const d = doc({
   ],
 });
 
+/** Uma chave que está no diagnóstico de `d`: o intencional dela vai no retrato. */
+const CHAVE = diagnosticar(d)[0]!.chave;
+
 function link(extra: Partial<LinkDoBanco> = {}, documento = d): LinkDoBanco {
   return {
     estado: 'ok',
@@ -35,7 +38,7 @@ function link(extra: Partial<LinkDoBanco> = {}, documento = d): LinkDoBanco {
     esconder_nomes: true,
     cenario: { nome: 'E se a Ana não atender?', entrada: 'entrada:principal', inicio: '2026-11-23T10:00', modo: 'cenario', escolhas: ['saida:menu-2'] },
     expira_em: null,
-    intencionais: [{ chave: 'x', nota: 'a Ana pediu' }],
+    intencionais: [{ chave: CHAVE, nota: 'a Ana pediu' }],
     ...extra,
   };
 }
@@ -96,7 +99,7 @@ describe('montarRetrato', () => {
     expect(tudo).not.toMatch(/\bAna\b/i);
     expect(JSON.stringify(r.documento)).not.toContain('observacao');
     expect(r.cenario).toMatchObject({ id: 'link', nome: 'E se a ramal 2001 não atender?', escolhas: ['saida:menu-2'], versao_aprovada: 3 });
-    expect(r.intencionais).toEqual([{ chave: 'x', nota: '' }]);
+    expect(r.intencionais).toEqual([{ chave: CHAVE, nota: '' }]);
   });
 
   it('o diagnóstico tem as mesmas chaves, com os textos sem nome', () => {
@@ -118,9 +121,28 @@ describe('montarRetrato', () => {
     const r = montarRetrato(link({ esconder_nomes: false, mais_recente: false, expira_em: '2026-12-12T10:00:00Z' }));
     expect(r.documento.ramais[0]!.nome).toBe('Ana');
     expect(r.cenario!.nome).toBe('E se a Ana não atender?');
-    expect(r.intencionais).toEqual([{ chave: 'x', nota: 'a Ana pediu' }]);
+    expect(r.intencionais).toEqual([{ chave: CHAVE, nota: 'a Ana pediu' }]);
     expect(JSON.stringify(r.documento)).not.toContain('observacao');
     expect(r).toMatchObject({ versao: 3, maisRecente: false, esconderNomes: false, expiraEm: '2026-12-12T10:00:00Z' });
+  });
+
+  it('o nome da jornada passa pela mesma troca', () => {
+    const jornada = { nome: 'Telefonia da Ana Paula', canal: 'telefonia' };
+    expect(montarRetrato(link({ jornada })).jornada).toEqual({ nome: 'Telefonia da ramal 2002', canal: 'telefonia' });
+    expect(montarRetrato(link({ jornada, esconder_nomes: false })).jornada).toEqual(jornada);
+  });
+
+  it('só os intencionais dos achados do retrato', () => {
+    const l = link({
+      esconder_nomes: false,
+      intencionais: [
+        { chave: CHAVE, nota: 'fica' },
+        { chave: 'sem_transbordo:de-outra-versao', nota: 'não vai' },
+      ],
+    });
+    expect(montarRetrato(l).intencionais).toEqual([{ chave: CHAVE, nota: 'fica' }]);
+    const guardado = l.versao.diagnostico.filter((a) => a.chave !== CHAVE);
+    expect(montarRetrato({ ...l, versao: { ...l.versao, diagnostico: guardado } }).intencionais).toEqual([]);
   });
 
   it('sem cenário inicial', () => {

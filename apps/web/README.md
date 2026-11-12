@@ -11,7 +11,7 @@ Precisa de Docker (pro Supabase local) e Node 22.
 npm install
 npm run banco                       # sobe o Supabase local e aplica supabase/migrations
 cp apps/web/.env.example apps/web/.env.local
-echo "SUPABASE_SECRET_KEY=$(npx supabase status -o json | node -pe 'JSON.parse(require("fs").readFileSync(0)).SECRET_KEY')" >> apps/web/.env.local
+sed -i "s|^SUPABASE_SECRET_KEY=.*|SUPABASE_SECRET_KEY=$(npx supabase status -o json | node -pe 'JSON.parse(require("fs").readFileSync(0)).SECRET_KEY')|" apps/web/.env.local
 npm run dev                         # http://127.0.0.1:3000
 ```
 
@@ -69,13 +69,14 @@ npm run build
 ### Links públicos (etapa 3)
 
 - **O link é lido no servidor com a chave secreta**, e só por `src/lib/link.ts`: quem abre não tem sessão, e a função `abrir_link` só aceita a `service_role`. Assim ninguém com o token na mão chama a API e lê o que o servidor esconderia (com a chave pública, `abrir_link` e a tabela `links` dão 42501). O teste `test/chave-secreta.test.ts` barra a chave em qualquer outro arquivo e em componente de cliente.
-- **O navegador de quem abre recebe só o retrato** (`montarRetrato`): o documento da versão sem a coluna `observacao` (nota interna, a tela não mostra) e, com "esconder nomes" (ligado por padrão), sem o nome de quem usa cada ramal. Ramal de tipo `setor` fica com o nome. A entrada que disca direto em qualquer ramal que não seja um setor conhecido perde o nome (o número continua), inclusive o ramal sem nome ou fora do export: o que falta não tem o que trocar. Pelo mesmo motivo, o rótulo de uma saída pra ramal desconhecido (sem nome ou fora do export) sai. Nos outros nomes, nos textos dos áudios, nos rótulos das opções e no nome do cenário, o nome da pessoa, escrito inteiro, vira "ramal 2001". A troca compara em Unicode NFC, ignora a caixa sem depender de minúsculas do idioma, junta espaços repetidos (o NBSP também) e trata `'` e `’` como iguais. As notas dos intencionais saem; quem marcou nunca vai.
+- **O navegador de quem abre recebe só o retrato** (`montarRetrato`): o documento da versão sem a coluna `observacao` (nota interna, a tela não mostra) e, com "esconder nomes" (ligado por padrão), sem o nome de quem usa cada ramal. Ramal de tipo `setor` fica com o nome. A entrada que disca direto em qualquer ramal que não seja um setor conhecido perde o nome (o número continua), inclusive o ramal sem nome ou fora do export: o que falta não tem o que trocar. Pelo mesmo motivo, o rótulo de uma saída pra ramal desconhecido (sem nome ou fora do export) sai. Nos outros nomes, nos textos dos áudios, nos rótulos das opções e nos nomes da jornada e do cenário, o nome da pessoa, escrito inteiro, vira "ramal 2001". A troca compara em Unicode NFC, ignora a caixa sem depender de minúsculas do idioma, junta espaços repetidos (o NBSP também) e trata `'` e `’` como iguais. Com "esconder nomes", as notas dos intencionais saem (com os nomes à mostra, a nota vai); quem marcou nunca vai.
 - **Limite do "esconder nomes":** só some o nome inteiro de quem usa um ramal.
   - O primeiro nome sozinho não some: "Fale com a Ana" num áudio, com o ramal "Ana Souza", continua com "Ana".
+  - Nome escrito sem acento ou com hífen não é reconhecido: com o ramal "José Silva", "Jose Silva" ou "José-Silva" num texto continuam; o mesmo vale pra "Ana-Souza".
   - Ids, opções (`Saida.opcao`), variáveis (`quando`/`define`, `guarda_variavel`) e `id_central` não são trocados.
   - O nome de uma pessoa cujo ramal não veio no export, citado num texto ou rótulo que não aponta pra ramal, continua.
   - Ramal de setor sem `tipo: setor` é tratado como pessoa e perde o nome (o erro vai pro lado seguro).
-- **O diagnóstico do link é refeito sobre o documento sem nomes** (os textos dos achados citam "ramal 2001 (Ana)"), mas só com as chaves que a versão guardou: as chaves não dependem de nome, e a jornada de um canal não ganha de volta o "não recebe ligação" do que só o outro canal alcança.
+- **O diagnóstico do link é refeito sobre o documento sem nomes** (os textos dos achados citam "ramal 2001 (Ana)"), mas só com as chaves que a versão guardou: as chaves não dependem de nome, e a jornada de um canal não ganha de volta o "não recebe ligação" do que só o outro canal alcança. Dos intencionais, só vão os desses achados (os de achados que não estão nesta versão ficam no servidor).
 - **O cenário inicial é uma cópia** (nome, entrada, hora, modo e escolhas) feita pelo servidor quando o link é criado: o link mostra o que foi mandado mesmo se o cenário mudar ou for apagado. No link não há "aprovar" nem comparação.
 - **Token de 24 caracteres** (18 bytes aleatórios, base64 de URL), gerado pelo banco; o membro só escolhe as opções (`grant insert` só nessas colunas). Depois de criado, o link só muda pra revogado, e revogar é pra sempre. A data da revogação é a do banco (um trigger grava `now()`, não vale a que o cliente mandar), e o nome do cenário copiado tem de 1 a 200 caracteres.
 - **Cada abertura lê o banco** (`connection()`): revogar vale na hora. `/l/*` vai com `X-Robots-Tag: noindex, nofollow` e `Referrer-Policy: no-referrer`.
@@ -93,7 +94,7 @@ Hoje isso é aceitável porque todo membro é editor: quem pode fazer isso pela 
 - **jsonb reordena as chaves:** comparar o resultado guardado de um cenário com o de agora é por valor (`comparar`), não por texto, senão todo cenário aparece como "mudou".
 - **Next 16: `proxyClientMaxBodySize` é 10 MB por padrão.** Com o `proxy.ts` no meio, o corpo maior é cortado em silêncio e o import chega quebrado; por isso está em 5 MB no `next.config.ts` (um pouco acima do teto de 4 MB).
 - **Upsert do PostgREST pede UPDATE em toda coluna que ele manda:** o `on conflict do update set` leva todas, e sem permissão em uma delas até o primeiro upsert falha. Por isso as quatro colunas em `achados_intencionais`.
-- **Sem `SUPABASE_SECRET_KEY` no servidor, o link público dá erro** (a página de erro do Next). Local: a linha do `echo` em "Rodar"; no `next dev` já aberto, reinicie depois de mudar o `.env.local`.
+- **Sem `SUPABASE_SECRET_KEY` no servidor, o link público não abre** (aparece a tela de falha do link, `l/[token]/error.tsx`) e criar link é recusado, com um aviso pra pessoa. Local: a linha do `sed` em "Rodar"; no `next dev` já aberto, reinicie depois de mudar o `.env.local`.
 - **`<dialog>` com `showModal()` deixa o resto da página inerte:** feche o "Compartilhar" antes de clicar fora dele (nos testes também).
 - **O Supabase devolve no máximo 1000 linhas por pedido** (`max_rows = 1000`): o catálogo vem em páginas com `.range()` e a contagem por aba é feita no banco.
 

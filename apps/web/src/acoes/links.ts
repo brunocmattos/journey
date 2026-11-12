@@ -5,6 +5,7 @@ import { ehValidade, expiraEm } from '@/compartilhar/opcoes';
 import type { CenarioDoLink } from '@/compartilhar/retrato';
 import { usuarioAtual } from '@/lib/dados';
 import { mensagemDoErro } from '@/lib/erros';
+import { linkPublicoConfigurado } from '@/lib/link';
 
 /** O que a pessoa escolhe no "Compartilhar". */
 export interface OpcoesLink {
@@ -21,8 +22,13 @@ const caminho = (empresaId: string, jornadaId: string) => `/e/${empresaId}/j/${j
 /**
  * Cria o link e devolve o token. O cenário inicial é copiado do banco (não do navegador) pra dentro do link.
  * O token, o autor e as datas são do banco; o membro só manda as opções.
+ * Sem a chave secreta no servidor o link não abriria pra ninguém: nem cria.
  */
 export async function criarLink(empresaId: string, jornadaId: string, o: OpcoesLink): Promise<{ token?: string; erro?: string }> {
+  if (!linkPublicoConfigurado()) {
+    console.error('[criarLink] a chave secreta do Supabase não está configurada neste servidor: o link público não abriria');
+    return { erro: 'Os links públicos ainda não estão configurados neste servidor (falta a chave secreta). Avisa quem cuida do Journey.' };
+  }
   if (!ehValidade(o.validade)) return { erro: 'Escolhe uma validade da lista.' };
   if (o.versao !== null && !(Number.isInteger(o.versao) && o.versao > 0)) return { erro: 'Versão inválida.' };
   const { supabase } = await usuarioAtual();

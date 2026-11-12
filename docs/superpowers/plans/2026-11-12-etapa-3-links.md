@@ -20,7 +20,7 @@
 - **`.env.local` com a chave secreta** (a página do link precisa dela; sem ela o e2e do link falha):
   ```bash
   cp apps/web/.env.example apps/web/.env.local
-  echo "SUPABASE_SECRET_KEY=$(npx supabase status -o json | node -pe 'JSON.parse(require("fs").readFileSync(0)).SECRET_KEY')" >> apps/web/.env.local
+  sed -i "s|^SUPABASE_SECRET_KEY=.*|SUPABASE_SECRET_KEY=$(npx supabase status -o json | node -pe 'JSON.parse(require("fs").readFileSync(0)).SECRET_KEY')|" apps/web/.env.local
   ```
   Nunca ponha essa chave em arquivo versionado: a proteção de segredos do GitHub barra o push (é o motivo do `a9b2321`).
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -2576,15 +2576,16 @@ O código foi escrito como está acima e depois passou por revisões independent
 | Servidor | Toda FK violada virava "Esta versão não existe mais" (agora "Esta jornada não existe mais.", sem versão fixa); revogar um link que não existe dizia "já estava revogado"; faltavam testes de link vencido, de erro do banco, do prefixo `sb_secret_` e de `env:` no `next.config` | `4092364` |
 | Tela | Erro de rede travava "Criar link" e "Revogar" até recarregar; copiar da lista sem área de transferência não tinha saída; o diálogo abria sem nome acessível e sem foco; "esconder nomes" não voltava ligado ao reabrir (contra o spec 14); faltava um envio único entre criar e revogar; as teclas da simulação agiam com o diálogo aberto; botões sem contexto pro leitor de tela; o autor dependia de `undefined` | `d66c461` |
 | Página pública e polimento | Contraste abaixo do AA no texto da página indisponível e no "vale até"; `<title>` vazio quando o link falha; sem testes de `/lx` e `/l`; sem `h1`; "vale até" numa linha sozinha no celular; a região de status não anunciava a segunda cópia; o aviso de cópia automática orientava mal no Safari | `ce67fd4` |
+| Revisão final | A dica do "Esconder nomes" prometia mais do que a troca faz (agora diz que apelido, primeiro nome sozinho e nome escrito de outro jeito continuam); o README não dizia que nome sem acento ou com hífen escapa, nem que a nota do intencional só sai com "esconder nomes"; o nome da jornada não passava pela troca; iam pro navegador intencionais de achados que não estão na versão; sem a chave secreta, criar link funcionava e o link nascia quebrado (agora `criarLink` recusa, via `linkPublicoConfigurado()` em `lib/link.ts`); os links revogados e vencidos no diálogo usavam `opacity` e ficavam abaixo do AA (agora borda tracejada); o `echo >>` do "Rodar" duplicava a linha `SUPABASE_SECRET_KEY=` do `.env.example` (agora um `sed` preenche a linha); o "Publicar" não dizia pra rodar `db push` antes de publicar o app nem pra criar os links pelo domínio de produção | `<este commit>` |
 
-Ficou de fora, de propósito: link indisponível responde 200 (uma página que explica, com `noindex`), não 404 nem 410; o teste de banco não passa pelas server actions (o ponta a ponta passa); `criarLink` com opções nulas lança em vez de devolver erro (igual a `salvarCenario`); contar quantas vezes o link foi aberto.
+Ficou de fora, de propósito: link indisponível responde 200 (uma página que explica, com `noindex`), não 404 nem 410; o teste de banco não passa pelas server actions (o ponta a ponta passa); `criarLink` com opções nulas lança em vez de devolver erro (igual a `salvarCenario`); contar quantas vezes o link foi aberto; o endereço do link usa a origem do navegador do membro, não `APP_URL` (por isso o README pede criar os links pelo domínio de produção); o documento da versão de um canal leva o catálogo inteiro, então peças de outros canais vão no retrato (podar quando houver outros canais).
 
 Contagens finais (eram 253, 168, 84 e 24 + 1 no ensaio):
 
 | Suíte | Resultado |
 |---|---|
 | Núcleo (Vitest) | `Tests  253 passed (253)` |
-| App (Vitest) | `Tests  180 passed (180)` |
+| App (Vitest) | `Tests  184 passed (184)` |
 | Banco (pgTAP) | `Result: PASS`, `Tests=90` |
 | Ponta a ponta (Playwright) | `24 passed`, `1 skipped` (as capturas) |
 | `typecheck` e `build` | limpos; o build lista `ƒ /l/[token]`; `grep -rl ExcelJS apps/web/.next/static` não acha nada |

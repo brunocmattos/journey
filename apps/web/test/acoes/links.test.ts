@@ -30,6 +30,9 @@ function consulta(tabela: string) {
 }
 
 vi.mock('@/lib/dados', () => ({ usuarioAtual: async () => ({ supabase: { from: consulta } }) }));
+// O lib/link de verdade importa server-only e lê a chave; aqui só a resposta importa.
+let configurado = true;
+vi.mock('@/lib/link', () => ({ linkPublicoConfigurado: () => configurado }));
 const revalidar = vi.fn();
 vi.mock('next/cache', () => ({ revalidatePath: (c: string) => revalidar(c) }));
 const { criarLink, revogarLink } = await import('@/acoes/links');
@@ -44,6 +47,16 @@ describe('acoes/links', () => {
     feitas = [];
     revalidar.mockClear();
     log.mockClear();
+    configurado = true;
+  });
+
+  it('sem a chave secreta no servidor, nem tenta criar e avisa', async () => {
+    configurado = false;
+    expect(await criarLink('e1', 'j1', { ...OPCOES, cenarioId: 'c1' })).toEqual({
+      erro: 'Os links públicos ainda não estão configurados neste servidor (falta a chave secreta). Avisa quem cuida do Journey.',
+    });
+    expect(feitas).toEqual([]);
+    expect(log).toHaveBeenCalled();
   });
 
   it('cria o link com as opções e devolve o token; a validade vira data', async () => {

@@ -183,4 +183,6 @@ button.chip:hover, .chip.escolhido { background: var(--lit); border-color: var(-
 .grupo-escolhas legend { padding: 0; margin-bottom: 4px; font-size: 12.5px; color: var(--ink-2); }
 dialog.dialogo { width: min(520px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); padding: 18px; box-shadow: var(--shadow); }
 dialog.dialogo::backdrop { background: rgb(10 16 20 / 0.45); }
-.achado[data-situacao='revogado'], .achado[data-situacao='vencido'] { opacity: 0.6; }
+/* Link que não abre mais: borda tracejada e sem o fundo do cartão, com o texto em contraste AA (a situação está escrita). */
+.achado[data-situacao='revogado'], .achado[data-situacao='vencido'] { background: transparent; border-style: dashed; border-color: var(--node-line); }
+.achado[data-situacao='revogado'] .mudo, .achado[data-situacao='vencido'] .mudo { color: var(--ink-2); }

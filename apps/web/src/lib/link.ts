@@ -13,6 +13,11 @@ export type LinkAberto =
 /** O banco gera 24 caracteres de base64 de URL; qualquer outra coisa nem vai pro banco. */
 const TOKEN = /^[A-Za-z0-9_-]{24}$/;
 
+/** Se o servidor tem a chave secreta: sem ela, o link público não abre, e criar link é recusado. */
+export function linkPublicoConfigurado(): boolean {
+  return Boolean(process.env.SUPABASE_SECRET_KEY);
+}
+
 /**
  * O link público, pelo token, já como o retrato que a página mostra.
  * É o único lugar do app que usa a chave secreta (SUPABASE_SECRET_KEY): quem abre o link não tem sessão, e a função

@@ -178,16 +178,17 @@ export function esconderNomes(doc: Documento): Documento {
 
 /**
  * O retrato do link, montado no servidor. Sempre sem observações; com "esconder nomes", sem os nomes das pessoas,
- * sem as notas dos intencionais (texto livre) e com o nome do cenário trocado.
+ * sem as notas dos intencionais (texto livre) e com os nomes da jornada e do cenário trocados.
  * O diagnóstico é refeito sobre o documento que vai pra tela (os textos dos achados citam nomes), mas só com os
  * achados que a versão guardou: as chaves não dependem de nome, e a jornada de um canal não ganha de volta o
- * "não recebe ligação" do que só o outro canal alcança.
+ * "não recebe ligação" do que só o outro canal alcança. Dos intencionais, só os desses achados.
  */
 export function montarRetrato(l: LinkDoBanco): Retrato {
   const limpo = semObservacoes(l.versao.documento);
   const { documento, trocar } = l.esconder_nomes ? esconder(limpo) : { documento: limpo, trocar: (t: string) => t };
   const guardadas = new Set(l.versao.diagnostico.map((a) => a.chave));
   const diagnostico = diagnosticar(documento).filter((a) => guardadas.has(a.chave));
+  const doRetrato = new Set(diagnostico.map((a) => a.chave));
   const cenario: Cenario | null = l.cenario && {
     id: CENARIO_DO_LINK,
     nome: trocar(l.cenario.nome),
@@ -199,14 +200,14 @@ export function montarRetrato(l: LinkDoBanco): Retrato {
     versao_aprovada: l.versao.numero,
   };
   return {
-    jornada: l.jornada,
+    jornada: { nome: trocar(l.jornada.nome), canal: l.jornada.canal },
     versao: l.versao.numero,
     maisRecente: l.mais_recente,
     esconderNomes: l.esconder_nomes,
     expiraEm: l.expira_em,
     documento,
     diagnostico,
-    intencionais: l.intencionais.map((i) => ({ chave: i.chave, nota: l.esconder_nomes ? '' : i.nota })),
+    intencionais: l.intencionais.filter((i) => doRetrato.has(i.chave)).map((i) => ({ chave: i.chave, nota: l.esconder_nomes ? '' : i.nota })),
     cenario,
   };
 }

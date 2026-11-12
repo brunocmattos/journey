@@ -17,7 +17,7 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-const { abrirLink } = await import('@/lib/link');
+const { abrirLink, linkPublicoConfigurado } = await import('@/lib/link');
 const TOKEN = 'abcdefghijklmnopqrstuvwx';
 
 describe('abrirLink', () => {
@@ -85,5 +85,16 @@ describe('abrirLink', () => {
       error: null,
     };
     await expect(abrirLink(TOKEN)).rejects.toThrow('journey/1');
+  });
+});
+
+describe('linkPublicoConfigurado', () => {
+  it('diz se o servidor tem a chave secreta', () => {
+    process.env.SUPABASE_SECRET_KEY = 'sb_secret_teste';
+    expect(linkPublicoConfigurado()).toBe(true);
+    process.env.SUPABASE_SECRET_KEY = '';
+    expect(linkPublicoConfigurado()).toBe(false);
+    delete process.env.SUPABASE_SECRET_KEY;
+    expect(linkPublicoConfigurado()).toBe(false);
   });
 });
