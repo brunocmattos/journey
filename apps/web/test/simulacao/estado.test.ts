@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { doc, entrada, fila, peca, saida } from '@journey/nucleo/teste';
+import { doc, entrada, fila, peca, ramal, saida } from '@journey/nucleo/teste';
 import { montarMapa } from '@/mapa/montar';
 import { duracaoDoPasso, estadoAte } from '@/simulacao/estado';
 import { passosDe } from '@/simulacao/passos';
-import { escolher, rodar, type Sessao } from '@/simulacao/sessao';
+import { canalInicial, escolher, rodar, type Sessao } from '@/simulacao/sessao';
 
 const d = doc({
   entradas: [entrada('e', 'peca:m')],
@@ -38,6 +38,31 @@ describe('estadoAte', () => {
     expect([...e.escolhidos]).toEqual(['peca:m>m-esgotou']);
     expect(e.fim).toMatchObject({ motivo: 'fim', ref: 'fim:desliga' });
     expect(e.t).toBe(10);
+  });
+
+  it('resposta ignorada não apaga a pergunta: a decisão continua pendente', () => {
+    const e = rodar(d, { ...s0, escolhas: ['saida:m-9'] });
+    expect(e.pendente).not.toBeNull();
+    const p = passosDe(mapa, e.eventos);
+    expect(p.slice(-2).map((x) => x.tipo)).toEqual(['decidir', 'ignorar']);
+    expect(estadoAte(p, p.length).perguntando).toMatchObject({ no: 'peca:m' });
+  });
+
+  it('decisão fora do mapa também pergunta', () => {
+    const dd = doc({ entradas: [entrada('e', 'peca:m'), entrada('d', 'ramal:r')], pecas: [peca('m', 'audio')], ramais: [ramal('r')] });
+    const p = passosDe(montarMapa(dd), rodar(dd, { ...s0, entrada: 'entrada:d', modo: 'livre' }).eventos);
+    const e = estadoAte(p, p.length);
+    expect(e.fora).toBe('ramal:r');
+    expect(e.perguntando).toMatchObject({ no: null, ref: 'ramal:r', quem: 'ramal' });
+  });
+
+  it('entrada de WhatsApp: o canal é WhatsApp desde a entrada', () => {
+    const dw = doc({ entradas: [entrada('w', 'peca:a', { canal: 'whatsapp' })], pecas: [peca('a', 'audio', { canal: 'whatsapp' })], saidas: [saida('a', 'sempre', 'fim:atendido')] });
+    const sw = { ...s0, entrada: 'entrada:w' };
+    const p = passosDe(montarMapa(dw), rodar(dw, sw).eventos, canalInicial(dw, sw.entrada));
+    expect(estadoAte(p, p.length).canal).toBe('whatsapp');
+    const i = p.findIndex((x) => x.tipo === 'correr');
+    expect(estadoAte(p, i + 1).canal).toBe('whatsapp');
   });
 
   it('a duração cai com a velocidade e zera sem movimento', () => {

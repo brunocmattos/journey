@@ -1,4 +1,4 @@
-import { lerRef, nomeDe, type Evento, type Indice, type Motivo, type QuemDecide } from '@journey/nucleo';
+import { lerRef, nomeDe, type Canal, type Evento, type Indice, type Motivo, type QuemDecide } from '@journey/nucleo';
 
 export type Tom = 'normal' | 'meta' | 'aviso' | 'grave' | 'fim';
 
@@ -18,8 +18,14 @@ export function horaEm(inicioMs: number, t: number): string {
   return `${DIAS[d.getUTCDay()]} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}`;
 }
 
-/** "3:05" a partir de segundos. */
-export const duracao = (s: number) => `${Math.floor(Math.round(s) / 60)}:${p2(Math.round(s) % 60)}`;
+/** "3:05" a partir de segundos; "1:01:40" a partir de uma hora. */
+export function duracao(s: number): string {
+  const total = Math.round(s);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const seg = p2(total % 60);
+  return h > 0 ? `${h}:${p2(m)}:${seg}` : `${m}:${seg}`;
+}
 
 /** Nome pra quem lê: o nome do ponto; peça sem nome aparece pelo id, sem o prefixo. */
 export function nomeLegivel(idx: Indice, ref: string): string {
@@ -66,6 +72,25 @@ export const FIM: Record<Motivo, { titulo: string; tom: Tom }> = {
   incompleta: { titulo: 'Falta dado pra seguir', tom: 'aviso' },
 };
 
+/** Opções que não são tecla, por extenso (o código é do formato, não de quem lê). */
+const OPCOES: Record<string, string> = {
+  atende: 'Atende',
+  nao_atende: 'Ninguém atende',
+  esgotou: 'Nada (esgotou)',
+  sim: 'Sim',
+  nao: 'Não',
+  ocupado: 'Ocupado',
+  indisponivel: 'Indisponível',
+};
+
+/** "Opção 1" pra tecla; o resto por extenso: o rótulo da saída, o nome da opção conhecida ou, sem nada, o código. */
+function rotuloDaEscolha(idx: Indice, e: Extract<Evento, { tipo: 'escolheu' }>): string {
+  if (/^[0-9*#]+$/.test(e.opcao)) return `Opção ${e.opcao}`;
+  const r = lerRef(e.ref);
+  const s = e.saida && r?.tipo === 'peca' ? idx.saidasDe.get(r.id)?.find((x) => x.id === e.saida) : undefined;
+  return s?.rotulo ?? OPCOES[e.opcao] ?? `Opção ${e.opcao}`;
+}
+
 /** Uma linha da linha do tempo por evento que interessa a quem lê. */
 export function descrever(idx: Indice, inicioMs: number, e: Evento): Linha | null {
   const hora = horaEm(inicioMs, e.t);
@@ -74,8 +99,8 @@ export function descrever(idx: Indice, inicioMs: number, e: Evento): Linha | nul
     case 'chegou':
       return { hora, texto: e.visita > 1 ? `De novo em ${nome(e.ref)} (${e.visita}ª vez)` : `Chegou em ${nome(e.ref)}`, tom: e.visita > 1 ? 'aviso' : 'normal' };
     case 'escolheu': {
-      const como = { cenario: 'pelo cenário', relogio: 'pelo relógio', unica: 'só uma saída vale', resposta: 'escolha de quem simula', ninguem_atende: 'ninguém atende' }[e.como];
-      return { hora, texto: `${e.opcao === 'sempre' ? 'Seguiu' : `Opção ${e.opcao}`} (${como})`, tom: 'meta' };
+      const como = { cenario: 'pelo cenário', relogio: 'pelo relógio', unica: 'só uma saída vale', resposta: 'escolha de quem simula', ninguem_atende: 'modo ninguém atende' }[e.como];
+      return { hora, texto: `${e.opcao === 'sempre' ? 'Seguiu' : rotuloDaEscolha(idx, e)} (${como})`, tom: 'meta' };
     }
     case 'definiu':
       return { hora, texto: `Guardou ${e.chave} = ${e.valor}`, tom: 'meta' };
@@ -98,8 +123,9 @@ export interface Resumo {
   canais: string[];
 }
 
-export function resumir(eventos: readonly Evento[]): Resumo {
-  const canais = ['telefonia'];
+/** `canalInicial`: o da entrada (ver `canalInicial` em sessao.ts); o motor não avisa o canal em que a jornada começa. */
+export function resumir(eventos: readonly Evento[], canalInicial: Canal = 'telefonia'): Resumo {
+  const canais: string[] = [canalInicial];
   for (const e of eventos) if (e.tipo === 'trocou_canal' && !canais.includes(e.para)) canais.push(e.para);
   return {
     segundos: eventos.at(-1)?.t ?? 0,

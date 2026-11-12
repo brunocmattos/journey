@@ -10,7 +10,10 @@ import { indexar, lerRef, nomeDe, existe, type Canal, type Documento, type Indic
 export type TipoNo = 'entrada' | 'ramais_diretos' | 'peca' | 'fila' | 'grupo' | 'ramal' | 'fim' | 'externo' | 'inexistente' | 'atalho';
 
 export interface NoMapa {
-  /** Único no mapa. Pontos usam a própria referência; atalhos e entradas agrupadas têm id próprio. */
+  /**
+   * Único no mapa e estável: pontos usam a própria referência; atalhos e cópias de pontas, o id do cano que chega neles
+   * (`atalho:<cano>`, `<ref>@<cano>`); entradas agrupadas, o destino (`entradas>…`, `entradas-inativas>…`).
+   */
   id: string;
   tipo: TipoNo;
   /** A referência que o nó representa. Atalho: a do destino. Entradas agrupadas: a primeira entrada. */
@@ -49,11 +52,15 @@ export interface CanoMapa {
   /** Ids das saídas (aba saidas) que passam por este cano. Vazio quando o cano não vem de uma peça. */
   saidas: string[];
   tipo: TipoCano;
+  /** O motor anda por este cano (algum ramo dele é simulável). Falso: só aparece no mapa (ex.: "nunca: sem espera máxima"). */
+  simulavel: boolean;
 }
 
 export interface FaixaMapa {
   titulo: string;
   subtitulo?: string;
+  /** Quantas faixas há em volta desta (0: nenhuma). A de fora sempre envolve a de dentro com folga. */
+  nivel: number;
   x1: number;
   y1: number;
   x2: number;
@@ -80,6 +87,8 @@ export const COLUNA = 300;
 export const VAO = 26;
 export const FOLGA_FAIXA = 90;
 export const VAO_RAIZ = 60;
+/** Folga entre a borda de uma faixa e a de outra faixa dentro dela. */
+export const FOLGA_ANINHADA = 16;
 
 export const TAMANHOS: Record<TipoNo, { w: number; h: number }> = {
   entrada: { w: 68, h: 68 },
@@ -200,6 +209,8 @@ function descreverNo(idx: Indice, ref: string, tipo: TipoNo): Pick<NoMapa, 'titu
       return { titulo: primeiraMaiuscula(nomeDe(idx, ref)), inativo: false };
     case 'inexistente':
       return { titulo: ref, subtitulo: 'não existe no catálogo', selo: id, inativo: false };
+    case 'entrada':
+      return { titulo: nomeDe(idx, ref), inativo: idx.entradas.get(id)?.ativo === false };
     default:
       return { titulo: nomeDe(idx, ref), inativo: false };
   }
@@ -231,22 +242,42 @@ function descreverEntradas(idx: Indice, refs: string[]): { titulo: string; subti
   return { titulo, subtitulo: numeros.join(', ') + (es.length > 3 ? ` e mais ${es.length - 3}` : '') };
 }
 
-/** Raízes padrão: entradas juntas por destino, na ordem do arquivo; as que vão direto pra ramal num nó só. */
-function raizesPadrao(idx: Indice): { id: string; tipo: 'entrada' | 'ramais_diretos'; entradas: string[]; destino?: string }[] {
-  const porDestino = new Map<string, string[]>();
+interface RaizPadrao {
+  id: string;
+  tipo: 'entrada' | 'ramais_diretos';
+  entradas: string[];
+  destino?: string;
+  inativo: boolean;
+}
+
+/**
+ * Raízes padrão: entradas juntas por destino e por ativo, na ordem do arquivo (a inativa não se esconde no meio das ativas);
+ * as que vão direto pra ramal num nó só.
+ */
+function raizesPadrao(idx: Indice): RaizPadrao[] {
+  const grupos = new Map<string, { destino: string; ativo: boolean; entradas: string[] }>();
   const diretos: string[] = [];
+  let diretosAtivos = false;
   for (const e of idx.doc.entradas) {
     const ref = `entrada:${e.id}`;
-    if (lerRef(e.destino)?.tipo === 'ramal') diretos.push(ref);
-    else porDestino.set(e.destino, [...(porDestino.get(e.destino) ?? []), ref]);
+    if (lerRef(e.destino)?.tipo === 'ramal') {
+      diretos.push(ref);
+      diretosAtivos ||= e.ativo;
+      continue;
+    }
+    const chave = `${e.ativo ? '+' : '-'}${e.destino}`;
+    const g = grupos.get(chave) ?? { destino: e.destino, ativo: e.ativo, entradas: [] };
+    g.entradas.push(ref);
+    grupos.set(chave, g);
   }
-  const raizes: { id: string; tipo: 'entrada' | 'ramais_diretos'; entradas: string[]; destino?: string }[] = [...porDestino].map(([destino, entradas]) => ({
-    id: entradas.length === 1 ? entradas[0]! : `entradas>${destino}`,
+  const raizes: RaizPadrao[] = [...grupos.values()].map(({ destino, ativo, entradas }) => ({
+    id: entradas.length === 1 ? entradas[0]! : `${ativo ? 'entradas' : 'entradas-inativas'}>${destino}`,
     tipo: 'entrada',
     entradas,
     destino,
+    inativo: !ativo,
   }));
-  if (diretos.length > 0) raizes.push({ id: 'ramais-diretos', tipo: 'ramais_diretos', entradas: diretos });
+  if (diretos.length > 0) raizes.push({ id: 'ramais-diretos', tipo: 'ramais_diretos', entradas: diretos, inativo: !diretosAtivos });
   return raizes;
 }
 
@@ -262,9 +293,10 @@ export function montarMapa(doc: Documento, opcoes: OpcoesMapa = {}): Mapa {
   const nos = new Map<string, Rascunho>();
   const canos: CanoMapa[] = [];
   const porRef = new Map<string, string[]>();
-  let atalhos = 0;
 
   const registrar = (n: Rascunho) => {
+    // Os ids são a chave das posições salvas: colisão é defeito, nunca sobrescrever calado.
+    if (nos.has(n.id)) throw new Error(`id de nó repetido no mapa: ${n.id}`);
     nos.set(n.id, n);
     porRef.set(n.ref, [...(porRef.get(n.ref) ?? []), n.id]);
   };
@@ -285,43 +317,49 @@ export function montarMapa(doc: Documento, opcoes: OpcoesMapa = {}): Mapa {
 
   // Árvore: cada ponto entra uma vez; a segunda chegada vira atalho.
   const caminho: string[] = [];
+
+  /**
+   * O nó onde o cano `canoId` chega. Ponto novo usa a referência; se já está no mapa, ponta vira cópia e o resto vira atalho.
+   * O id da cópia e do atalho vem do cano (único, um destino só): não muda quando outro ramo entra antes.
+   */
+  const alvoDe = (para: string, canoId: string): { alvo: Rascunho; volta: boolean } => {
+    const tipo = tipoDoNo(idx, para);
+    const original = nos.get(para);
+    let alvo: Rascunho;
+    let volta = false;
+    if (original && ehPonta(tipo)) alvo = novoNo(`${para}@${canoId}`, para, tipo);
+    else if (original) {
+      volta = caminho.includes(para);
+      alvo = novoNo(`atalho:${canoId}`, para, 'atalho', { titulo: original.titulo, atalho: { alvo: original.id, volta } });
+    } else alvo = novoNo(para, para, tipo);
+    registrar(alvo);
+    return { alvo, volta };
+  };
   const visitar = (no: Rascunho) => {
     caminho.push(no.ref);
     const grupos = new Map<string, Ramo[]>();
     for (const r of ramos(idx, no.ref)) grupos.set(r.para, [...(grupos.get(r.para) ?? []), r]);
     const ehPeca = no.tipo === 'peca';
     if (ehPeca && grupos.size === 0 && no.tipoPeca !== 'fim') {
-      canos.push({ id: `${no.id}>sem-saida`, de: no.id, para: null, rotulo: '', opcoes: [], saidas: [], tipo: 'sem_saida' });
+      canos.push({ id: `${no.id}>sem-saida`, de: no.id, para: null, rotulo: '', opcoes: [], saidas: [], tipo: 'sem_saida', simulavel: false });
     }
     no.decisao = grupos.size > 1;
     for (const [para, rs] of grupos) {
-      const tipo = tipoDoNo(idx, para);
-      let alvo: Rascunho;
-      let volta = false;
-      if (nos.has(para) && ehPonta(tipo)) {
-        alvo = novoNo(`${para}@${++atalhos}`, para, tipo);
-        registrar(alvo);
-      } else if (nos.has(para)) {
-        volta = caminho.includes(para);
-        const original = nos.get(para)!;
-        alvo = novoNo(`atalho:${++atalhos}`, para, 'atalho', { titulo: original.titulo, atalho: { alvo: original.id, volta } });
-        registrar(alvo);
-      } else {
-        alvo = novoNo(para, para, tipo);
-        registrar(alvo);
-      }
+      const canoId = `${no.id}>${rs[0]!.saida ?? rs[0]!.opcao}`;
+      const { alvo, volta } = alvoDe(para, canoId);
       no.filhos.push(alvo.id);
-      const faixa = faixaDoRamo(idx, no, rs[0]!, tipo);
+      const faixa = faixaDoRamo(idx, no, rs, tipoDoNo(idx, para));
       if (faixa) alvo.faixa = faixa;
       const inativo = rs.some((r) => r.inativo) || (alvo.tipo !== 'atalho' && alvo.inativo);
       canos.push({
-        id: `${no.id}>${rs[0]!.saida ?? rs[0]!.opcao}`,
+        id: canoId,
         de: no.id,
         para: alvo.id,
         rotulo: rotuloDoCano(no, rs),
         opcoes: rs.map((r) => r.opcao),
         saidas: rs.flatMap((r) => (r.saida ? [r.saida] : [])),
         tipo: volta ? 'retorno' : inativo ? 'inativo' : 'normal',
+        simulavel: rs.some((r) => r.simulavel),
       });
       if (alvo.tipo !== 'atalho') visitar(alvo);
     }
@@ -339,7 +377,7 @@ export function montarMapa(doc: Documento, opcoes: OpcoesMapa = {}): Mapa {
   } else {
     for (const r of raizesPadrao(idx)) {
       const d = descreverEntradas(idx, r.entradas);
-      const n = novoNo(r.id, r.entradas[0]!, r.tipo, { ...d, entradas: r.entradas });
+      const n = novoNo(r.id, r.entradas[0]!, r.tipo, { ...d, entradas: r.entradas, inativo: r.inativo });
       if (r.tipo === 'ramais_diretos') Object.assign(n, { titulo: 'Ramais diretos', subtitulo: `${r.entradas.length} números` });
       registrar(n);
       for (const e of r.entradas.slice(1)) porRef.set(e, [...(porRef.get(e) ?? []), n.id]);
@@ -351,25 +389,14 @@ export function montarMapa(doc: Documento, opcoes: OpcoesMapa = {}): Mapa {
     if (n.tipo === 'entrada' && n.entradas) {
       // Entradas juntas: o cano sai do nó agrupado pro destino comum.
       const destino = idx.entradas.get(lerRef(n.entradas[0]!)!.id)!.destino;
-      const tipo = tipoDoNo(idx, destino);
-      let alvo: Rascunho;
-      if (nos.has(destino) && ehPonta(tipo)) {
-        alvo = novoNo(`${destino}@${++atalhos}`, destino, tipo);
-        registrar(alvo);
-      } else if (nos.has(destino)) {
-        alvo = novoNo(`atalho:${++atalhos}`, destino, 'atalho', { titulo: nos.get(destino)!.titulo, atalho: { alvo: destino, volta: false } });
-        registrar(alvo);
-      } else {
-        alvo = novoNo(destino, destino, tipo);
-        registrar(alvo);
-      }
+      const canoId = `${n.id}>sempre`;
+      caminho.push(n.ref);
+      const { alvo, volta } = alvoDe(destino, canoId);
       n.filhos.push(alvo.id);
-      canos.push({ id: `${n.id}>sempre`, de: n.id, para: alvo.id, rotulo: '', opcoes: ['sempre'], saidas: [], tipo: 'normal' });
-      if (alvo.tipo !== 'atalho') {
-        caminho.push(n.ref);
-        visitar(alvo);
-        caminho.pop();
-      }
+      const inativo = n.inativo || (alvo.tipo !== 'atalho' && alvo.inativo);
+      canos.push({ id: canoId, de: n.id, para: alvo.id, rotulo: '', opcoes: ['sempre'], saidas: [], tipo: volta ? 'retorno' : inativo ? 'inativo' : 'normal', simulavel: true });
+      if (alvo.tipo !== 'atalho') visitar(alvo);
+      caminho.pop();
     } else visitar(n);
   }
 
@@ -381,13 +408,18 @@ export function montarMapa(doc: Documento, opcoes: OpcoesMapa = {}): Mapa {
 }
 
 function rotuloDoCano(no: NoMapa, rs: Ramo[]): string {
-  if (no.tipoPeca === 'menu') return rs.map((r) => (/^[0-9*#]$/.test(r.opcao) ? r.opcao : ROTULOS_OPCAO[r.opcao] ?? r.rotulo)).join('·');
+  if (no.tipoPeca === 'menu') return rs.map((r) => (/^[0-9*#]+$/.test(r.opcao) ? r.opcao : ROTULOS_OPCAO[r.opcao] ?? r.rotulo)).join('·');
   return rs.map((r) => r.rotulo).filter(Boolean).join(' / ');
 }
 
-/** Filho de uma regra de horário ou feriado que não é outra regra: começa uma faixa (o regime daquele ramo). */
-function faixaDoRamo(idx: Indice, no: NoMapa, r: Ramo, tipoAlvo: TipoNo): { titulo: string; subtitulo?: string } | undefined {
+/**
+ * Filho de uma regra de horário ou feriado que não é outra regra: começa uma faixa (o regime daquele ramo).
+ * Se o sim e o não chegam no mesmo ponto, ele vale pros dois regimes: sem faixa.
+ */
+function faixaDoRamo(idx: Indice, no: NoMapa, rs: Ramo[], tipoAlvo: TipoNo): { titulo: string; subtitulo?: string } | undefined {
   if (no.tipoPeca !== 'regra_horario' && no.tipoPeca !== 'regra_feriado') return undefined;
+  if (new Set(rs.map((x) => x.opcao)).size > 1) return undefined;
+  const r = rs[0]!;
   const alvo = lerRef(r.para);
   const alvoEhRegra = tipoAlvo === 'peca' && alvo && ['regra_horario', 'regra_feriado'].includes(idx.pecas.get(alvo.id)?.tipo ?? '');
   if (alvoEhRegra) return undefined;
@@ -404,11 +436,15 @@ function faixaDoRamo(idx: Indice, no: NoMapa, r: Ramo, tipoAlvo: TipoNo): { titu
 function posicionar(nos: Map<string, Rascunho>, raizes: Rascunho[]): FaixaMapa[] {
   const faixas: FaixaMapa[] = [];
   let cursor = 0;
+  let nivel = 0;
   const colocar = (id: string, coluna: number): number => {
     const n = nos.get(id)!;
     n.x = coluna * COLUNA;
     if (n.faixa) cursor += FOLGA_FAIXA;
     const topo = cursor;
+    // As faixas saem depois das de dentro (pós-ordem): as que entrarem a partir daqui estão dentro desta.
+    const primeiraDentro = faixas.length;
+    if (n.faixa) nivel++;
     if (n.filhos.length === 0) {
       n.y = cursor + n.h / 2;
       cursor += n.h + VAO;
@@ -422,7 +458,16 @@ function posicionar(nos: Map<string, Rascunho>, raizes: Rascunho[]): FaixaMapa[]
       n.maxX = Math.max(n.x + n.w / 2, ...n.filhos.map((f) => nos.get(f)!.maxX));
     }
     if (n.faixa) {
-      faixas.push({ ...n.faixa, x1: n.x - n.w / 2 - 70, x2: n.maxX + 80, y1: topo - FOLGA_FAIXA + 24, y2: cursor - VAO + 26 });
+      nivel--;
+      const f: FaixaMapa = { ...n.faixa, nivel, x1: n.x - n.w / 2 - 70, x2: n.maxX + 80, y1: topo - FOLGA_FAIXA + 24, y2: cursor - VAO + 26 };
+      // A de dentro começa numa coluna e numa linha depois desta; à direita e embaixo pode coincidir: a de fora cresce.
+      for (const d of faixas.slice(primeiraDentro)) {
+        f.x2 = Math.max(f.x2, d.x2 + FOLGA_ANINHADA);
+        f.y2 = Math.max(f.y2, d.y2 + FOLGA_ANINHADA);
+      }
+      // O que vem depois começa abaixo da faixa, como se ela tivesse acabado no lugar de sempre.
+      cursor = Math.max(cursor, f.y2 - 26 + VAO);
+      faixas.push(f);
     }
     return n.maxX;
   };

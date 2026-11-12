@@ -10,8 +10,11 @@ export interface EstadoVisual {
   visitados: Set<string>;
   /** Onde a água está. */
   atual: string | null;
-  /** Decisão esperando resposta, quando o último passo mostrado é ela. */
-  perguntando: { no: string; ref: string; quem: QuemDecide; opcoes: Opcao[]; sugestao?: string } | null;
+  /**
+   * Decisão esperando resposta, quando o último passo mostrado é ela (ou uma resposta ignorada depois dela: o motor segue esperando).
+   * `no: null`: a decisão é num ponto fora deste mapa (ver `fora`).
+   */
+  perguntando: { no: string | null; ref: string; quem: QuemDecide; opcoes: Opcao[]; sugestao?: string } | null;
   fim: { no: string | null; ref: string; motivo: Motivo; detalhe?: string } | null;
   /** Canos escolhidos em decisões, pra acender o chip. */
   escolhidos: Set<string>;
@@ -39,7 +42,8 @@ export function estadoAte(passos: readonly Passo[], k: number): EstadoVisual {
   for (let i = 0; i < ate; i++) {
     const p = passos[i]!;
     e.correndo = null;
-    e.perguntando = null;
+    // Resposta ignorada não responde: a decisão continua pendente.
+    if (p.tipo !== 'ignorar') e.perguntando = null;
     e.t = p.t;
     switch (p.tipo) {
       case 'chegar':

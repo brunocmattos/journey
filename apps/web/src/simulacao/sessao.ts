@@ -1,4 +1,4 @@
-import { executar, type Documento, type Execucao, type Indice, type Opcao } from '@journey/nucleo';
+import { executar, indexar, lerRef, type Canal, type Documento, type Execucao, type Indice, type Opcao } from '@journey/nucleo';
 
 export type Modo = 'cenario' | 'livre' | 'ninguem_atende';
 
@@ -18,6 +18,18 @@ export function rodar(fonte: Documento | Indice, s: Sessao): Execucao {
   const e = executar(fonte, { entrada: s.entrada, inicio: s.inicio, modo: s.modo });
   for (const c of s.escolhas) e.avancar(c);
   return e;
+}
+
+/**
+ * O canal em que a jornada começa: o da entrada. O motor o assume calado ao passar pela entrada (só a troca feita
+ * por uma peça vira evento), então quem desenha ou resume precisa dele (`passosDe`, `resumir`).
+ * Começando por outro ponto (ramal:…, peca:…) ou por entrada que não existe, é telefonia, como no motor.
+ */
+export function canalInicial(fonte: Documento | Indice, entrada: string): Canal {
+  const r = lerRef(entrada);
+  if (r?.tipo !== 'entrada') return 'telefonia';
+  const idx = 'formato' in fonte ? indexar(fonte) : fonte;
+  return idx.entradas.get(r.id)?.canal ?? 'telefonia';
 }
 
 /** A resposta que repete exatamente esta opção: `saida:<id>` quando vem de uma peça. */

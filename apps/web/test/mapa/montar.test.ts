@@ -125,6 +125,97 @@ describe('montarMapa', () => {
     }
   });
 
+  it('entradas inativas ficam num nó próprio, apagado, com cano tracejado', () => {
+    const m = montarMapa(
+      doc({
+        entradas: [entrada('a', 'peca:m'), entrada('b', 'peca:m', { ativo: false }), entrada('c', 'peca:m', { ativo: false })],
+        pecas: [peca('m', 'audio')],
+        saidas: [saida('m', 'sempre', 'fim:desliga')],
+      }),
+    );
+    const raizes = m.nos.filter((n) => n.tipo === 'entrada');
+    expect(raizes.map((n) => [n.entradas, n.inativo])).toEqual([
+      [['entrada:a'], false],
+      [['entrada:b', 'entrada:c'], true],
+    ]);
+    expect(m.canos.filter((c) => c.de === raizes[0]!.id).map((c) => c.tipo)).toEqual(['normal']);
+    expect(m.canos.filter((c) => c.de === raizes[1]!.id).map((c) => c.tipo)).toEqual(['inativo']);
+  });
+
+  it('cano que o motor nunca usa sai marcado como não simulável', () => {
+    const m = montarMapa(doc({ entradas: [entrada('e', 'fila:f')], filas: [fila('f', { ao_esgotar: 'fim:desliga' })] }));
+    expect(m.canos.find((c) => c.de === 'fila:f')).toMatchObject({ rotulo: 'nunca: sem espera máxima', simulavel: false });
+    expect(m.canos.find((c) => c.de === 'entrada:e')!.simulavel).toBe(true);
+  });
+
+  it('tecla de mais de um dígito aparece no chip', () => {
+    const m = montarMapa(
+      doc({
+        entradas: [entrada('e', 'peca:m')],
+        pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 })],
+        saidas: [saida('m', '10', 'fila:f', { rotulo: 'Dez' }), saida('m', 'esgotou', 'fim:desliga')],
+        filas: [fila('f')],
+      }),
+    );
+    expect(cano(m, 'peca:m', 'fila:f')!.rotulo).toBe('10');
+  });
+
+  it('ids de atalhos e cópias de pontas vêm do cano que chega: uma saída nova antes não muda os de depois', () => {
+    const base = {
+      entradas: [entrada('e', 'peca:m')],
+      pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('a', 'audio'), peca('b', 'consulta'), peca('c', 'audio'), peca('x', 'audio')],
+      filas: [fila('f')],
+    };
+    const depois = [saida('m', '1', 'peca:a'), saida('m', '2', 'peca:b'), saida('m', 'esgotou', 'fim:desliga'), saida('a', 'sempre', 'peca:x'), saida('x', 'sempre', 'fim:desliga')];
+    depois.push(saida('b', 'ok', 'peca:x'), saida('b', 'erro', 'fim:desliga'));
+    const antes = montarMapa(doc({ ...base, saidas: depois }));
+    const comNova = montarMapa(doc({ ...base, saidas: [saida('m', '0', 'peca:c'), saida('c', 'sempre', 'peca:x'), ...depois] }));
+    const doB = (m: Mapa) => m.canos.filter((c) => c.de === 'peca:b').map((c) => c.para);
+    expect(doB(antes)).toEqual(['atalho:peca:b>b-ok', 'fim:desliga@peca:b>b-erro']);
+    expect(doB(comNova)).toEqual(doB(antes));
+    expect(cano(antes, 'peca:m', 'fim:desliga@peca:m>m-esgotou')).toBeDefined();
+    expect(cano(comNova, 'peca:m', 'fim:desliga@peca:m>m-esgotou')).toBeDefined();
+  });
+
+  it('regra cujo sim e não vão pro mesmo ponto não abre faixa', () => {
+    const m = montarMapa(
+      doc({
+        entradas: [entrada('e', 'peca:h')],
+        horarios: [janela('tg', ['seg'], '08:00', '18:00')],
+        pecas: [peca('h', 'regra_horario', { horario: 'horario:tg' })],
+        saidas: [saida('h', 'sim', 'fila:f'), saida('h', 'nao', 'fila:f')],
+        filas: [fila('f')],
+      }),
+    );
+    expect(m.faixas).toEqual([]);
+  });
+
+  it('faixa dentro de faixa fica inteira por dentro, sem borda em comum', () => {
+    const m = montarMapa(
+      doc({
+        entradas: [entrada('e', 'peca:h')],
+        horarios: [{ ...janela('tg', ['seg'], '08:00', '18:00'), nome: 'Comercial' }],
+        pecas: [peca('h', 'regra_horario', { horario: 'horario:tg' }), peca('m', 'menu', { espera_s: 5, tentativas: 1 }), peca('f2', 'regra_feriado', { calendario: 'padrao' })],
+        saidas: [saida('h', 'sim', 'peca:m'), saida('h', 'nao', 'fim:desliga'), saida('m', '1', 'peca:f2'), saida('f2', 'sim', 'fila:a'), saida('f2', 'nao', 'fila:b')],
+        filas: [fila('a'), fila('b')],
+      }),
+    );
+    const por = (t: string) => m.faixas.find((f) => f.titulo === t)!;
+    const fora = por('Comercial');
+    expect(fora.nivel).toBe(0);
+    expect(por('Fora do horário').nivel).toBe(0);
+    for (const dentro of [por('Feriado'), por('Fora de feriado')]) {
+      expect(dentro.nivel).toBe(1);
+      expect(dentro.x1).toBeGreaterThan(fora.x1);
+      expect(dentro.y1).toBeGreaterThan(fora.y1);
+      expect(dentro.x2).toBeLessThan(fora.x2);
+      expect(dentro.y2).toBeLessThan(fora.y2);
+    }
+    // A faixa seguinte não invade a de fora.
+    expect(por('Fora do horário').y1).toBeGreaterThanOrEqual(fora.y2 - 52);
+    semSobreposicao(m);
+  });
+
   it('300 peças em menos de 200 ms', () => {
     const n = 300;
     const pecas = Array.from({ length: n }, (_, i) => peca(`p${i}`, 'menu', { espera_s: 5, tentativas: 1 }));

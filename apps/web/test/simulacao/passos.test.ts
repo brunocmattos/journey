@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { doc, entrada, fila, peca, ramal, saida } from '@journey/nucleo/teste';
 import { montarMapa } from '@/mapa/montar';
 import { passosDe } from '@/simulacao/passos';
-import { escolher, rodar, type Sessao } from '@/simulacao/sessao';
+import { canalInicial, escolher, rodar, type Sessao } from '@/simulacao/sessao';
 
 const d = doc({
   entradas: [entrada('e', 'peca:m'), entrada('d', 'ramal:r')],
@@ -47,5 +47,38 @@ describe('passosDe', () => {
     const m = montarMapa(d, { raizes: ['ramal:r'] });
     const p = passosDe(m, rodar(d, { ...s0, entrada: 'ramal:r', modo: 'ninguem_atende' }).eventos);
     expect(p.at(-1)).toMatchObject({ tipo: 'terminar', motivo: 'fim', no: 'fim:desliga' });
+  });
+
+  it('fora do mapa, a decisão continua aparecendo (sem nó)', () => {
+    const p = passosDe(mapa, rodar(d, { ...s0, entrada: 'entrada:d', modo: 'livre' }).eventos);
+    expect(p.map((x) => x.tipo)).toEqual(['saltar', 'chegar', 'fora_do_mapa', 'decidir']);
+    expect(p.at(-1)).toMatchObject({ tipo: 'decidir', no: null, ref: 'ramal:r' });
+  });
+
+  it('fora do mapa, a escolha e a resposta ignorada também aparecem', () => {
+    const s = { ...s0, entrada: 'entrada:d', modo: 'livre' as const };
+    const p = passosDe(mapa, rodar(d, { ...s, escolhas: ['talvez', 'nao_atende'] }).eventos);
+    expect(p.filter((x) => x.tipo === 'ignorar' || x.tipo === 'escolher')).toMatchObject([
+      { tipo: 'ignorar', no: null, resposta: 'talvez' },
+      { tipo: 'escolher', no: null, opcao: 'nao_atende' },
+    ]);
+    expect(p.find((x) => x.tipo === 'escolher')).not.toHaveProperty('cano');
+  });
+
+  it('cano que o motor não usa não acende: fila sem espera máxima no modo ninguém atende', () => {
+    const dd = doc({ entradas: [entrada('e', 'fila:f')], filas: [fila('f', { ao_esgotar: 'fim:desliga' })] });
+    const p = passosDe(montarMapa(dd), rodar(dd, { ...s0, modo: 'ninguem_atende' }).eventos);
+    expect(p.find((x) => x.tipo === 'escolher')).toMatchObject({ opcao: 'nao_atende' });
+    expect(p.find((x) => x.tipo === 'escolher')).not.toHaveProperty('cano');
+    expect(p.at(-1)).toMatchObject({ tipo: 'terminar', motivo: 'desistiu', no: 'fila:f' });
+  });
+
+  it('entrada de outro canal: a água muda de canal ao chegar na entrada', () => {
+    const dw = doc({ entradas: [entrada('w', 'peca:a', { canal: 'whatsapp' })], pecas: [peca('a', 'audio', { canal: 'whatsapp' })], saidas: [saida('a', 'sempre', 'fim:atendido')] });
+    const sw = { ...s0, entrada: 'entrada:w' };
+    expect(canalInicial(dw, sw.entrada)).toBe('whatsapp');
+    const p = passosDe(montarMapa(dw), rodar(dw, sw).eventos, canalInicial(dw, sw.entrada));
+    expect(p.slice(0, 3)).toMatchObject([{ tipo: 'saltar' }, { tipo: 'chegar', no: 'entrada:w' }, { tipo: 'trocar_canal', no: 'entrada:w', de: 'telefonia', para: 'whatsapp' }]);
+    expect(p.filter((x) => x.tipo === 'trocar_canal')).toHaveLength(1);
   });
 });

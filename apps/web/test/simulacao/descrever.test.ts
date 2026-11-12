@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { indexar, lerInicio } from '@journey/nucleo';
-import { doc, entrada, fila, peca, saida } from '@journey/nucleo/teste';
+import { doc, entrada, fila, peca, ramal, saida } from '@journey/nucleo/teste';
 import { comparar } from '@/simulacao/comparar';
 import { descrever, duracao, horaEm, pergunta, resumir } from '@/simulacao/descrever';
-import { escolher, rodar, type Sessao } from '@/simulacao/sessao';
+import { canalInicial, escolher, rodar, type Sessao } from '@/simulacao/sessao';
 
 const d = doc({
   entradas: [entrada('e', 'peca:m')],
@@ -18,6 +18,8 @@ describe('descrever', () => {
   it('hora de parede com segundos e duração em minutos', () => {
     expect(horaEm(lerInicio('2026-11-24T16:57'), 75)).toBe('ter 16:58:15');
     expect(duracao(185)).toBe('3:05');
+    expect(duracao(3599)).toBe('59:59');
+    expect(duracao(3700)).toBe('1:01:40');
   });
 
   it('pergunta de cada decisão, com o nome do ponto', () => {
@@ -38,6 +40,30 @@ describe('descrever', () => {
       'Atendido',
     ]);
     expect(resumir(e.eventos)).toEqual({ segundos: 3, decisoes: 1, canais: ['telefonia', 'whatsapp'] });
+  });
+
+  it('opção sem tecla aparece por extenso, não pelo código', () => {
+    const dd = doc({
+      entradas: [entrada('e', 'peca:m')],
+      pecas: [peca('m', 'menu', { espera_s: 5, tentativas: 1 })],
+      saidas: [saida('m', '1', 'ramal:r'), saida('m', 'esgotou', 'fila:f')],
+      filas: [fila('f', { espera_maxima_s: 30 })],
+      ramais: [ramal('r')],
+    });
+    const ix = indexar(dd);
+    const textos = (escolhas: string[], modo: Sessao['modo'] = 'livre') => {
+      const e = rodar(dd, { ...s0, modo, escolhas });
+      return e.eventos.filter((x) => x.tipo === 'escolheu').map((x) => descrever(ix, e.inicioMs, x)!.texto);
+    };
+    expect(textos(['1', 'atende'])).toEqual(['Opção 1 (escolha de quem simula)', 'Atende (escolha de quem simula)']);
+    expect(textos(['esgotou', 'nao_atende'])).toEqual(['Nada (esgotou) (escolha de quem simula)', 'Ninguém atende (escolha de quem simula)']);
+    expect(textos(['esgotou'], 'ninguem_atende')).toEqual(['Nada (esgotou) (escolha de quem simula)', 'Ninguém atende (modo ninguém atende)']);
+  });
+
+  it('entrada de WhatsApp: o resumo conta só o WhatsApp', () => {
+    const dw = doc({ entradas: [entrada('w', 'peca:a', { canal: 'whatsapp' })], pecas: [peca('a', 'audio', { canal: 'whatsapp' })], saidas: [saida('a', 'sempre', 'fim:atendido')] });
+    const e = rodar(dw, { ...s0, entrada: 'entrada:w' });
+    expect(resumir(e.eventos, canalInicial(dw, 'entrada:w')).canais).toEqual(['whatsapp']);
   });
 
   it('comparar acha o primeiro evento diferente', () => {

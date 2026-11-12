@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { doc, entrada, fila, peca, ramal, saida } from '@journey/nucleo/teste';
-import { escolher, inicioDe, rodar, voltar, type Sessao } from '@/simulacao/sessao';
+import { indexar } from '@journey/nucleo';
+import { canalInicial, escolher, inicioDe, rodar, voltar, type Sessao } from '@/simulacao/sessao';
 
 const d = doc({
   entradas: [entrada('e', 'peca:m')],
@@ -37,5 +38,18 @@ describe('sessão', () => {
 
   it('inicioDe usa a hora local', () => {
     expect(inicioDe(new Date(2026, 10, 24, 16, 57))).toBe('2026-11-24T16:57');
+  });
+
+  it('roda a partir do índice igual ao documento', () => {
+    const s1 = escolher(s0, rodar(d, s0).pendente!.opcoes[0]!);
+    expect(rodar(indexar(d), s1).eventos).toEqual(rodar(d, s1).eventos);
+  });
+
+  it('canal inicial: o da entrada; qualquer outro ponto começa na telefonia, como no motor', () => {
+    const dw = doc({ entradas: [entrada('w', 'fim:desliga', { canal: 'email' })] });
+    expect(canalInicial(dw, 'entrada:w')).toBe('email');
+    expect(canalInicial(indexar(dw), 'entrada:w')).toBe('email');
+    expect(canalInicial(dw, 'ramal:r')).toBe('telefonia');
+    expect(canalInicial(dw, 'entrada:nao-existe')).toBe('telefonia');
   });
 });
