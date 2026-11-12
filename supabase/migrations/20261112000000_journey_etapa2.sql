@@ -1,6 +1,8 @@
 -- Journey, etapa 2: empresas, membros, imports, catálogo, jornadas, versões, cenários e achados intencionais.
 -- Toda tabela com dado de empresa tem empresa_id e só libera membros daquela empresa (RLS).
 -- O catálogo e as versões só mudam pela função confirmar_import: a tela nunca grava direto neles.
+-- Tabela filha liga o pai pela dupla (id, empresa_id): assim não aponta pra linha de outra empresa.
+-- Quem criou ou escreveu (auth.users) fica null se a pessoa for apagada: apagar gente não trava.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -10,7 +12,7 @@ create table public.empresas (
   id uuid primary key default gen_random_uuid(),
   nome text not null check (length(btrim(nome)) between 1 and 120),
   criada_em timestamptz not null default now(),
-  criada_por uuid not null references auth.users (id)
+  criada_por uuid references auth.users (id) on delete set null
 );
 
 create table public.membros (
@@ -25,7 +27,7 @@ create index membros_usuario on public.membros (usuario_id);
 create table public.convites (
   empresa_id uuid not null references public.empresas (id) on delete cascade,
   email text not null check (email = lower(btrim(email)) and email like '%_@_%'),
-  convidado_por uuid not null references auth.users (id) default auth.uid(),
+  convidado_por uuid references auth.users (id) on delete set null default auth.uid(),
   criado_em timestamptz not null default now(),
   primary key (empresa_id, email)
 );
@@ -36,9 +38,12 @@ language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.membros m where m.empresa_id = e and m.usuario_id = auth.uid());
 $$;
 
-create function public.email_atual() returns text
-language sql stable set search_path = '' as $$
-  select lower(nullif(auth.jwt() ->> 'email', ''));
+-- O e-mail de quem está logado, só se já foi confirmado. Lido de auth.users, não do token: o "email"
+-- do token pode ser de uma conta criada com o e-mail de outra pessoa e nunca confirmada.
+-- security definer: quem está logado não lê auth.users.
+create function public.email_confirmado() returns text
+language sql stable security definer set search_path = '' as $$
+  select lower(u.email) from auth.users u where u.id = auth.uid() and u.email_confirmed_at is not null;
 $$;
 
 alter table public.empresas enable row level security;
@@ -47,8 +52,11 @@ alter table public.convites enable row level security;
 
 create policy "membro vê a empresa" on public.empresas for select to authenticated using (public.eh_membro(id));
 create policy "membro renomeia a empresa" on public.empresas for update to authenticated using (public.eh_membro(id)) with check (public.eh_membro(id));
+-- Da empresa, só o nome muda.
+revoke update on public.empresas from anon, authenticated;
+grant update (nome) on public.empresas to authenticated;
 create policy "membro vê os membros" on public.membros for select to authenticated using (public.eh_membro(empresa_id));
-create policy "membro vê os convites" on public.convites for select to authenticated using (public.eh_membro(empresa_id) or email = public.email_atual());
+create policy "membro vê os convites" on public.convites for select to authenticated using (public.eh_membro(empresa_id) or email = public.email_confirmado());
 create policy "membro convida" on public.convites for insert to authenticated with check (public.eh_membro(empresa_id) and convidado_por = auth.uid());
 create policy "membro desfaz convite" on public.convites for delete to authenticated using (public.eh_membro(empresa_id));
 
@@ -57,7 +65,8 @@ create function public.criar_empresa(p_nome text) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
   v_id uuid;
-  v_email text := public.email_atual();
+  -- Só pra mostrar na lista de membros: aqui vale o e-mail do token se ainda não houver confirmado.
+  v_email text := coalesce(public.email_confirmado(), lower(nullif(auth.jwt() ->> 'email', '')));
 begin
   if auth.uid() is null then raise exception 'sem sessão' using errcode = '28000'; end if;
   insert into public.empresas (nome, criada_por) values (btrim(p_nome), auth.uid()) returning id into v_id;
@@ -66,11 +75,11 @@ begin
 end;
 $$;
 
--- Aceita todos os convites do e-mail de quem está logado. Devolve as empresas em que entrou.
+-- Aceita todos os convites do e-mail confirmado de quem está logado. Devolve as empresas em que entrou.
 create function public.aceitar_convites() returns setof uuid
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_email text := public.email_atual();
+  v_email text := public.email_confirmado();
 begin
   if auth.uid() is null or v_email is null then return; end if;
   return query
@@ -94,7 +103,7 @@ create table public.imports (
   status text not null default 'revisao' check (status in ('revisao', 'confirmado', 'descartado')),
   parcial boolean not null default false,
   -- Último import confirmado quando este foi analisado. Confirmar exige que ele ainda seja o último.
-  anterior_id uuid references public.imports (id),
+  anterior_id uuid,
   -- [{ nome, tamanho, caminho }]: caminho no bucket "imports".
   arquivos jsonb not null default '[]',
   -- Problemas, diferenças e contagens, como a tela de revisão mostra.
@@ -102,12 +111,15 @@ create table public.imports (
   -- O que a central diz (base) e a base mais os ajustes (efetivo). Na etapa 2 não há ajustes: são iguais.
   base jsonb not null,
   efetivo jsonb not null,
-  criado_por uuid not null references auth.users (id) default auth.uid(),
+  criado_por uuid references auth.users (id) on delete set null default auth.uid(),
   criado_em timestamptz not null default now(),
-  confirmado_por uuid references auth.users (id),
-  confirmado_em timestamptz
+  confirmado_por uuid references auth.users (id) on delete set null,
+  confirmado_em timestamptz,
+  unique (id, empresa_id),
+  foreign key (anterior_id, empresa_id) references public.imports (id, empresa_id)
 );
 create index imports_empresa on public.imports (empresa_id, criado_em desc);
+create index imports_anterior on public.imports (anterior_id);
 create unique index imports_um_rascunho_por_vez on public.imports (empresa_id) where status = 'revisao';
 
 alter table public.imports enable row level security;
@@ -116,7 +128,10 @@ create policy "membro analisa um import" on public.imports for insert to authent
   with check (public.eh_membro(empresa_id) and status = 'revisao' and criado_por = auth.uid());
 create policy "membro descarta o rascunho" on public.imports for update to authenticated
   using (public.eh_membro(empresa_id) and status = 'revisao')
-  with check (status in ('revisao', 'descartado'));
+  with check (public.eh_membro(empresa_id) and status in ('revisao', 'descartado'));
+-- O app só descarta (status) e anota onde guardou os arquivos; o resto do rascunho não se reescreve.
+revoke update on public.imports from anon, authenticated;
+grant update (status, arquivos) on public.imports to authenticated;
 create policy "membro apaga o rascunho" on public.imports for delete to authenticated
   using (public.eh_membro(empresa_id) and status = 'revisao');
 
@@ -131,9 +146,11 @@ create table public.catalogo (
   item_id text not null,
   nome text,
   dados jsonb not null,
-  import_id uuid not null references public.imports (id),
-  primary key (empresa_id, aba, item_id)
+  import_id uuid not null,
+  primary key (empresa_id, aba, item_id),
+  foreign key (import_id, empresa_id) references public.imports (id, empresa_id)
 );
+create index catalogo_import on public.catalogo (import_id);
 
 create table public.catalogo_membros (
   empresa_id uuid not null references public.empresas (id) on delete cascade,
@@ -159,28 +176,34 @@ create table public.jornadas (
   -- null: todas as entradas do canal. Lista: só essas (jornadas menores, depois da etapa 2).
   entradas text[],
   criada_em timestamptz not null default now(),
-  unique (empresa_id, nome)
+  unique (empresa_id, nome),
+  unique (id, empresa_id)
 );
 
 create table public.jornada_versoes (
   id uuid primary key default gen_random_uuid(),
   empresa_id uuid not null references public.empresas (id) on delete cascade,
-  jornada_id uuid not null references public.jornadas (id) on delete cascade,
+  jornada_id uuid not null,
   numero int not null check (numero > 0),
   documento jsonb not null,
   diagnostico jsonb not null,
   origem text not null check (origem in ('import', 'edicao', 'restauracao')),
-  import_id uuid references public.imports (id),
-  autor uuid not null references auth.users (id),
+  import_id uuid,
+  autor uuid references auth.users (id) on delete set null,
   criada_em timestamptz not null default now(),
-  unique (jornada_id, numero)
+  unique (jornada_id, numero),
+  unique (id, empresa_id),
+  foreign key (jornada_id, empresa_id) references public.jornadas (id, empresa_id) on delete cascade,
+  foreign key (import_id, empresa_id) references public.imports (id, empresa_id)
 );
+create index jornada_versoes_import on public.jornada_versoes (import_id);
 
 create table public.jornada_refs (
-  versao_id uuid not null references public.jornada_versoes (id) on delete cascade,
+  versao_id uuid not null,
   empresa_id uuid not null references public.empresas (id) on delete cascade,
   ref text not null,
-  primary key (versao_id, ref)
+  primary key (versao_id, ref),
+  foreign key (versao_id, empresa_id) references public.jornada_versoes (id, empresa_id) on delete cascade
 );
 create index jornada_refs_ref on public.jornada_refs (empresa_id, ref);
 
@@ -218,8 +241,12 @@ begin
   if v_ultimo is distinct from v_imp.anterior_id then
     raise exception 'outro import foi confirmado depois desta análise: analise de novo' using errcode = 'P0001';
   end if;
-  if jsonb_typeof(p_jornadas) <> 'array' then
+  if p_jornadas is null or jsonb_typeof(p_jornadas) <> 'array' then
     raise exception 'p_jornadas precisa ser uma lista' using errcode = '22023';
+  end if;
+  -- Nome repetido viraria duas versões seguidas da mesma jornada.
+  if exists (select 1 from jsonb_array_elements(p_jornadas) j group by j ->> 'nome' having count(*) > 1) then
+    raise exception 'p_jornadas tem nome de jornada repetido' using errcode = '22023';
   end if;
 
   -- Catálogo: troca tudo pelo efetivo do import.
@@ -281,7 +308,7 @@ $$;
 create table public.cenarios (
   id uuid primary key default gen_random_uuid(),
   empresa_id uuid not null references public.empresas (id) on delete cascade,
-  jornada_id uuid not null references public.jornadas (id) on delete cascade,
+  jornada_id uuid not null,
   nome text not null check (length(btrim(nome)) between 1 and 200),
   -- Por onde entra: entrada:…, ou ramal:… no modo "ninguém atende".
   entrada text not null,
@@ -294,20 +321,23 @@ create table public.cenarios (
   esperado jsonb not null check (jsonb_typeof(esperado) = 'array'),
   -- Versão da jornada em que o resultado foi aprovado.
   versao_aprovada int not null,
-  criado_por uuid not null references auth.users (id) default auth.uid(),
+  criado_por uuid references auth.users (id) on delete set null default auth.uid(),
   criado_em timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
+  atualizado_em timestamptz not null default now(),
+  foreign key (jornada_id, empresa_id) references public.jornadas (id, empresa_id) on delete cascade
 );
 create index cenarios_jornada on public.cenarios (jornada_id, nome);
+create index cenarios_empresa on public.cenarios (empresa_id);
 
 create table public.achados_intencionais (
   empresa_id uuid not null references public.empresas (id) on delete cascade,
-  jornada_id uuid not null references public.jornadas (id) on delete cascade,
+  jornada_id uuid not null,
   chave text not null,
   nota text not null default '',
-  autor uuid not null references auth.users (id) default auth.uid(),
+  autor uuid references auth.users (id) on delete set null default auth.uid(),
   criado_em timestamptz not null default now(),
-  primary key (jornada_id, chave)
+  primary key (jornada_id, chave),
+  foreign key (jornada_id, empresa_id) references public.jornadas (id, empresa_id) on delete cascade
 );
 
 alter table public.cenarios enable row level security;
@@ -330,7 +360,9 @@ language sql immutable set search_path = '' as $$
     then split_part(p_nome, '/', 1)::uuid end;
 $$;
 
-insert into storage.buckets (id, name, public) values ('imports', 'imports', false) on conflict (id) do nothing;
+-- 20 MB por arquivo: o app já recusa mais que isso somando todos.
+insert into storage.buckets (id, name, public, file_size_limit) values ('imports', 'imports', false, 20971520)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
 create policy "membro lê arquivos de import" on storage.objects for select to authenticated
   using (bucket_id = 'imports' and public.eh_membro(public.empresa_do_caminho(name)));
@@ -338,6 +370,8 @@ create policy "membro envia arquivos de import" on storage.objects for insert to
   with check (bucket_id = 'imports' and public.eh_membro(public.empresa_do_caminho(name)));
 
 -- Funções: só usuário logado chama.
+revoke execute on function public.email_confirmado() from public, anon;
+grant execute on function public.email_confirmado() to authenticated;
 revoke execute on function public.criar_empresa(text) from public, anon;
 revoke execute on function public.aceitar_convites() from public, anon;
 revoke execute on function public.confirmar_import(uuid, jsonb) from public, anon;
@@ -346,3 +380,9 @@ grant execute on function public.criar_empresa(text) to authenticated;
 grant execute on function public.aceitar_convites() to authenticated;
 grant execute on function public.confirmar_import(uuid, jsonb) to authenticated;
 grant execute on function public.onde_usado(uuid, text) to authenticated;
+
+-- TRUNCATE passa por cima das regras de acesso; TRIGGER e REFERENCES não servem pra tela.
+revoke truncate, trigger, references on
+  public.empresas, public.membros, public.convites, public.imports, public.catalogo, public.catalogo_membros,
+  public.jornadas, public.jornada_versoes, public.jornada_refs, public.cenarios, public.achados_intencionais
+from anon, authenticated;
