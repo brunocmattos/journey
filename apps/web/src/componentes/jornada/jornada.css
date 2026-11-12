@@ -174,3 +174,13 @@ button.chip:hover, .chip.escolhido { background: var(--lit); border-color: var(-
 @media (prefers-reduced-motion: reduce) {
   .cano-espuma { display: none; }
 }
+
+/* Compartilhar: o botão no alto do painel e o diálogo com as opções e os links. */
+.compartilhar { display: flex; justify-content: flex-end; padding: 8px 0 4px; }
+.escolha { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.escolha input { margin: 0; accent-color: var(--btn); }
+.grupo-escolhas { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.grupo-escolhas legend { padding: 0; margin-bottom: 4px; font-size: 12.5px; color: var(--ink-2); }
+dialog.dialogo { width: min(520px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); padding: 18px; box-shadow: var(--shadow); }
+dialog.dialogo::backdrop { background: rgb(10 16 20 / 0.45); }
+.achado[data-situacao='revogado'], .achado[data-situacao='vencido'] { opacity: 0.6; }

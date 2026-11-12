@@ -8,7 +8,8 @@ import type { Achado } from '@journey/nucleo/diagnostico';
 import { Icone } from '@/componentes/Icone';
 import { MapaFluxo } from '@/componentes/mapa/MapaFluxo';
 import { cenarioAte } from '@/diagnostico/caminho';
-import type { Cenario, Intencional } from '@/lib/dados';
+import type { LinkResumo } from '@/compartilhar/opcoes';
+import type { Cenario } from '@/lib/dados';
 import { montarMapa, type Mapa } from '@/mapa/montar';
 import { comparar } from '@/simulacao/comparar';
 import { descrever, duracao, horaEm } from '@/simulacao/descrever';
@@ -18,18 +19,28 @@ import { canalInicial, escolher as escolherNa, inicioDe, rodar, voltar as voltar
 import { vinculo } from '@/simulacao/vinculo';
 import { aprovarResultado, apagarCenario, desmarcarIntencional, marcarIntencional, salvarCenario } from '@/acoes/jornada';
 import { Cartao, opcaoDaTecla, type CenarioNoCartao } from './Cartao';
-import { PainelDiagnostico } from './PainelDiagnostico';
+import { Compartilhar } from './Compartilhar';
+import { PainelDiagnostico, type MarcaIntencional } from './PainelDiagnostico';
 import { PainelRamais } from './PainelRamais';
 import { usePlayer, useSemMovimento } from './usePlayer';
 
-export interface PropsJornada {
+/** Quem é membro grava cenários e intencionais e compartilha a jornada. */
+export interface MembroNaJornada {
   empresaId: string;
   jornadaId: string;
+  links: LinkResumo[];
+}
+
+export interface PropsJornada {
   versao: number;
   documento: Documento;
   diagnostico: Achado[];
   cenarios: Cenario[];
-  intencionais: Intencional[];
+  intencionais: MarcaIntencional[];
+  /** null no link público: a tela é só leitura (simula e vê o diagnóstico, não grava nada). */
+  membro: MembroNaJornada | null;
+  /** Cenário que abre e toca quando a página abre, se a URL não pedir outro (o cenário inicial do link). */
+  cenarioInicial?: string;
 }
 
 type Aba = 'simular' | 'diagnostico' | 'ramais';
@@ -132,9 +143,11 @@ export function Jornada(p: PropsJornada) {
   const [modo, setModo] = useState<Modo>('cenario');
   useEffect(() => setInicio(inicioDe(new Date())), []);
 
+  // No link público o endereço é o do link: o ?cenario= é coisa da tela dos membros.
+  const membro = p.membro;
   const soltarCenario = () => {
     setCenarioId(null);
-    marcarUrl(null);
+    if (membro) marcarUrl(null);
   };
 
   /** Começa uma simulação nova; com cenário, ele fica aberto (e no link) enquanto a simulação for o caminho dele. */
@@ -143,18 +156,18 @@ export function Jornada(p: PropsJornada) {
       setRaiz(novaRaiz);
       setDestaque(null);
       setCenarioId(c?.id ?? null);
-      marcarUrl(c?.id ?? null);
+      if (membro) marcarUrl(c?.id ?? null);
       setPausado(false);
       setSessao(s);
       setRodada((n) => n + 1);
       irPara(0);
     },
-    [irPara],
+    [irPara, membro],
   );
 
-  // ?cenario=<id> abre e toca o cenário.
+  // ?cenario=<id> (ou o cenário inicial do link) abre e toca o cenário.
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get('cenario');
+    const id = (membro ? new URLSearchParams(window.location.search).get('cenario') : null) ?? p.cenarioInicial;
     const c = id ? p.cenarios.find((x) => x.id === id) : undefined;
     if (c) comecar(sessaoDo(c), raizDoCenario(c.entrada), c);
     // Só quando a página abre.
@@ -288,24 +301,25 @@ export function Jornada(p: PropsJornada) {
   };
 
   const apagar = async (c: Cenario) => {
-    if (!window.confirm(`Apagar o cenário “${c.nome}”?`)) return;
+    if (!membro || !window.confirm(`Apagar o cenário “${c.nome}”?`)) return;
     setErroCenarios(null);
-    const r = await apagarCenario(p.empresaId, p.jornadaId, c.id);
+    const r = await apagarCenario(membro.empresaId, membro.jornadaId, c.id);
     if (r.erro) setErroCenarios({ id: c.id, texto: r.erro });
     else if (cenarioId === c.id) soltarCenario();
   };
 
   // Comparação: quando a simulação refez todas as escolhas do cenário e a animação chegou ao fim dos passos
   // (no fim da ligação ou numa decisão que ficou pendente, como depois de um import que tirou uma opção).
+  // No link público não há o que aprovar: o cenário do link é só o caminho.
   const cartaoCenario: CenarioNoCartao | null =
-    cenario && ligacao === 'completo' && sessao && execucao && noFim
+    membro && cenario && ligacao === 'completo' && sessao && execucao && noFim
       ? {
           nome: cenario.nome,
           versao: cenario.versao_aprovada,
           divergencia: comparar(cenario.esperado, execucao.eventos),
           aprovar: async () =>
             (
-              await aprovarResultado(p.empresaId, p.jornadaId, cenario.id, {
+              await aprovarResultado(membro.empresaId, membro.jornadaId, cenario.id, {
                 entrada: sessao.entrada,
                 inicio: sessao.inicio,
                 modo: sessao.modo,
@@ -421,14 +435,25 @@ export function Jornada(p: PropsJornada) {
           verRamal={(ref) => sessao && comecar({ ...sessao, entrada: ref, escolhas: [], modo: 'ninguem_atende' }, ref)}
           cenario={cartaoCenario}
           salvar={
-            sessao && execucao
-              ? async (nome) => (await salvarCenario(p.empresaId, p.jornadaId, { nome, ...sessao, escolhas: [...sessao.escolhas], esperado: execucao.eventos, versao: p.versao })).erro
+            membro && sessao && execucao
+              ? async (nome) =>
+                  (await salvarCenario(membro.empresaId, membro.jornadaId, { nome, ...sessao, escolhas: [...sessao.escolhas], esperado: execucao.eventos, versao: p.versao })).erro
               : null
           }
         />
       </section>
 
       <aside className="painel" aria-label="Painel">
+        {membro && (
+          <Compartilhar
+            empresaId={membro.empresaId}
+            jornadaId={membro.jornadaId}
+            versao={p.versao}
+            cenarios={p.cenarios}
+            cenarioAberto={cenario?.id ?? null}
+            links={membro.links}
+          />
+        )}
         <div className="abas" role="tablist">
           <button className="aba" role="tab" aria-selected={aba === 'simular'} onClick={() => setAba('simular')}>
             Simular
@@ -481,7 +506,11 @@ export function Jornada(p: PropsJornada) {
 
             <div className="rotulo-secao">E se…</div>
             {p.cenarios.length === 0 ? (
-              <p className="vazio">No fim de uma simulação, salva o caminho como cenário pra mostrar pra alguém ou conferir depois de um import.</p>
+              <p className="vazio">
+                {membro
+                  ? 'No fim de uma simulação, salva o caminho como cenário pra mostrar pra alguém ou conferir depois de um import.'
+                  : 'Este link não traz cenário: escolhe a entrada, o dia e a hora e dá play.'}
+              </p>
             ) : (
               <div className="lista-botoes">
                 {p.cenarios.map((c) => (
@@ -495,12 +524,15 @@ export function Jornada(p: PropsJornada) {
                       >
                         <b>{c.nome}</b>
                         <span>
-                          {c.inicio.replace('T', ' ')} · versão {c.versao_aprovada}
+                          {c.inicio.replace('T', ' ')}
+                          {membro && ` · versão ${c.versao_aprovada}`}
                         </span>
                       </button>
-                      <button className="bi" type="button" aria-label={`Apagar ${c.nome}`} onClick={() => void apagar(c)}>
-                        <Icone nome="fechar" />
-                      </button>
+                      {membro && (
+                        <button className="bi" type="button" aria-label={`Apagar ${c.nome}`} onClick={() => void apagar(c)}>
+                          <Icone nome="fechar" />
+                        </button>
+                      )}
                     </div>
                     {erroCenarios?.id === c.id && (
                       <p className="aviso-caixa erro" role="alert" style={{ marginTop: 6 }}>
@@ -536,8 +568,10 @@ export function Jornada(p: PropsJornada) {
             intencionais={p.intencionais}
             verNoMapa={verNoMapa}
             simular={simularAchado}
-            marcar={async (chave, nota) => (await marcarIntencional(p.empresaId, p.jornadaId, chave, nota)).erro}
-            desmarcar={async (chave) => (await desmarcarIntencional(p.empresaId, p.jornadaId, chave)).erro}
+            {...(membro && {
+              marcar: async (chave: string, nota: string) => (await marcarIntencional(membro.empresaId, membro.jornadaId, chave, nota)).erro,
+              desmarcar: async (chave: string) => (await desmarcarIntencional(membro.empresaId, membro.jornadaId, chave)).erro,
+            })}
           />
         )}
 
