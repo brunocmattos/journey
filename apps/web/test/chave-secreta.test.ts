@@ -17,10 +17,8 @@ function arquivos(pasta: string): string[] {
 describe('chave secreta', () => {
   const todos = arquivos(SRC).map((f) => [f.slice(SRC.length + 1), readFileSync(f, 'utf8')] as const);
 
-  const leem = todos.filter(([, texto]) => /SUPABASE_SECRET_KEY|SERVICE_ROLE|sb_secret_/.test(texto));
-
   it('só src/lib/link.ts lê SUPABASE_SECRET_KEY', () => {
-    expect(leem.map(([nome]) => nome).filter((nome) => nome !== 'lib/link.ts')).toEqual([]);
+    expect(todos.filter(([, texto]) => /SUPABASE_SECRET_KEY|SERVICE_ROLE|sb_secret_/.test(texto)).map(([nome]) => nome)).toEqual(['lib/link.ts']);
   });
 
   it('o next.config não tem env: (iria pro bundle do navegador)', () => {
@@ -29,7 +27,8 @@ describe('chave secreta', () => {
   });
 
   it('e ele é só do servidor', () => {
-    expect(leem.filter(([, texto]) => !texto.startsWith("import 'server-only';")).map(([nome]) => nome)).toEqual([]);
+    const [, link] = todos.find(([nome]) => nome === 'lib/link.ts')!;
+    expect(link.startsWith("import 'server-only';")).toBe(true);
   });
 
   it('nenhum componente de cliente importa lib/link', () => {

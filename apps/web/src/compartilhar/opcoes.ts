@@ -40,7 +40,7 @@ export const dataCurta = (iso: string) => dia.format(new Date(iso));
 /** "versão 3 · nomes escondidos · cenário “E se…” · vale até 12/12/2026". */
 export function descreverLink(l: LinkResumo, agora: Date): string {
   const partes = [
-    l.versao === null ? 'sempre a versão mais recente' : `versão ${l.versao}`,
+    l.versao === null ? 'o fluxo de agora' : `versão ${l.versao}`,
     l.esconder_nomes ? 'nomes escondidos' : 'com os nomes',
     l.cenario_nome ? `cenário “${l.cenario_nome}”` : 'sem cenário',
   ];
@@ -53,3 +53,26 @@ export function descreverLink(l: LinkResumo, agora: Date): string {
 
 /** O endereço do link a partir da origem do app. */
 export const enderecoDoLink = (origem: string, token: string) => `${origem}/l/${token}`;
+
+/** Uma linha com o que "esconder nomes" não pega (os limites estão em compartilhar/retrato.ts, seção "Nomes"). */
+export const LIMITES_ESCONDER =
+  'Troca o nome de cada pessoa cadastrada, inteiro ou por partes, em todo texto do fluxo; apelidos, abreviações, e-mails e telefones escritos no texto ficam.';
+
+/** O que o formulário do "Compartilhar" manda, já no formato da ação criarLink. */
+export interface EscolhasDoLink {
+  versao: number | null;
+  esconderNomes: boolean;
+  cenarioId: string | null;
+  validade: Validade;
+}
+
+/** Lê o formulário: versão e cenário vazios são "o fluxo de agora" e "nenhum"; validade "sem" é sem prazo. */
+export function escolhasDoFormulario(f: { versao: string; cenario: string; esconder: boolean; validade: string }): EscolhasDoLink {
+  const validade = f.validade === 'sem' ? null : Number(f.validade);
+  return {
+    versao: f.versao ? Number(f.versao) : null,
+    esconderNomes: f.esconder,
+    cenarioId: f.cenario || null,
+    validade: ehValidade(validade) ? validade : VALIDADE_PADRAO,
+  };
+}
