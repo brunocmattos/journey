@@ -15,8 +15,8 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa B) mesclada. Este plano, o código e o PR da etapa C saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch, e cada parte passou por uma revisão independente antes de virar plano: `@journey/fluxo` 84 testes (eram 78), núcleo 253, app 188 (eram 258: a v1 sai), pgTAP 168 (eram 136), ponta a ponta 17 (eram 30 + 1 pulado: os da v1 saem), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
-- **Migração nova:** `20261115000000_journey_v2_compartilhar.sql`. Ela apaga tabelas da v1 e para (`raise exception`) se a v1 tiver dados ou se o bucket `imports` tiver arquivos. No banco local a v1 tem sobras de testes antigos: a tarefa 2 explica como passar por isso sem apagar nada à mão.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch, e cada parte passou por uma revisão independente antes de virar plano: `@journey/fluxo` 84 testes (eram 78), núcleo 253, app 202 (eram 258: a v1 sai), pgTAP 181 (eram 136), ponta a ponta 25 (eram 30 + 1 pulado: os da v1 saem), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Migrações novas:** `20261115000000_journey_v2_compartilhar.sql` e (tarefa 10) `20261116000000_journey_v2_senha.sql`, com gatilhos em `auth.users`. Ela apaga tabelas da v1 e para (`raise exception`) se a v1 tiver dados ou se o bucket `imports` tiver arquivos. No banco local a v1 tem sobras de testes antigos: a tarefa 2 explica como passar por isso sem apagar nada à mão.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`), com `SUPABASE_SECRET_KEY` pros testes do link público.
 - **Commits:** `.git/atribuicao.txt` tem as duas linhas de atribuição da sessão. Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz salvando o bloco num arquivo e rodando `git apply <arquivo>`. Arquivo que a tarefa 3 apaga e uma tarefa depois cria de novo (`acoes/links.ts`, `compartilhar/retrato.ts`, `lib/link.ts`, `/l/[token]`) vem inteiro.
@@ -42,6 +42,9 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Listas do editor (intencionais, cenários, versões, links) no estado do editor**, atualizadas pelo que cada ação devolve; sem `revalidatePath` | Revalidar releria o documento inteiro à toa | Revalidar a página a cada ação |
 | **Confirmação no lugar** (o "Não …" primeiro e com o foco; clique duplo não confirma) em revogar, apagar cenário e restaurar | O botão de confirmar aparecia onde estava o primeiro: um clique duplo revogava o link pra sempre | `window.confirm` |
 | **A página de entrar redesenhada** (mesma forma de entrar: link por e-mail com PKCE e Google opcional), com uma prévia animada do quadro em SVG próprio que pausa fora da tela e para depois de três voltas; o botão só liga depois de hidratar (o e-mail nunca vai pra URL); o limite de envio do Supabase vira mensagem em português com espera de 30 s | Pedido do Bruno; a prévia não carrega o editor nem o `@journey/fluxo` e não gasta a página o tempo todo | Importar o editor pra prévia; animação infinita |
+| **Entrar com e-mail e senha (o principal), Google e o link por e-mail**; "Criar conta" só com o e-mail (o link de confirmação leva a escolher a senha); "Esqueci a senha"; "Senha" no topo pra quem está logado | Pedido do Bruno. Pedir a senha no cadastro não serve: a senha de antes da confirmação não pode valer (abaixo) | Senha no cadastro |
+| **A senha some quando o e-mail é confirmado; ninguém troca o próprio e-mail** (gatilhos em `auth.users`; contas que o admin cria já confirmadas ficam com a senha) | Quem cadastrava o e-mail de uma convidada antes dela (pela API pública) ou trocava o próprio e-mail pro dela ficava com uma senha que valia depois, e o convite punha essa conta na empresa (reproduzido) | Confiar no "Confirm email" do Supabase: ele não apaga a senha de antes |
+| **Os e-mails apontam pra `/auth/confirm?token_hash=…`, uma página com botão; só o POST (Origin conferido) entra** | Com PKCE, o link aberto em outro navegador ou no celular falhava; com o `token_hash` no GET, um link montado por outra pessoa logava a vítima na conta dela, e leitores de link gastavam o token | PKCE só (falha em outro aparelho) ou GET direto (CSRF de login) |
 
 **Gotchas que o ensaio achou:**
 - **Banco local compartilhado:** a migração já aplicada não se reaplica com `migration up`; mudar o arquivo depois exige alinhar o banco local com DDL avulso (nunca `db reset` num banco que outros usam).
@@ -49,6 +52,9 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **Listas em jsonb nos checks:** `jsonb_path_exists` em modo `lax` aceita lista dentro de lista; use `strict` com `silent` (`'{}', true`) e `coalesce` (não-lista dá null).
 - **Teclas dentro de pops, diálogo e gaveta:** o atalho do editor ignora Delete/Enter vindos deles (senão um Delete num botão apagava a peça selecionada), mas deixa passar Esc e Ctrl+Z/Y.
 - **Gaveta lembrada no navegador:** lida depois de montar (o primeiro desenho tem que bater com o do servidor).
+- **Tipos velhos no `.next`:** depois de apagar as rotas da v1, o `next typegen` pode reclamar delas (sobra de um `next dev` antigo em `apps/web/.next/dev/types`). Apague `apps/web/.next` (fica fora do git) e rode de novo.
+- **Mudança no `config.toml` do Auth só vale depois de reiniciar o Supabase local** (`npm run banco:parar && npm run banco`).
+- **`Referrer-Policy: no-referrer` faz o Chrome mandar `Origin: null` no POST do formulário:** a página `/auth/confirm` usa `same-origin` (o handler recusa Origin nulo).
 - **Página do link:** o retrato serializado (HTML, dados do RSC e JS) não pode ter nenhum nome escondido; o teste de ponta a ponta confere o HTML.
 
 ## Mapa de arquivos
@@ -68,7 +74,9 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | `apps/web/src/componentes/editor/usePlay.ts` | A máquina do play (editor e link) |
 | `apps/web/src/componentes/editor/{Gaveta,Cenarios,Versoes,Compartilhar,Pop,Confirmacao}.tsx`, `useAnuncioAdiado.ts` | As telas novas do editor |
 | `apps/web/src/componentes/editor/Visualizador.tsx`, `src/app/l/[token]/*` | A página do link público |
-| `apps/web/src/app/entrar/*` | A página de entrar redesenhada |
+| `apps/web/src/app/entrar/*` | A página de entrar redesenhada; e-mail e senha, Google, link |
+| `supabase/migrations/20261116000000_journey_v2_senha.sql`, `supabase/templates/*` | A senha some na confirmação; sem troca do próprio e-mail; os e-mails em português |
+| `apps/web/src/lib/acesso.ts`, `src/app/auth/{confirm,confirmar,callback}`, `src/app/conta/senha/*` | Mensagens do Auth, a volta dos e-mails (página + POST), a volta do Google, a senha nova |
 
 ---
 
@@ -8027,7 +8035,1726 @@ git commit -m "entrar: a página redesenhada (formulário e prévia do quadro), 
 
 ---
 
-### Tarefa 10: documentação e fechamento
+### Tarefa 10: entrar com e-mail e senha, Google e o link (e a conta não se toma)
+
+Pedido do Bruno na aprovação ("só magic link é chato: tem que dar pra logar com Google, e-mail, senha"). Passou por três revisões de segurança: a primeira achou que quem cadastrava o e-mail de outra pessoa antes dela ficava com uma senha que valia depois da confirmação (e entrava na empresa pelo convite); a segunda, o mesmo pela troca de e-mail. As duas estão fechadas no banco e cobertas por pgTAP e ponta a ponta.
+
+**Arquivos:**
+- Criar: `supabase/migrations/20261116000000_journey_v2_senha.sql`, `supabase/tests/database/senha.test.sql`, `supabase/templates/{confirmacao,recuperacao,link}.html`
+- Modificar: `supabase/config.toml`
+- Criar: `apps/web/src/lib/acesso.ts`, `apps/web/src/app/auth/confirm/page.tsx`, `apps/web/src/app/auth/confirmar/route.ts`, `apps/web/src/app/conta/senha/{page.tsx,formulario.tsx}`
+- Modificar: `apps/web/src/app/auth/callback/route.ts`, `apps/web/src/app/entrar/{page.tsx,formulario.tsx,entrar.css}`, `apps/web/src/app/e/[empresa]/layout.tsx`, `apps/web/src/app/empresa/nova/page.tsx`, `apps/web/src/app/globals.css`, `apps/web/next.config.ts`
+- Apagar: `apps/web/src/app/entrar/mensagens.ts`, `apps/web/test/app/entrar.test.ts` (foram pro `lib/acesso.ts` e `test/lib/acesso.test.ts`)
+- Testes: `apps/web/test/lib/acesso.test.ts`, `apps/web/test/app/{callback,confirmar}.test.ts`, `apps/web/e2e/conta.spec.ts` (novos), `apps/web/e2e/{entrar.spec.ts,apoio.ts}`
+
+- [ ] **Passo 1: o banco (a senha some na confirmação; ninguém troca o próprio e-mail)**
+
+`supabase/tests/database/senha.test.sql`:
+
+```sql
+-- A senha some quando o e-mail é confirmado, e a pessoa não troca o e-mail (migração 20261116000000).
+-- Roda com: npx supabase test db
+begin;
+create extension if not exists pgtap with schema extensions;
+select plan(13);
+
+-- O teste todo é uma transação só: a marca de "conta criada nesta transação" fica com a última conta inserida.
+-- Pra simular a confirmação numa transação depois, a marca é limpa antes.
+create function pg_temp.outra_transacao() returns void language sql as $$
+  select set_config('journey.conta_nova', '', true);
+$$;
+create function pg_temp.senha(p_id uuid) returns text language sql as $$
+  select encrypted_password from auth.users where id = p_id;
+$$;
+
+-- Quem cadastrou primeiro (a senha é dele), ainda sem confirmar.
+insert into auth.users (id, email, aud, role, encrypted_password, email_confirmed_at) values
+  ('00000000-0000-0000-0000-0000000000e1', 'alvo@exemplo.com', 'authenticated', 'authenticated', 'hash-de-quem-chegou-antes', null);
+select is(current_setting('journey.conta_nova'), '00000000-0000-0000-0000-0000000000e1', 'a conta nova fica marcada na transação que a criou');
+select pg_temp.outra_transacao();
+
+update auth.users set last_sign_in_at = now() where id = '00000000-0000-0000-0000-0000000000e1';
+select is(pg_temp.senha('00000000-0000-0000-0000-0000000000e1'), 'hash-de-quem-chegou-antes', 'mexer em outra coluna não apaga a senha');
+
+update auth.users set email_confirmed_at = now() where id = '00000000-0000-0000-0000-0000000000e1';
+select is(pg_temp.senha('00000000-0000-0000-0000-0000000000e1'), '', 'confirmar o e-mail apaga a senha (como a de quem só entrou por link)');
+
+-- Já confirmada: escolhe a senha dela, e uma confirmação de novo não apaga.
+update auth.users set encrypted_password = 'hash-da-dona' where id = '00000000-0000-0000-0000-0000000000e1';
+update auth.users set email_confirmed_at = now() + interval '1 minute' where id = '00000000-0000-0000-0000-0000000000e1';
+select is(pg_temp.senha('00000000-0000-0000-0000-0000000000e1'), 'hash-da-dona', 'quem já era confirmado fica com a senha');
+
+-- Nasce confirmada num insert só.
+insert into auth.users (id, email, aud, role, encrypted_password, email_confirmed_at) values
+  ('00000000-0000-0000-0000-0000000000e2', 'pronta@exemplo.com', 'authenticated', 'authenticated', 'hash-pronta', now());
+select is(pg_temp.senha('00000000-0000-0000-0000-0000000000e2'), 'hash-pronta', 'conta que nasce confirmada fica com a senha');
+
+-- Como a API de admin (e o painel) faz: insert e confirmação na mesma transação.
+insert into auth.users (id, email, aud, role, encrypted_password, email_confirmed_at) values
+  ('00000000-0000-0000-0000-0000000000e3', 'admin@exemplo.com', 'authenticated', 'authenticated', 'hash-do-admin', null);
+update auth.users set email_confirmed_at = now() where id = '00000000-0000-0000-0000-0000000000e3';
+select is(pg_temp.senha('00000000-0000-0000-0000-0000000000e3'), 'hash-do-admin', 'criada e confirmada na mesma transação (admin): a senha fica');
+
+-- A marca é só da última conta criada: outra conta, ainda não confirmada, perde a senha ao confirmar.
+insert into auth.users (id, email, aud, role, encrypted_password, email_confirmed_at) values
+  ('00000000-0000-0000-0000-0000000000e4', 'outra@exemplo.com', 'authenticated', 'authenticated', 'hash-outra', null);
+insert into auth.users (id, email, aud, role, encrypted_password, email_confirmed_at) values
+  ('00000000-0000-0000-0000-0000000000e5', 'depois@exemplo.com', 'authenticated', 'authenticated', 'hash-depois', null);
+update auth.users set email_confirmed_at = now() where id = '00000000-0000-0000-0000-0000000000e4';
+select is(pg_temp.senha('00000000-0000-0000-0000-0000000000e4'), '', 'a marca de outra conta não protege esta');
+
+-- Troca de e-mail: o pedido da pessoa (o Supabase grava email_change) é recusado; o admin troca `email` direto.
+select throws_ok($$ update auth.users set email_change = 'convidada@exemplo.com' where id = '00000000-0000-0000-0000-0000000000e1' $$,
+  'P0001', 'trocar o e-mail da conta não é permitido no Journey', 'a pessoa não troca o e-mail da conta');
+select lives_ok($$ update auth.users set email_change = '' where id = '00000000-0000-0000-0000-0000000000e1' $$, 'limpar o pedido de troca passa');
+select lives_ok($$ update auth.users set email = 'alvo-novo@exemplo.com' where id = '00000000-0000-0000-0000-0000000000e1' $$, 'o admin troca o e-mail direto');
+select ok(not has_function_privilege('authenticated', 'public.troca_de_email_recusada()', 'execute'), 'ninguém de fora chama a função da troca de e-mail');
+
+select ok(not has_function_privilege('anon', 'public.senha_some_na_confirmacao()', 'execute')
+  and not has_function_privilege('authenticated', 'public.senha_some_na_confirmacao()', 'execute'), 'ninguém de fora chama a função da senha');
+select ok(not has_function_privilege('anon', 'public.conta_nasceu_agora()', 'execute')
+  and not has_function_privilege('authenticated', 'public.conta_nasceu_agora()', 'execute'), 'nem a da marca');
+
+select * from finish();
+rollback;
+```
+
+`supabase/migrations/20261116000000_journey_v2_senha.sql`:
+
+```sql
+-- Journey v2: a senha de quem cadastrou um e-mail antes da dona não sobrevive à confirmação.
+--
+-- O Supabase deixa qualquer um chamar o cadastro (/signup) com qualquer e-mail e uma senha. Enquanto o e-mail não
+-- é confirmado essa senha não entra, mas quando a dona confirma (pelo cadastro dela, pelo link mágico ou pelo Google)
+-- a conta passa a valer com a senha de quem chegou primeiro, e o convite da empresa põe essa conta pra dentro.
+-- O Supabase não troca a senha num cadastro repetido ("não dá pra ter certeza de quem é"), então quem apaga é o banco:
+-- na hora em que o e-mail é confirmado, a senha some, como a de quem só entrou por link (''). A senha da pessoa
+-- ela escolhe depois, já com a sessão do link (/conta/senha).
+--
+-- Só na passagem de "não confirmado" pra "confirmado", e não pra conta que nasce confirmada (pelo painel ou pela API
+-- de admin): o Supabase grava essa conta em duas etapas na mesma transação (insert e depois a confirmação), então a
+-- conta criada nesta transação fica marcada e a senha dela fica. Quem já era confirmado troca a senha normalmente.
+
+-- Sem security definer nas duas: só mexem na linha que está sendo gravada e numa configuração da transação.
+create function public.conta_nasceu_agora() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  -- Local (true): some no fim da transação, e outra transação nunca vê.
+  perform set_config('journey.conta_nova', new.id::text, true);
+  return null;
+end;
+$$;
+
+create function public.senha_some_na_confirmacao() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_setting('journey.conta_nova', true) is distinct from old.id::text then
+    new.encrypted_password := '';
+  end if;
+  return new;
+end;
+$$;
+
+-- Função de trigger não é pra ninguém chamar; a trigger dispara sem olhar essa permissão.
+revoke all on function public.conta_nasceu_agora() from public, anon, authenticated;
+revoke all on function public.senha_some_na_confirmacao() from public, anon, authenticated;
+
+create trigger conta_nasceu_agora
+  after insert on auth.users
+  for each row
+  execute function public.conta_nasceu_agora();
+
+create trigger senha_some_na_confirmacao
+  before update of email_confirmed_at on auth.users
+  for each row
+  when (old.email_confirmed_at is null and new.email_confirmed_at is not null)
+  execute function public.senha_some_na_confirmacao();
+
+-- A troca de e-mail pelo próprio usuário (PUT /auth/v1/user com outro e-mail) fica recusada. O app não oferece, e ela
+-- reabriria o mesmo buraco por outro lado: alguém logado pede pra trocar o e-mail dele pro da pessoa convidada, ela
+-- clica no "confirme o novo e-mail" que chegou sem pedir, e a conta (com a senha dele) passa a ter o e-mail dela. Aqui a
+-- trigger da senha não ajuda: o e-mail já era confirmado. O Supabase só grava email_change nesse pedido; o admin e o
+-- painel trocam `email` direto e continuam podendo.
+create function public.troca_de_email_recusada() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  raise exception 'trocar o e-mail da conta não é permitido no Journey' using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.troca_de_email_recusada() from public, anon, authenticated;
+
+create trigger troca_de_email_recusada
+  before update of email_change on auth.users
+  for each row
+  when (coalesce(new.email_change, '') <> '')
+  execute function public.troca_de_email_recusada();
+```
+
+Run: `npx supabase migration up --local && npx supabase test db`
+Expected: aplica `20261116000000_journey_v2_senha.sql`; `Files=4`, `Result: PASS`.
+
+- [ ] **Passo 2: os e-mails e a configuração do Auth local**
+
+`supabase/templates/confirmacao.html`:
+
+```html
+<h2>Confirma teu e-mail</h2>
+<p>Alguém (tomara que tu) pediu uma conta no Journey com este e-mail.</p>
+<p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/conta/senha" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#13212b;color:#ffffff;text-decoration:none;font-weight:600">Confirmar e escolher a senha</a></p>
+<p style="color:#55636d;font-size:13px">Se o botão não abrir, copia e cola este endereço no navegador:<br><span style="word-break:break-all">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/conta/senha</span></p>
+<p>Se não foi tu, é só ignorar: sem abrir o link, nada acontece.</p>
+```
+
+`supabase/templates/recuperacao.html`:
+
+```html
+<h2>Trocar a senha</h2>
+<p>Pediram pra trocar a senha da tua conta no Journey.</p>
+<p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/conta/senha" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#13212b;color:#ffffff;text-decoration:none;font-weight:600">Escolher uma senha nova</a></p>
+<p style="color:#55636d;font-size:13px">Se o botão não abrir, copia e cola este endereço no navegador:<br><span style="word-break:break-all">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/conta/senha</span></p>
+<p>Se não foi tu, é só ignorar: a senha de agora continua valendo.</p>
+```
+
+`supabase/templates/link.html`:
+
+```html
+<h2>Teu link pra entrar</h2>
+<p>Pediram um link pra entrar no Journey com este e-mail.</p>
+<p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#13212b;color:#ffffff;text-decoration:none;font-weight:600">Entrar no Journey</a></p>
+<p style="color:#55636d;font-size:13px">Se o botão não abrir, copia e cola este endereço no navegador:<br><span style="word-break:break-all">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/</span></p>
+<p>O link vale uma vez só. Se não foi tu que pediu, é só ignorar.</p>
+```
+
+`supabase/config.toml` (senha mínima 8 e os três modelos):
+
+```diff
+diff --git a/supabase/config.toml b/supabase/config.toml
+index 77bb314..3a8e427 100644
+--- a/supabase/config.toml
++++ b/supabase/config.toml
+@@ -180,7 +180,7 @@ enable_anonymous_sign_ins = false
+ # Allow/disallow testing manual linking of accounts
+ enable_manual_linking = false
+ # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
+-minimum_password_length = 6
++minimum_password_length = 8
+ # Passwords that do not meet the following requirements will be rejected as weak. Supported values
+ # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
+ password_requirements = ""
+@@ -244,10 +244,22 @@ otp_expiry = 3600
+ # admin_email = "admin@email.com"
+ # sender_name = "Admin"
+ 
+-# Uncomment to customize email template
+-# [auth.email.template.invite]
+-# subject = "You have been invited"
+-# content_path = "./supabase/templates/invite.html"
++# Os e-mails do login apontam pro /auth/confirm do app (token_hash), e não pro /auth/v1/verify: o servidor do app
++# confirma (no botão da página, um POST), então o link abre em qualquer navegador ou aparelho (o PKCE só abre no
++# navegador que pediu). Cada modelo leva o `next`: a confirmação e a recuperação vão pra escolher a senha
++# (/conta/senha), o link de entrar pra raiz. Os arquivos são o corpo do e-mail inteiro: comentário neles chega a quem
++# recebe. No hospedado, os mesmos textos vão no painel (README, "Publicar"). Mudou aqui: npm run banco:parar && npm run banco.
++[auth.email.template.confirmation]
++subject = "Confirma teu e-mail no Journey"
++content_path = "./supabase/templates/confirmacao.html"
++
++[auth.email.template.recovery]
++subject = "Trocar a senha do Journey"
++content_path = "./supabase/templates/recuperacao.html"
++
++[auth.email.template.magic_link]
++subject = "Teu link pra entrar no Journey"
++content_path = "./supabase/templates/link.html"
+ 
+ # Uncomment to customize notification email template
+ # [auth.email.notification.password_changed]
+```
+
+O Auth local só lê o `config.toml` ao subir: `npm run banco:parar && npm run banco` (e confira `npx supabase status`).
+
+- [ ] **Passo 3: os testes**
+
+`apps/web/test/lib/acesso.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { avisoDaVolta, caminhoInterno, mensagemDoErro, tipoDoEmail } from '@/lib/acesso';
+
+describe('acesso: os erros do Supabase Auth', () => {
+  it('limite de e-mail: em português, e o que foi mandado continua valendo', () => {
+    expect(mensagemDoErro({ status: 429, code: 'over_email_send_rate_limit', message: 'For security purposes, you can only request this after 58 seconds.' })).toEqual({
+      texto: 'Já mandamos um e-mail há pouco. Espera um minuto e tenta de novo.',
+      limite: true,
+    });
+  });
+
+  it('limite de pedidos (tentativas de senha), ou 429 sem código: muitas tentativas, e não "já mandamos um e-mail"', () => {
+    for (const e of [{ status: 429, code: 'over_request_rate_limit', message: 'Request rate limit reached' }, { status: 429, message: 'Too many requests' }])
+      expect(mensagemDoErro(e)).toEqual({ texto: 'Muitas tentativas seguidas. Espera um pouco e tenta de novo.', limite: true });
+  });
+
+  it('senha errada, e-mail não confirmado, senha fraca, senha igual, reautenticação', () => {
+    expect(mensagemDoErro({ status: 400, code: 'invalid_credentials', message: 'Invalid login credentials' }).texto).toBe('E-mail ou senha não conferem.');
+    expect(mensagemDoErro({ status: 400, code: 'email_not_confirmed', message: 'Email not confirmed' }).texto).toContain('Usa “Criar conta”');
+    expect(mensagemDoErro({ status: 422, code: 'weak_password', message: 'Password should be at least 8 characters.' }).texto).toBe('Senha fraca: use pelo menos 8 caracteres.');
+    expect(mensagemDoErro({ status: 422, code: 'same_password', message: 'New password should be different' }).texto).toBe('A senha nova é igual à de antes.');
+    expect(mensagemDoErro({ status: 401, code: 'reauthentication_needed', message: 'Password update requires reauthentication' }).texto).toContain('entra de novo');
+  });
+
+  it('o resto: genérico, sem o texto em inglês', () => {
+    expect(mensagemDoErro({ status: 500, message: 'Error sending magic link email' })).toEqual({ texto: 'Não deu certo agora. Tenta de novo em instantes.', limite: false });
+  });
+});
+
+describe('acesso: a volta pro entrar', () => {
+  it('link que não valeu, Google que não terminou, e nada', () => {
+    expect(avisoDaVolta('link')).toBe('O link expirou ou já foi usado. Pede outro.');
+    expect(avisoDaVolta('google')).toContain('O Google não completou a entrada');
+    expect(avisoDaVolta(undefined)).toBeNull();
+    expect(avisoDaVolta('<script>')).toBeNull();
+  });
+
+  it('os tipos do link do e-mail: só os dos modelos (email e recovery)', () => {
+    expect(tipoDoEmail('email')).toBe('email');
+    expect(tipoDoEmail('recovery')).toBe('recovery');
+    for (const t of ['signup', 'magiclink', 'invite', 'email_change', 'sms', '', null]) expect(tipoDoEmail(t), String(t)).toBeNull();
+  });
+});
+
+describe('acesso: o next da volta', () => {
+  it('caminho deste app passa', () => {
+    expect(caminhoInterno('/conta/senha')).toBe('/conta/senha');
+    expect(caminhoInterno('/e/123?x=1')).toBe('/e/123?x=1');
+  });
+
+  it('outro site, ou nada, vira a raiz', () => {
+    for (const n of ['//evil.com', '//evil.com/conta', '/\\evil.com', 'https://evil.com', 'evil.com', '', null, undefined, '/\tevil', '/\nevil']) expect(caminhoInterno(n), String(n)).toBe('/');
+  });
+});
+```
+
+`apps/web/test/app/callback.test.ts`:
+
+```ts
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+let erro: { message: string } | null = null;
+const exchangeCodeForSession = vi.fn(async (_code: string) => ({ error: erro }));
+vi.mock('@/lib/supabase/servidor', () => ({ supabaseServidor: async () => ({ auth: { exchangeCodeForSession } }) }));
+const { GET } = await import('@/app/auth/callback/route');
+
+const volta = (consulta: string) => GET(new NextRequest(`http://127.0.0.1:3000/auth/callback${consulta}`, { headers: { host: '127.0.0.1:3000' } }));
+
+describe('GET /auth/callback', () => {
+  beforeEach(() => vi.stubEnv('APP_URL', ''));
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    erro = null;
+    exchangeCodeForSession.mockClear();
+  });
+
+  it('troca o código pela sessão e segue pro next', async () => {
+    const r = await volta('?code=abc&next=%2Fconta%2Fsenha');
+    expect(exchangeCodeForSession).toHaveBeenCalledWith('abc');
+    expect(r.headers.get('location')).toBe('http://127.0.0.1:3000/conta/senha');
+  });
+
+  it('next de outro site vira a raiz deste', async () => {
+    for (const next of ['%2F%2Fevil.com', 'https%3A%2F%2Fevil.com', '%2F%5Cevil.com']) {
+      const r = await volta(`?code=abc&next=${next}`);
+      expect(r.headers.get('location')).toBe('http://127.0.0.1:3000/');
+    }
+  });
+
+  it('o Google cancelado (ou recusado) volta com error e sem código: o aviso é o do Google', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await volta('?error=access_denied&error_code=access_denied&error_description=The+user+denied');
+    expect(r.headers.get('location')).toBe('http://127.0.0.1:3000/entrar?erro=google');
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  it('sem código, ou código que não vale: volta pro entrar com o aviso', async () => {
+    expect((await volta('?next=%2F%2Fevil.com')).headers.get('location')).toBe('http://127.0.0.1:3000/entrar?erro=link');
+    erro = { message: 'invalid flow state' };
+    expect((await volta('?code=velho')).headers.get('location')).toBe('http://127.0.0.1:3000/entrar?erro=link');
+  });
+});
+```
+
+`apps/web/test/app/confirmar.test.ts`:
+
+```ts
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+let erro: { status?: number; code?: string; message: string } | null = null;
+const verifyOtp = vi.fn(async (_p: { type: string; token_hash: string }) => ({ error: erro }));
+vi.mock('@/lib/supabase/servidor', () => ({ supabaseServidor: async () => ({ auth: { verifyOtp } }) }));
+const { POST } = await import('@/app/auth/confirmar/route');
+
+const APP = 'http://127.0.0.1:3000';
+/** O POST do botão da página /auth/confirm, com o Origin que o navegador manda (ou outro, ou nenhum). */
+function botao(campos: Record<string, string>, origin: string | null = APP) {
+  const corpo = new URLSearchParams(campos);
+  const headers: Record<string, string> = { host: '127.0.0.1:3000', 'content-type': 'application/x-www-form-urlencoded' };
+  if (origin !== null) headers.origin = origin;
+  return POST(new NextRequest(`${APP}/auth/confirmar`, { method: 'POST', headers, body: corpo }));
+}
+
+describe('POST /auth/confirmar', () => {
+  beforeEach(() => {
+    vi.stubEnv('APP_URL', '');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    erro = null;
+    verifyOtp.mockClear();
+  });
+
+  it('confirma o token no servidor (sem PKCE) e segue pro next com 303', async () => {
+    const r = await botao({ token_hash: 'abc', type: 'recovery', next: '/conta/senha' });
+    expect(verifyOtp).toHaveBeenCalledWith({ type: 'recovery', token_hash: 'abc' });
+    expect(r.status).toBe(303);
+    expect(r.headers.get('location')).toBe(`${APP}/conta/senha`);
+    expect((await botao({ token_hash: 'abc', type: 'email', next: '/' })).headers.get('location')).toBe(`${APP}/`);
+  });
+
+  it('de outro site, ou sem Origin: recusa sem tocar no token (login CSRF)', async () => {
+    for (const origin of ['https://evil.com', 'null', null]) {
+      const r = await botao({ token_hash: 'abc', type: 'email', next: '/' }, origin);
+      expect(r.status, String(origin)).toBe(403);
+    }
+    expect(verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('next de outro site vira a raiz deste', async () => {
+    for (const next of ['//evil.com', 'https://evil.com', '/\\evil.com']) {
+      const r = await botao({ token_hash: 'abc', type: 'email', next });
+      expect(r.headers.get('location')).toBe(`${APP}/`);
+    }
+  });
+
+  it('sem token, tipo fora dos modelos ou token que não vale: volta pro entrar com o aviso', async () => {
+    expect((await botao({ type: 'email' })).headers.get('location')).toBe(`${APP}/entrar?erro=link`);
+    for (const type of ['signup', 'magiclink', 'invite', 'email_change', 'sms'])
+      expect((await botao({ token_hash: 'abc', type })).headers.get('location'), type).toBe(`${APP}/entrar?erro=link`);
+    expect(verifyOtp).not.toHaveBeenCalled();
+    erro = { status: 403, code: 'otp_expired', message: 'Email link is invalid or has expired' };
+    expect((await botao({ token_hash: 'velho', type: 'email' })).headers.get('location')).toBe(`${APP}/entrar?erro=link`);
+  });
+});
+```
+
+```bash
+git rm -q apps/web/test/app/entrar.test.ts apps/web/src/app/entrar/mensagens.ts
+```
+
+`apps/web/e2e/conta.spec.ts`:
+
+```ts
+import { expect, test, type Page } from '@playwright/test';
+import { SENHA, abrirLink, authPublico, contaConfirmada, emailNovo, emailsPara, entrar, linkDoEmail } from './apoio';
+
+/** Na tela de entrar, com os botões já ligados. */
+async function telaDeEntrar(page: Page) {
+  await page.goto('/entrar');
+  await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeEnabled();
+}
+
+async function comSenha(page: Page, email: string, senha: string) {
+  await telaDeEntrar(page);
+  await page.getByLabel('E-mail').fill(email);
+  await page.getByLabel('Senha', { exact: true }).fill(senha);
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+}
+
+/** "Criar conta" na tela: só o e-mail. Devolve o link que chegou (confirmação, ou o de entrar pra quem já tem conta). */
+async function criarConta(page: Page, request: Parameters<typeof linkDoEmail>[0], email: string) {
+  await telaDeEntrar(page);
+  await page.getByRole('tab', { name: 'Criar conta' }).click();
+  // Sem senha no cadastro: ela é escolhida depois de confirmar o e-mail.
+  await expect(page.getByLabel('Senha', { exact: true })).toHaveCount(0);
+  const antes = await emailsPara(request, email);
+  await page.getByLabel('E-mail').fill(email);
+  await page.getByRole('button', { name: 'Criar conta' }).click();
+  await expect(page.getByRole('status')).toContainText(`Confirma o e-mail: mandamos um link para ${email}. Pelo link, tu escolhe a senha.`);
+  return linkDoEmail(request, email, antes);
+}
+
+/** Na página da senha (depois do link): escolhe e salva. */
+async function escolherSenha(page: Page, senha: string) {
+  await expect(page).toHaveURL(/\/conta\/senha$/);
+  await expect(page.getByRole('heading', { name: 'Tua senha' })).toBeVisible();
+  await page.getByLabel('Senha nova').fill(senha);
+  await page.getByRole('button', { name: 'Salvar a senha' }).click();
+}
+
+/** O aviso do formulário (o Next tem outra região de alerta, a do anúncio de rota). */
+const alerta = (page: Page) => page.getByRole('main').getByRole('alert');
+
+const sair = (page: Page) => page.getByRole('button', { name: 'Sair' }).click();
+
+test('criar conta: só o e-mail; o link confirma e leva a escolher a senha; sai e entra com ela; senha errada dá a mensagem', async ({ page, request }) => {
+  test.setTimeout(90_000);
+  const email = emailNovo('cadastro');
+  await abrirLink(page, await criarConta(page, request, email));
+  await page.getByLabel('Senha nova').fill('curta');
+  await expect(page.getByLabel('Senha nova')).toHaveAttribute('minlength', '8');
+  await page.getByRole('button', { name: 'Mostrar' }).click();
+  await expect(page.getByLabel('Senha nova')).toHaveAttribute('type', 'text');
+  await escolherSenha(page, SENHA);
+  await expect(page).toHaveURL(/\/empresa\/nova$/);
+  // Sem empresa ainda, a conta (senha e sair) fica embaixo do cartão.
+  await expect(page.getByRole('link', { name: 'Senha' })).toHaveAttribute('href', '/conta/senha');
+  await page.getByLabel('Nome da empresa').fill('Empresa da senha');
+  await page.getByRole('button', { name: 'Criar' }).click();
+  await expect(page).toHaveURL(/\/e\/[0-9a-f-]+$/);
+  await sair(page);
+  await expect(page).toHaveURL(/\/entrar$/);
+
+  await comSenha(page, email, 'senha-errada-123');
+  await expect(alerta(page)).toHaveText('E-mail ou senha não conferem.');
+  await comSenha(page, email, SENHA);
+  await expect(page).toHaveURL(/\/e\/[0-9a-f-]+$/);
+});
+
+test('esqueci a senha: o link aberto em outro navegador leva à senha nova, e ela vale', async ({ page, request, browser }) => {
+  test.setTimeout(90_000);
+  const email = emailNovo('esqueci');
+  await contaConfirmada(request, email);
+  await telaDeEntrar(page);
+  await page.getByRole('button', { name: 'Esqueci a senha' }).click();
+  // Fora das abas: um título, e nenhum painel de aba.
+  await expect(page.getByRole('heading', { name: 'Esqueci a senha' })).toBeVisible();
+  await expect(page.getByRole('tablist')).toHaveCount(0);
+  await expect(page.getByRole('tabpanel')).toHaveCount(0);
+  const antes = await emailsPara(request, email);
+  await page.getByLabel('E-mail').fill(email);
+  await page.getByRole('button', { name: 'Mandar o link pra trocar a senha' }).click();
+  await expect(page.getByRole('status')).toContainText('mandamos um link pra trocar a senha');
+
+  // O e-mail aberto no celular, por exemplo: outro navegador, sem nada do que pediu.
+  const outro = await browser.newContext();
+  const p2 = await outro.newPage();
+  await abrirLink(p2, await linkDoEmail(request, email, antes));
+  await escolherSenha(p2, 'outra-senha-456');
+  await expect(p2).toHaveURL(/\/empresa\/nova$/);
+  await outro.close();
+
+  await comSenha(page, email, SENHA);
+  await expect(alerta(page)).toHaveText('E-mail ou senha não conferem.');
+  await comSenha(page, email, 'outra-senha-456');
+  await expect(page).toHaveURL(/\/empresa\/nova$/);
+});
+
+test('quem cadastrou antes o e-mail da convidada não entra com a senha dele; ela cria a conta, cai na empresa e entra com a dela', async ({
+  page,
+  request,
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  await entrar(page, request, emailNovo('dono-convite'));
+  await page.getByLabel('Nome da empresa').fill('Empresa do convite');
+  await page.getByRole('button', { name: 'Criar' }).click();
+  const colega = emailNovo('convidada');
+  await page.getByRole('link', { name: 'Membros' }).click();
+  await page.getByLabel('E-mail').fill(colega);
+  await page.getByRole('button', { name: 'Convidar' }).click();
+  await expect(page.getByText(`Convite pra ${colega} criado`)).toBeVisible();
+  const empresa = /\/e\/([0-9a-f-]+)/.exec(page.url())![1]!;
+
+  // O atacante chega primeiro: cadastra o e-mail dela com a senha dele, direto na API (a chave pública é de todos).
+  const ATACANTE = 'senha-do-atacante-1';
+  expect((await authPublico(request, 'signup', { email: colega, password: ATACANTE })).status()).toBe(200);
+  // O cadastro dele já mandou uma confirmação pra ela: espera chegar, pra pegar depois só o e-mail do pedido dela.
+  await linkDoEmail(request, colega);
+  // O Supabase recusa outro e-mail pro mesmo endereço por um tempo (max_frequency: 1 s aqui, 60 s no hospedado).
+  await new Promise((r) => setTimeout(r, 1500));
+
+  // Ela faz o caminho dela: criar conta, confirmar pelo e-mail, escolher a senha. O convite vale (está na empresa).
+  const ela = await browser.newContext();
+  const p2 = await ela.newPage();
+  await abrirLink(p2, await criarConta(p2, request, colega));
+  await escolherSenha(p2, SENHA);
+  await expect(p2).toHaveURL(new RegExp(`/e/${empresa}$`));
+  // Logada: "Senha" no topo leva à troca.
+  await p2.getByRole('link', { name: 'Senha' }).click();
+  await expect(p2).toHaveURL(/\/conta\/senha$/);
+  await ela.close();
+
+  // A senha do atacante não vale mais (nem na API, nem na tela); a dela vale.
+  const r = await authPublico(request, 'token?grant_type=password', { email: colega, password: ATACANTE });
+  expect(r.status()).toBe(400);
+  expect(((await r.json()) as { error_code?: string }).error_code).toBe('invalid_credentials');
+  const limpo = await browser.newContext();
+  const p3 = await limpo.newPage();
+  await comSenha(p3, colega, ATACANTE);
+  await expect(alerta(p3)).toHaveText('E-mail ou senha não conferem.');
+  await comSenha(p3, colega, SENHA);
+  await expect(p3).toHaveURL(new RegExp(`/e/${empresa}$`));
+  await limpo.close();
+});
+
+test('a volta do Google não leva pra fora do app (next=//evil.com)', async ({ request }) => {
+  for (const next of ['//evil.com', 'https://evil.com', '/\\evil.com']) {
+    const r = await request.get(`/auth/callback?code=nao-vale&next=${encodeURIComponent(next)}`, { maxRedirects: 0 });
+    expect(r.status()).toBe(307);
+    expect(new URL(r.headers().location!, 'http://127.0.0.1:3000').host).toBe('127.0.0.1:3000');
+  }
+});
+
+test('o link do e-mail só entra pelo botão: abrir não entra nem gasta o token; de outro site é recusado; next de fora vira a raiz', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  const email = emailNovo('botao');
+  await contaConfirmada(request, email);
+  const antes = await emailsPara(request, email);
+  expect((await authPublico(request, 'otp', { email, create_user: false })).status()).toBe(200);
+  // O link com o next trocado por outro site (como alguém mal-intencionado faria).
+  const link = new URL(await linkDoEmail(request, email, antes));
+  link.searchParams.set('next', '//evil.com');
+  const campos = Object.fromEntries(link.searchParams);
+
+  // Abrir (o leitor de links do e-mail, ou alguém que recebeu o link de outro): só a página, sem sessão.
+  const aberto = await request.get(link.toString(), { maxRedirects: 0 });
+  expect(aberto.status()).toBe(200);
+  expect(aberto.headers()['set-cookie'] ?? '').not.toContain('auth-token');
+  expect(aberto.headers()['referrer-policy']).toBe('same-origin');
+  // O POST de outro site (login CSRF) é recusado e não toca no token.
+  const deFora = await request.post('/auth/confirmar', { form: campos, headers: { origin: 'https://evil.com' }, maxRedirects: 0 });
+  expect(deFora.status()).toBe(403);
+
+  // O token continua valendo: o botão entra, e o next de fora vira a raiz deste app.
+  await page.goto(link.toString());
+  await page.getByRole('button', { name: 'Confirmar e entrar' }).click();
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/empresa\/nova$/);
+});
+
+test('nova senha sem sessão manda pro entrar', async ({ page }) => {
+  await page.goto('/conta/senha');
+  await expect(page).toHaveURL(/\/entrar$/);
+});
+```
+
+`apps/web/e2e/entrar.spec.ts`:
+
+```diff
+diff --git a/apps/web/e2e/entrar.spec.ts b/apps/web/e2e/entrar.spec.ts
+index 08bce8e..826c19b 100644
+--- a/apps/web/e2e/entrar.spec.ts
++++ b/apps/web/e2e/entrar.spec.ts
+@@ -1,5 +1,5 @@
+ import { expect, test } from '@playwright/test';
+-import { entrar, emailNovo } from './apoio';
++import { abrirLink, contaConfirmada, emailNovo, entrar, pedirLink } from './apoio';
+ 
+ test('sem sessão, qualquer página manda pra entrar', async ({ page }) => {
+   await page.goto('/e/00000000-0000-0000-0000-000000000000');
+@@ -12,6 +12,24 @@ test('quem entra pela primeira vez cai em criar a empresa', async ({ page, reque
+   await expect(page.getByRole('heading', { name: 'Tua empresa' })).toBeVisible();
+ });
+ 
++test('o link mágico continua: pede aqui, abre em outro navegador e entra lá', async ({ page, request, browser }) => {
++  const email = emailNovo('link');
++  await contaConfirmada(request, email);
++  const link = await pedirLink(page, request, email);
++  // Outro navegador (sem os cookies deste): o link confirma no servidor, sem o PKCE de quem pediu.
++  const outro = await browser.newContext();
++  const p2 = await outro.newPage();
++  await abrirLink(p2, link);
++  await expect(p2).toHaveURL(/\/empresa\/nova$/);
++  await outro.close();
++});
++
++test('o Google cancelado volta pro entrar com o aviso dele', async ({ page }) => {
++  await page.goto('/auth/callback?error=access_denied&error_code=access_denied&error_description=The+user+denied');
++  await expect(page).toHaveURL(/\/entrar\?erro=google$/);
++  await expect(page.getByRole('main').getByRole('alert')).toContainText('O Google não completou a entrada');
++});
++
+ test('no celular, sem rolar pro lado: pede o link, vê pra onde foi e pode usar outro e-mail', async ({ browser }) => {
+   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+   const page = await ctx.newPage();
+@@ -19,7 +37,8 @@ test('no celular, sem rolar pro lado: pede o link, vê pra onde foi e pode usar
+   await expect(page.getByRole('heading', { name: 'Desenha o fluxo e dá play.' })).toBeVisible();
+   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+   const email = emailNovo('celular');
+-  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
++  await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeEnabled();
++  await page.getByRole('button', { name: 'Receber um link por e-mail' }).click();
+   await page.getByLabel('E-mail').fill(email);
+   await page.getByRole('button', { name: 'Receber o link' }).click();
+   await expect(page.getByRole('status')).toContainText(`Link enviado para ${email}`);
+@@ -36,7 +55,7 @@ test('no celular, sem rolar pro lado: pede o link, vê pra onde foi e pode usar
+ test('link expirado: a página diz e deixa pedir outro', async ({ page }) => {
+   await page.goto('/entrar?erro=link');
+   await expect(page.getByRole('alert').filter({ hasText: 'O link expirou ou já foi usado' })).toBeVisible();
+-  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
++  await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeEnabled();
+ });
+ 
+ test('antes de a página ficar pronta, o Enter não manda o e-mail pela URL', async ({ browser }) => {
+@@ -44,11 +63,13 @@ test('antes de a página ficar pronta, o Enter não manda o e-mail pela URL', as
+   const ctx = await browser.newContext({ javaScriptEnabled: false });
+   const page = await ctx.newPage();
+   await page.goto('/entrar?erro=link');
+-  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeDisabled();
++  await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeDisabled();
+   await page.getByLabel('E-mail').fill('alguem@exemplo.com');
+-  await page.getByLabel('E-mail').press('Enter');
++  await page.getByLabel('Senha', { exact: true }).fill('uma-senha-qualquer');
++  await page.getByLabel('Senha', { exact: true }).press('Enter');
+   await page.waitForLoadState('load');
+   expect(page.url()).not.toContain('alguem');
++  expect(page.url()).not.toContain('senha');
+   await ctx.close();
+ });
+ 
+```
+
+`apps/web/e2e/apoio.ts` (o `entrar()` cria a conta já confirmada pela API de administração e entra com senha; `abrirLink()` abre o e-mail do Mailpit e clica no botão):
+
+```diff
+diff --git a/apps/web/e2e/apoio.ts b/apps/web/e2e/apoio.ts
+index 108e17b..316ac1a 100644
+--- a/apps/web/e2e/apoio.ts
++++ b/apps/web/e2e/apoio.ts
+@@ -1,31 +1,113 @@
++import { execSync } from 'node:child_process';
++import { join } from 'node:path';
+ import { expect, type APIRequestContext, type Page } from '@playwright/test';
+ 
+ const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:54324';
++const SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'http://127.0.0.1:54321';
++/** A senha das contas que os testes criam. */
++export const SENHA = 'senha-de-teste-123';
+ 
+-/** Entra pelo link mágico: pede o link na tela e abre o que chegou no Mailpit do Supabase local. */
++let status: { SECRET_KEY?: string; PUBLISHABLE_KEY?: string } | null = null;
++/**
++ * As chaves do Supabase local, lidas da própria CLI (como em test/banco/apoio.ts): não ficam no código. A secreta só os
++ * testes usam (pra criar contas já confirmadas pela API de administração); a pública é a que qualquer um tem.
++ */
++function chaves() {
++  if (status === null) {
++    const raiz = join(import.meta.dirname, '..', '..', '..');
++    status = JSON.parse(execSync('npx supabase status -o json', { cwd: raiz, stdio: ['ignore', 'pipe', 'ignore'] }).toString()) as typeof status;
++  }
++  return {
++    secreta: process.env.SUPABASE_SECRET_KEY || (status!.SECRET_KEY ?? ''),
++    publica: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || (status!.PUBLISHABLE_KEY ?? ''),
++  };
++}
++const chaveSecreta = () => chaves().secreta;
++
++/** Chama o Auth do Supabase direto, com a chave pública: o que qualquer pessoa (ou um atacante) consegue fazer. */
++export async function authPublico(request: APIRequestContext, caminho: string, dados: object) {
++  return request.post(`${SUPABASE}/auth/v1/${caminho}`, { headers: { apikey: chaves().publica }, data: dados, failOnStatusCode: false });
++}
++
++/**
++ * Uma conta com e-mail já confirmado e a SENHA, pela API de administração (sem e-mail, sem limite por IP). Ela nasce
++ * confirmada, então o banco não apaga a senha (só apaga na confirmação de uma conta que já existia).
++ */
++export async function contaConfirmada(request: APIRequestContext, email: string) {
++  const r = await request.post(`${SUPABASE}/auth/v1/admin/users`, {
++    headers: { apikey: chaveSecreta(), Authorization: `Bearer ${chaveSecreta()}` },
++    data: { email, password: SENHA, email_confirm: true },
++  });
++  // 422: a conta já existe (o mesmo teste entrou de novo).
++  expect([200, 422]).toContain(r.status());
++}
++
++/**
++ * Entra com e-mail e senha pela tela (criando a conta antes, já confirmada). É o caminho principal do app e o mais
++ * rápido nos testes: sem esperar e-mail e sem os limites por IP do link mágico (o repositório principal roda os mesmos
++ * testes no mesmo Supabase). O link mágico tem o teste dele (entrar.spec.ts).
++ */
+ export async function entrar(page: Page, request: APIRequestContext, email: string) {
++  await contaConfirmada(request, email);
+   await page.goto('/entrar');
+-  // O botão só liga depois que a página fica pronta (antes, o Enter mandaria o formulário pelo navegador).
+-  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
++  // Os botões só ligam depois que a página fica pronta (antes, o Enter mandaria o formulário pelo navegador).
++  await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeEnabled();
+   await page.getByLabel('E-mail').fill(email);
+-  await page.getByRole('button', { name: 'Receber o link' }).click();
+-  await expect(page.getByRole('status')).toContainText('Link enviado');
++  await page.getByLabel('Senha', { exact: true }).fill(SENHA);
++  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
++  await page.waitForURL((url) => !url.pathname.startsWith('/entrar'));
++}
++
++/** Quantos e-mails o endereço já recebeu (pra esperar o próximo). */
++export async function emailsPara(request: APIRequestContext, email: string): Promise<number> {
++  const r = await request.get(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`);
++  return ((await r.json()) as { messages?: unknown[] }).messages?.length ?? 0;
++}
++
++/**
++ * O link do e-mail mais novo pro endereço, depois de `antes` e-mails (link mágico, confirmação ou recuperação). Os
++ * modelos (supabase/templates) apontam pro /auth/confirm do app.
++ */
++export async function linkDoEmail(request: APIRequestContext, email: string, antes = 0): Promise<string> {
+   let link = '';
+   await expect
+     .poll(
+       async () => {
+         const r = await request.get(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`);
+         const { messages } = (await r.json()) as { messages?: { ID: string }[] };
+-        if (!messages?.length) return '';
+-        const m = (await (await request.get(`${MAILPIT}/api/v1/message/${messages[0]!.ID}`)).json()) as { Text: string };
+-        link = (/https?:\/\/\S+verify\S+/.exec(m.Text) ?? [''])[0];
++        if (!messages || messages.length <= antes) return '';
++        const m = (await (await request.get(`${MAILPIT}/api/v1/message/${messages[0]!.ID}`)).json()) as { HTML: string };
++        link = (/href="([^"]*\/auth\/confirm\?[^"]*)"/.exec(m.HTML)?.[1] ?? '').replaceAll('&amp;', '&');
+         return link;
+       },
+       { timeout: 20_000 },
+     )
+     .not.toBe('');
++  return link;
++}
++
++/**
++ * Abre o link do e-mail e aperta o botão da página (/auth/confirm só mostra a página; quem entra é o POST do botão).
++ */
++export async function abrirLink(page: Page, link: string) {
+   await page.goto(link);
++  await page.getByRole('button', { name: /^(Confirmar e entrar|Continuar pra trocar a senha)$/ }).click();
++  await page.waitForURL((url) => !url.pathname.startsWith('/auth/'));
+ }
+ 
+-export const emailNovo = (prefixo: string) => `${prefixo}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@exemplo.com`;
++/**
++ * Pede o link mágico na tela e devolve o que chegou no Mailpit do Supabase local (quem abre escolhe o navegador: o
++ * link confirma no servidor e abre em qualquer um).
++ */
++export async function pedirLink(page: Page, request: APIRequestContext, email: string): Promise<string> {
++  await page.goto('/entrar');
++  await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeEnabled();
++  await page.getByRole('button', { name: 'Receber um link por e-mail' }).click();
++  const antes = await emailsPara(request, email);
++  await page.getByLabel('E-mail').fill(email);
++  await page.getByRole('button', { name: 'Receber o link' }).click();
++  await expect(page.getByRole('status')).toContainText('Link enviado');
++  return linkDoEmail(request, email, antes);
++}
+ 
++export const emailNovo = (prefixo: string) => `${prefixo}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@exemplo.com`;
+```
+
+- [ ] **Passo 4: rodar e ver falhar**
+
+Run: `cd apps/web && npx vitest run test/lib/acesso.test.ts test/app/callback.test.ts test/app/confirmar.test.ts`
+Expected: FAIL, `Failed to resolve import "@/lib/acesso"` e `"@/app/auth/confirmar/route"`.
+
+- [ ] **Passo 5: o acesso e as rotas**
+
+`apps/web/src/lib/acesso.ts`:
+
+```ts
+/**
+ * Entrar e a conta: os textos dos erros do Supabase Auth em português, a senha mínima, os avisos de quem volta de um
+ * link ou do Google e o `next` das voltas (/auth/confirm e /auth/callback). Sem nada de servidor: as páginas de entrar e da
+ * senha usam no navegador, e as rotas de volta no servidor.
+ */
+
+/** O erro do Supabase Auth, como chega no navegador: o status HTTP e o código, quando há. */
+export interface ErroDoAuth {
+  status?: number;
+  code?: string;
+  message: string;
+}
+
+/**
+ * A senha mínima do app. O Supabase confere a dele (`minimum_password_length`: 8 no config.toml local; no hospedado o
+ * padrão é 6, e o README manda subir pra 8); o app pede 8 antes de mandar.
+ */
+export const SENHA_MINIMA = 8;
+
+/** Quanto o botão espera depois de mandar um e-mail (o Supabase recusa outro pro mesmo e-mail por 60 s). */
+export const ESPERA_REENVIO_S = 30;
+/** Depois de uma recusa por limite, o tempo inteiro do Supabase. */
+export const ESPERA_LIMITE_S = 60;
+
+export interface MensagemDoAuth {
+  texto: string;
+  /** Recusado por ter vindo cedo demais: o que foi mandado antes continua valendo, e o botão espera. */
+  limite: boolean;
+}
+
+const msg = (texto: string, limite = false): MensagemDoAuth => ({ texto, limite });
+
+/**
+ * O texto pra pessoa, pelo código e pelo status (nunca pelo texto, que é em inglês e muda). O que o Supabase esconde
+ * (se um e-mail tem conta, num cadastro com confirmação) continua escondido: a tela só repete o que ele devolve.
+ */
+export function mensagemDoErro(e: ErroDoAuth): MensagemDoAuth {
+  // Dois limites diferentes: o de e-mails (por endereço e por hora) e o de pedidos (tentativas de senha, por IP).
+  if (e.code === 'over_email_send_rate_limit') return msg('Já mandamos um e-mail há pouco. Espera um minuto e tenta de novo.', true);
+  if (e.code === 'over_request_rate_limit' || e.status === 429) return msg('Muitas tentativas seguidas. Espera um pouco e tenta de novo.', true);
+  switch (e.code) {
+    case 'invalid_credentials':
+      return msg('E-mail ou senha não conferem.');
+    case 'email_not_confirmed':
+      // Só acontece com conta de antes da confirmação sem senha: o "Criar conta" de agora manda o link de novo.
+      return msg('Esse e-mail ainda não foi confirmado. Usa “Criar conta” pra receber o link de confirmação.');
+    case 'weak_password':
+      return msg(`Senha fraca: use pelo menos ${SENHA_MINIMA} caracteres.`);
+    case 'same_password':
+      return msg('A senha nova é igual à de antes.');
+    case 'reauthentication_needed':
+      // Só com "Secure password change" ligado no painel (aqui fica desligado: quem está logado troca sem a atual).
+      return msg('Pra trocar a senha, entra de novo: sai, entra e troca logo em seguida.');
+    case 'signup_disabled':
+    case 'email_provider_disabled':
+      return msg('Criar conta com e-mail está desligado neste servidor.');
+    case 'email_address_invalid':
+    case 'validation_failed':
+      return msg('Confere o e-mail: ele não parece certo.');
+    case 'session_not_found':
+    case 'session_expired':
+      return msg('A sessão venceu. Entra de novo, ou pede um link novo pra trocar a senha.');
+    default:
+      return msg('Não deu certo agora. Tenta de novo em instantes.');
+  }
+}
+
+/** O aviso de quem volta pro entrar (`/entrar?erro=…`): o link do e-mail que não valeu, ou o Google que não terminou. */
+export function avisoDaVolta(erro: string | undefined): string | null {
+  if (erro === 'link') return 'O link expirou ou já foi usado. Pede outro.';
+  if (erro === 'google') return 'O Google não completou a entrada (cancelada ou recusada). Tenta de novo, ou entra com o e-mail.';
+  return null;
+}
+
+/** Os tipos do link do e-mail que o /auth/confirm aceita: só os dos modelos em supabase/templates. */
+const TIPOS_DO_EMAIL = ['email', 'recovery'] as const;
+export type TipoDoEmail = (typeof TIPOS_DO_EMAIL)[number];
+export const tipoDoEmail = (t: string | null): TipoDoEmail | null => ((TIPOS_DO_EMAIL as readonly string[]).includes(t ?? '') ? (t as TipoDoEmail) : null);
+
+/**
+ * O `next` do /auth/confirm e do /auth/callback (pra onde ir depois de entrar): só caminho deste app. "//outro.site" e "/\\outro.site"
+ * seriam outro site pro navegador, e "https://…" também; nesses casos (e sem `next`), a raiz.
+ */
+export function caminhoInterno(next: string | null | undefined): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//') || /[\\\u0000-\u001f]/.test(next)) return '/';
+  return next;
+}
+```
+
+`apps/web/src/app/auth/callback/route.ts` (só o Google volta por aqui):
+
+```diff
+diff --git a/apps/web/src/app/auth/callback/route.ts b/apps/web/src/app/auth/callback/route.ts
+index 416bb3a..f098a23 100644
+--- a/apps/web/src/app/auth/callback/route.ts
++++ b/apps/web/src/app/auth/callback/route.ts
+@@ -1,14 +1,24 @@
+ import { NextResponse, type NextRequest } from 'next/server';
++import { caminhoInterno } from '@/lib/acesso';
+ import { origemDe } from '@/lib/origem';
+ import { supabaseServidor } from '@/lib/supabase/servidor';
+ 
++/**
++ * A volta do Google (OAuth com PKCE): troca o código pela sessão e segue pro `next` (só caminho deste app), ou pra raiz.
++ * Os e-mails do login voltam pelo /auth/confirm (e o botão dele, /auth/confirmar). Quem cancela (ou recusa) no Google volta com `error` e sem código.
++ */
+ export async function GET(request: NextRequest) {
+   const origem = origemDe(request);
+-  const code = request.nextUrl.searchParams.get('code');
++  const p = request.nextUrl.searchParams;
++  if (p.get('error')) {
++    console.error('[auth/callback]', p.get('error'), p.get('error_code'), p.get('error_description'));
++    return NextResponse.redirect(new URL('/entrar?erro=google', origem));
++  }
++  const code = p.get('code');
+   if (code) {
+     const supabase = await supabaseServidor();
+     const { error } = await supabase.auth.exchangeCodeForSession(code);
+-    if (!error) return NextResponse.redirect(new URL('/', origem));
++    if (!error) return NextResponse.redirect(new URL(caminhoInterno(p.get('next')), origem));
+   }
+   return NextResponse.redirect(new URL('/entrar?erro=link', origem));
+ }
+```
+
+`apps/web/src/app/auth/confirm/page.tsx` (o link do e-mail abre uma página; nada é confirmado no GET):
+
+```tsx
+import { redirect } from 'next/navigation';
+import { Marca } from '@/componentes/Marca';
+import { caminhoInterno, tipoDoEmail } from '@/lib/acesso';
+
+export const metadata = { title: 'Entrar · Journey', robots: { index: false, follow: false } };
+
+/**
+ * Onde chegam os links dos e-mails do login (modelos em supabase/templates). Abrir o link só mostra esta página: quem
+ * confirma é o botão, num POST pro /auth/confirmar. Assim um link aberto sozinho não gasta o token (o leitor de links
+ * do provedor de e-mail abre tudo o que chega) nem põe ninguém na conta de outra pessoa (um link com o token de alguém,
+ * aberto sem querer, entraria na conta dele).
+ */
+export default async function ConfirmarEmail({ searchParams }: { searchParams: Promise<{ token_hash?: string; type?: string; next?: string }> }) {
+  const p = await searchParams;
+  const tipo = tipoDoEmail(p.type ?? null);
+  if (!p.token_hash || !tipo) redirect('/entrar?erro=link');
+  const recuperacao = tipo === 'recovery';
+  return (
+    <main className="entrar">
+      <div className="cartao">
+        <Marca />
+        <h1>{recuperacao ? 'Trocar a senha' : 'Entrar no Journey'}</h1>
+        <p className="mudo">{recuperacao ? 'Falta um passo: continua pra escolher a senha nova.' : 'Falta um passo: confirma pra entrar com este e-mail.'}</p>
+        {/* Formulário comum, sem JavaScript: funciona antes de a página ficar pronta. */}
+        <form method="post" action="/auth/confirmar" style={{ display: 'grid' }}>
+          <input type="hidden" name="token_hash" value={p.token_hash} />
+          <input type="hidden" name="type" value={tipo} />
+          <input type="hidden" name="next" value={caminhoInterno(p.next)} />
+          <button className="botao primario" type="submit">
+            {recuperacao ? 'Continuar pra trocar a senha' : 'Confirmar e entrar'}
+          </button>
+        </form>
+      </div>
+    </main>
+  );
+}
+```
+
+`apps/web/src/app/auth/confirmar/route.ts` (o botão: POST com o Origin conferido, `verifyOtp`, 303):
+
+```ts
+import { NextResponse, type NextRequest } from 'next/server';
+import { caminhoInterno, tipoDoEmail } from '@/lib/acesso';
+import { origemDe } from '@/lib/origem';
+import { supabaseServidor } from '@/lib/supabase/servidor';
+
+/**
+ * O botão da página /auth/confirm: confirma o token do e-mail com o Supabase no servidor (`verifyOtp`, sem o PKCE, então
+ * vale em qualquer navegador), grava a sessão no cookie e segue pro `next` (só caminho deste app), ou pra raiz.
+ * Só aceita pedido desta origem: um formulário de outro site não põe o visitante na conta de outra pessoa (login CSRF).
+ * Diferente do Sair, sem Origin também recusa: todo navegador de hoje manda Origin num POST.
+ */
+export async function POST(request: NextRequest) {
+  const origem = origemDe(request);
+  if (request.headers.get('origin') !== origem) return new NextResponse('Origem não confere.', { status: 403 });
+  const dados = await request.formData().catch(() => null);
+  const token_hash = dados?.get('token_hash');
+  const type = tipoDoEmail(typeof dados?.get('type') === 'string' ? (dados!.get('type') as string) : null);
+  if (typeof token_hash === 'string' && token_hash && type) {
+    const supabase = await supabaseServidor();
+    const { error } = await supabase.auth.verifyOtp({ type, token_hash });
+    const next = dados!.get('next');
+    if (!error) return NextResponse.redirect(new URL(caminhoInterno(typeof next === 'string' ? next : null), origem), { status: 303 });
+    console.error('[auth/confirmar]', error.status, error.code, error.message);
+  }
+  return NextResponse.redirect(new URL('/entrar?erro=link', origem), { status: 303 });
+}
+```
+
+`apps/web/next.config.ts`:
+
+```diff
+diff --git a/apps/web/next.config.ts b/apps/web/next.config.ts
+index 990cbb1..abc9cc1 100644
+--- a/apps/web/next.config.ts
++++ b/apps/web/next.config.ts
+@@ -11,6 +11,15 @@ const config: NextConfig = {
+         { key: 'Referrer-Policy', value: 'no-referrer' },
+       ],
+     },
++    // A página do link dos e-mails do login: o token está no endereço e não vai pra outro site. "same-origin", e não
++    // "no-referrer": com no-referrer o navegador manda `Origin: null` no POST do botão, e o /auth/confirmar recusa.
++    {
++      source: '/auth/confirm',
++      headers: [
++        { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
++        { key: 'Referrer-Policy', value: 'same-origin' },
++      ],
++    },
+   ],
+ };
+ 
+```
+
+- [ ] **Passo 6: as telas**
+
+`apps/web/src/app/entrar/page.tsx`:
+
+```tsx
+import './entrar.css';
+import { Marca } from '@/componentes/Marca';
+import { avisoDaVolta } from '@/lib/acesso';
+import { FormularioEntrar } from './formulario';
+import { PreviaFluxo } from './previa';
+
+export const metadata = { title: 'Entrar · Journey' };
+
+/**
+ * Entrar: de um lado o que o Journey é e o formulário (e-mail e senha, criar conta, o link por e-mail e o Google se
+ * estiver ligado), do outro uma prévia do quadro com a água andando. A página é leve: nada do editor nem do pacote do fluxo.
+ */
+export default async function Entrar({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
+  const { erro } = await searchParams;
+  return (
+    <main className="entrada">
+      <div className="lado-form">
+        <Marca href={null} />
+        <div className="chamada">
+          <h1>Desenha o fluxo e dá play.</h1>
+          <p className="lead">
+            Um quadro pro atendimento de qualquer canal: telefonia, WhatsApp, e-mail, chat ou uma esteira interna. No play, a água anda pelos canos, muda de cor
+            quando o canal muda, para nas decisões e mostra quanto tempo o cliente levou.
+          </p>
+        </div>
+        {/* O aviso do link vencido (ou do Google cancelado) fica no formulário: some quando a pessoa tenta de novo. */}
+        <FormularioEntrar google={process.env.NEXT_PUBLIC_LOGIN_GOOGLE === 'sim'} aviso={avisoDaVolta(erro)} />
+      </div>
+      <PreviaFluxo />
+    </main>
+  );
+}
+```
+
+`apps/web/src/app/entrar/formulario.tsx`:
+
+```tsx
+'use client';
+
+import { useEffect, useId, useRef, useState } from 'react';
+import { ESPERA_LIMITE_S, ESPERA_REENVIO_S, mensagemDoErro, type ErroDoAuth } from '@/lib/acesso';
+import { supabaseNavegador } from '@/lib/supabase/navegador';
+
+/**
+ * - entrar: e-mail e senha (o caminho principal);
+ * - criar: só o e-mail; o link de confirmação leva a escolher a senha (/conta/senha). A senha não vai no cadastro:
+ *   quem cadastrou o e-mail antes da dona não pode ficar com uma senha que vale depois que ela confirma (o banco apaga
+ *   a senha na confirmação, migração 20261116000000);
+ * - esqueci: manda o link de recuperação, que também leva a /conta/senha;
+ * - link: o link mágico por e-mail, como alternativa.
+ */
+type Modo = 'entrar' | 'criar' | 'esqueci' | 'link';
+type Enviado = 'link' | 'confirmacao' | 'recuperacao';
+
+const BOTAO: Record<Modo, string> = { entrar: 'Entrar', criar: 'Criar conta', esqueci: 'Mandar o link pra trocar a senha', link: 'Receber o link' };
+const ENVIA: Record<Exclude<Modo, 'entrar'>, Enviado> = { criar: 'confirmacao', esqueci: 'recuperacao', link: 'link' };
+const ABAS = ['entrar', 'criar'] as const;
+
+/**
+ * Os e-mails voltam pelo /auth/confirm (os modelos em supabase/templates dizem pra onde): a página tem um botão, e o
+ * POST dele (/auth/confirmar) confirma no servidor, então o link abre em qualquer navegador. O Google volta pelo /auth/callback, com o código do PKCE que fica neste navegador.
+ */
+export function FormularioEntrar({ google, aviso }: { google: boolean; aviso: string | null }) {
+  // Antes de o React assumir a página, os botões ficam desligados: um Enter ali mandaria o formulário pelo navegador.
+  const [pronto, setPronto] = useState(false);
+  useEffect(() => setPronto(true), []);
+  const [modo, setModo] = useState<Modo>('entrar');
+  // Controlados e sem `name`: nada vai pra URL, e o e-mail continua no campo entre os modos e depois de enviar.
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [verSenha, setVerSenha] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  // O que foi mandado por e-mail (e pra quem): o aviso de "enviado" fica enquanto vale.
+  const [enviado, setEnviado] = useState<{ tipo: Enviado; para: string } | null>(null);
+  const [erro, setErro] = useState<string | null>(aviso);
+  // Até quando (relógio daqui) o botão espera pra mandar outro e-mail pro mesmo endereço.
+  const [esperaAte, setEsperaAte] = useState(0);
+  const [agora, setAgora] = useState(0);
+  const campoEmail = useRef<HTMLInputElement>(null);
+  const idSenha = useId();
+  const idExplica = useId();
+  const idPainel = useId();
+
+  // O relógio da espera anda de segundo em segundo, só enquanto há espera.
+  useEffect(() => {
+    if (!esperaAte) return;
+    setAgora(Date.now());
+    const t = setInterval(() => {
+      const n = Date.now();
+      setAgora(n);
+      if (n >= esperaAte) {
+        setEsperaAte(0);
+        clearInterval(t);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [esperaAte]);
+
+  const para = email.trim();
+  const mandaEmail = modo !== 'entrar';
+  const comAbas = modo === 'entrar' || modo === 'criar';
+  const mesmoEmail = enviado !== null && para.toLowerCase() === enviado.para.toLowerCase();
+  const faltam = mesmoEmail && esperaAte > agora ? Math.ceil((esperaAte - agora) / 1000) : 0;
+  // aria-disabled, e não disabled: o botão continua com o foco enquanto envia ou espera.
+  const ocupado = enviando || (mandaEmail && faltam > 0);
+
+  const trocarModo = (m: Modo) => {
+    setModo(m);
+    setErro(null);
+    setVerSenha(false);
+  };
+
+  const falhou = (e: ErroDoAuth, onde: string) => {
+    console.error(`[entrar: ${onde}]`, e.status, e.code, e.message);
+    const m = mensagemDoErro(e);
+    setErro(m.texto);
+    // Cedo demais: o e-mail de antes ainda vale, e o aviso de "enviado" fica.
+    if (m.limite) setEsperaAte(Date.now() + ESPERA_LIMITE_S * 1000);
+  };
+
+  async function enviar(e: React.FormEvent) {
+    e.preventDefault();
+    if (ocupado || !para) return;
+    if (modo === 'entrar' && !senha) return;
+    const auth = supabaseNavegador().auth;
+    setEnviando(true);
+    setErro(null);
+    try {
+      if (modo === 'entrar') {
+        const { error } = await auth.signInWithPassword({ email: para, password: senha });
+        if (error) return falhou(error, 'senha');
+        // Página nova (e não só a rota): o servidor lê a sessão do cookie, e a raiz aceita os convites.
+        return window.location.assign('/');
+      }
+      // Criar conta e o link mágico são o mesmo pedido: conta nova recebe a confirmação (que leva a escolher a senha),
+      // e quem já tem conta recebe o link de entrar. A tela diz o mesmo nos dois casos: não conta quem tem conta.
+      const { error } =
+        modo === 'esqueci' ? await auth.resetPasswordForEmail(para) : await auth.signInWithOtp({ email: para, options: { shouldCreateUser: true } });
+      if (error) return falhou(error, modo);
+      setEnviado({ tipo: ENVIA[modo], para });
+      setEsperaAte(Date.now() + ESPERA_REENVIO_S * 1000);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  // Dando certo, o navegador sai pro Google; só volta aqui com erro (provedor desligado, rede).
+  async function comGoogle() {
+    setErro(null);
+    const { error } = await supabaseNavegador().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/auth/callback` } });
+    if (error) {
+      console.error('[entrar com Google]', error.message);
+      setErro('Não deu pra entrar com o Google agora. Tenta de novo, ou entra com o e-mail.');
+    }
+  }
+
+  const textoBotao = enviando
+    ? 'Enviando…'
+    : mandaEmail && mesmoEmail && enviado?.tipo === ENVIA[modo]
+      ? faltam
+        ? `Mandar de novo em ${faltam} s`
+        : 'Mandar de novo'
+      : BOTAO[modo];
+
+  const avisoEnviado =
+    enviado &&
+    (enviado.tipo === 'link'
+      ? 'Link enviado para'
+      : enviado.tipo === 'confirmacao'
+        ? 'Confirma o e-mail: mandamos um link para'
+        : 'Se houver uma conta com esse e-mail, mandamos um link pra trocar a senha para');
+
+  const explica: Record<Exclude<Modo, 'entrar'>, string> = {
+    criar: 'Chega um link no teu e-mail pra confirmar a conta; por ele tu escolhe a senha.',
+    esqueci: 'Chega um link no teu e-mail pra escolher uma senha nova.',
+    link: 'Sem senha: chega um link no teu e-mail, e é só abrir.',
+  };
+
+  return (
+    <div className="form-entrar">
+      {comAbas ? (
+        // Abas (e não botões): "Entrar" e "Criar conta" também são os botões de envio, e o leitor de tela diferencia.
+        <div
+          className="modos"
+          role="tablist"
+          aria-label="Entrar ou criar conta"
+          onKeyDown={(e) => {
+            // Setas trocam de aba; Home e End vão pra primeira e a última, como em qualquer lista de abas.
+            const proximo =
+              e.key === 'Home' ? 'entrar' : e.key === 'End' ? 'criar' : e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? (modo === 'criar' ? 'entrar' : 'criar') : null;
+            if (!proximo) return;
+            e.preventDefault();
+            trocarModo(proximo);
+            e.currentTarget.querySelector<HTMLElement>(`[data-modo="${proximo}"]`)?.focus();
+          }}
+        >
+          {ABAS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              data-modo={m}
+              aria-selected={modo === m}
+              aria-controls={idPainel}
+              tabIndex={modo === m ? 0 : -1}
+              onClick={() => trocarModo(m)}
+            >
+              {BOTAO[m]}
+            </button>
+          ))}
+        </div>
+      ) : (
+        // Fora das abas, um título: o formulário não é painel de aba nenhuma.
+        <h2 className="titulo-modo">{modo === 'esqueci' ? 'Esqueci a senha' : 'Entrar com um link'}</h2>
+      )}
+      <form
+        onSubmit={enviar}
+        className="form-entrar-email"
+        id={idPainel}
+        role={comAbas ? 'tabpanel' : undefined}
+        aria-label={comAbas ? BOTAO[modo] : undefined}
+      >
+        <label className="campo">
+          E-mail
+          <input ref={campoEmail} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        {modo === 'entrar' && (
+          <div className="campo">
+            <label htmlFor={idSenha}>Senha</label>
+            <div className="senha">
+              <input
+                id={idSenha}
+                type={verSenha ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+              />
+              <button type="button" className="ver-senha" aria-pressed={verSenha} aria-controls={idSenha} onClick={() => setVerSenha(!verSenha)}>
+                {verSenha ? 'Ocultar' : 'Mostrar'}
+              </button>
+            </div>
+          </div>
+        )}
+        {modo !== 'entrar' && (
+          <p className="explica-modo" id={idExplica}>
+            {explica[modo]}
+          </p>
+        )}
+        <button
+          className="botao primario"
+          type="submit"
+          disabled={!pronto}
+          aria-disabled={ocupado || undefined}
+          aria-describedby={modo !== 'entrar' ? idExplica : undefined}
+        >
+          {textoBotao}
+        </button>
+      </form>
+      <div className="outros-modos">
+        {modo === 'entrar' && (
+          <>
+            <button type="button" className="link-modo" onClick={() => trocarModo('esqueci')}>
+              Esqueci a senha
+            </button>
+            <button type="button" className="link-modo" onClick={() => trocarModo('link')}>
+              Receber um link por e-mail
+            </button>
+          </>
+        )}
+        {!comAbas && (
+          <button type="button" className="link-modo" onClick={() => trocarModo('entrar')}>
+            Entrar com a senha
+          </button>
+        )}
+      </div>
+      {/* Montadas vazias: o leitor de tela anuncia o que entra numa região que já existia. */}
+      <div role="status">
+        {enviado && (
+          <p className="aviso-caixa ok enviado">
+            {avisoEnviado} <b>{enviado.para}</b>.{enviado.tipo === 'confirmacao' ? ' Pelo link, tu escolhe a senha.' : ''}
+          </p>
+        )}
+      </div>
+      {enviado && (
+        <div className="acoes-enviado">
+          <button
+            className="botao pequeno"
+            type="button"
+            onClick={() => {
+              setEmail('');
+              setEnviado(null);
+              setErro(null);
+              setEsperaAte(0);
+              campoEmail.current?.focus();
+            }}
+          >
+            Usar outro e-mail
+          </button>
+        </div>
+      )}
+      <div role="alert">{erro && <div className="aviso-caixa erro">{erro}</div>}</div>
+      {google && (
+        <>
+          <div className="ou" aria-hidden="true">
+            ou
+          </div>
+          <button className="botao" type="button" disabled={!pronto} onClick={comGoogle}>
+            Entrar com Google
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+`apps/web/src/app/entrar/entrar.css`:
+
+```css
+/* Entrar: o formulário de um lado, a prévia do quadro do outro. Tokens do globals.css; as duas cores de canal da
+   prévia são as dos canais padrão (WhatsApp e E-mail), aqui porque a página não lê os canais de empresa nenhuma. */
+.entrada {
+  --wa: #159e5a;
+  --mail: #c98410;
+  /* O texto em cima da água (a opção escolhida): claro no tema claro, escuro no escuro, onde a água é mais clara. */
+  --na-agua: #ffffff;
+  /* O verde das formas cheias (o Início, a opção escolhida): mais escuro no claro, pro texto branco ter contraste. */
+  --wa-forte: #11804a;
+  min-height: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(20px, 5vw, 64px) clamp(16px, 4vw, 56px);
+  display: grid;
+  grid-template-columns: minmax(0, 430px) minmax(0, 1fr);
+  gap: clamp(28px, 6vw, 88px);
+  align-items: center;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; --wa-forte: #2cc274; }
+}
+:root[data-theme='dark'] .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; --wa-forte: #2cc274; }
+
+.entrada .lado-form { display: grid; gap: 28px; align-content: center; }
+.entrada .chamada { display: grid; gap: 14px; }
+.entrada h1 { font-size: clamp(36px, 4.4vw, 54px); font-weight: 800; line-height: 1; letter-spacing: -0.035em; text-wrap: balance; }
+.entrada .lead { margin: 0; max-width: 44ch; font-size: 15.5px; line-height: 1.55; color: var(--ink-2); }
+
+.entrada .form-entrar { display: flex; flex-direction: column; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+.entrada .form-entrar-email { display: grid; gap: 10px; }
+/* O espaço vai só entre o que aparece: as regiões vivas ficam montadas mesmo vazias, e vazias não abrem espaço. */
+.entrada .form-entrar > :not(:first-child):not(:empty) { margin-top: 12px; }
+.entrada .form-entrar .campo input { font-size: 15px; padding: 10px 12px; }
+.entrada .form-entrar .botao { padding: 10px 14px; font-size: 14px; }
+/* Entrar ou criar conta: um segmentado, como os do editor. */
+.entrada .modos { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--node); }
+.entrada .modos button { border: 0; background: none; border-radius: 8px; padding: 7px 10px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+.entrada .modos button[aria-selected='true'] { background: var(--btn); color: var(--btn-ink); }
+/* Esqueci a senha e o link: fora das abas, com título. */
+.entrada .titulo-modo { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.entrada .explica-modo { margin: 0; font-size: 13px; color: var(--ink-2); }
+.entrada .senha { display: flex; gap: 6px; }
+.entrada .senha input { flex: 1; min-width: 0; }
+.entrada .ver-senha { flex: none; border: 1px solid var(--line); background: var(--node); color: var(--ink-2); border-radius: 10px; padding: 0 12px; font-size: 12.5px; cursor: pointer; }
+.entrada .ver-senha[aria-pressed='true'] { color: var(--ink); border-color: var(--ink-3); }
+/* Os outros jeitos (esqueci a senha, link por e-mail): discretos, como links. */
+.entrada .outros-modos { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.entrada .link-modo { border: 0; background: none; padding: 2px 0; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.entrada .link-modo:hover { color: var(--ink); }
+.entrada .acoes-enviado { display: flex; flex-wrap: wrap; gap: 8px; }
+.entrada .aviso-caixa.erro { display: grid; gap: 8px; justify-items: start; }
+.entrada .enviado { display: grid; gap: 10px; justify-items: start; line-height: 1.45; }
+.entrada .enviado b { word-break: break-all; }
+.entrada .ou { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-2); }
+.entrada .ou::before, .entrada .ou::after { content: ''; height: 1px; background: var(--line); }
+
+/* A prévia: o palco do editor (pontos sobre o canvas) com um fluxo pequeno dentro. */
+.previa { position: relative; aspect-ratio: 560 / 400; border-radius: 22px; border: 1px solid var(--line); background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1.1px, transparent 1.2px); background-size: 18px 18px; box-shadow: var(--shadow); overflow: hidden; }
+.previa svg { display: block; width: 100%; height: 100%; }
+.previa text { font-family: var(--f-body); }
+.previa .pv-nome { font-size: 13.5px; font-weight: 600; fill: var(--ink); }
+.previa .pv-sub { font-size: 11px; fill: var(--ink-2); }
+.previa .pv-ponto-wa { fill: var(--wa); }
+.previa .pv-ponto-email { fill: var(--mail); }
+.previa .pv-placa { fill: var(--plate); }
+.previa .pv-corpo { fill: var(--node); stroke: var(--node-line); stroke-width: 1.4; }
+.previa .pv-tile { fill: var(--tile); }
+.previa .pv-tile.c-wa-cheio { fill: var(--wa-forte); }
+.previa .pv-icone { fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.previa .pv-icone.cheio { fill: #fff; stroke: none; }
+.previa .pv-nivel { opacity: 0; }
+.previa .pv-nivel.c-wa { fill: var(--wa); }
+.previa .pv-nivel.c-email { fill: var(--mail); }
+.previa .pv-losango { fill: var(--node); stroke: var(--ink-2); stroke-width: 1.6; }
+.previa .pv-pulso { fill: none; stroke: var(--wa); stroke-width: 2.4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.previa .pv-parede { fill: none; stroke: var(--pipe-wall); stroke-width: 12; stroke-linecap: round; }
+.previa .pv-miolo { fill: none; stroke: var(--pipe-core); stroke-width: 7; stroke-linecap: round; }
+.previa .pv-agua { fill: none; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.previa .pv-agua.c-wa { stroke: var(--wa); }
+.previa .pv-agua.c-email { stroke: var(--mail); }
+.previa .pv-agua.agua-seca { display: none; }
+.previa .pv-opcao rect { fill: var(--node); stroke: var(--node-line); }
+.previa .pv-opcao text { font: 500 11.5px var(--f-mono); fill: var(--ink-2); }
+.previa .pv-tempo text { font-size: 12.5px; fill: var(--ink-2); opacity: 0; }
+
+/* O play, uma volta de 9 s: a água enche cano por cano, espera na decisão, escolhe "Protocolo", vira e-mail no
+   protocolo (a cor muda), chega no fim e mostra o tempo; depois esvazia e recomeça. */
+.previa .agua-a { animation: agua-a 9s linear 3; }
+.previa .agua-b { animation: agua-b 9s linear 3; }
+.previa .agua-c { animation: agua-c 9s linear 3; }
+.previa .agua-d { animation: agua-d 9s linear 3; }
+.previa .molha-1 .pv-nivel { animation: molha-1 9s linear 3; }
+.previa .molha-2 .pv-nivel { animation: molha-2 9s linear 3; }
+.previa .molha-4 .pv-nivel { animation: molha-4 9s linear 3; }
+.previa .molha-5 .pv-nivel { animation: molha-5 9s linear 3; }
+.previa .pv-pulso { animation: pulso-pv 9s ease-out 3; }
+.previa .pv-escolhida rect { animation: escolha-rect 9s linear 3; }
+.previa .pv-escolhida text { animation: escolha-texto 9s linear 3; }
+.previa .pv-tempo text { animation: tempo-pv 9s linear 3; }
+
+@keyframes agua-a { 0% { stroke-dashoffset: 1; opacity: 1; } 11% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes agua-b { 0%, 13% { stroke-dashoffset: 1; opacity: 1; } 19% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes agua-c { 0%, 37% { stroke-dashoffset: 1; opacity: 1; } 43% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes agua-d { 0%, 46% { stroke-dashoffset: 1; opacity: 1; } 57% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes molha-1 { 0% { opacity: 0; } 3%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes molha-2 { 0%, 11% { opacity: 0; } 13%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes molha-4 { 0%, 43% { opacity: 0; } 45%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes molha-5 { 0%, 57% { opacity: 0; } 59%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes pulso-pv { 0%, 19% { opacity: 0; transform: rotate(45deg) scale(1); } 23% { opacity: .75; } 27% { opacity: 0; transform: rotate(45deg) scale(1.12); } 28% { opacity: 0; transform: rotate(45deg) scale(1); } 31% { opacity: .75; } 35%, 100% { opacity: 0; transform: rotate(45deg) scale(1.12); } }
+@keyframes escolha-rect { 0%, 33% { fill: var(--node); stroke: var(--node-line); } 35%, 88% { fill: var(--wa-forte); stroke: var(--wa-forte); } 96%, 100% { fill: var(--node); stroke: var(--node-line); } }
+@keyframes escolha-texto { 0%, 33% { fill: var(--ink-2); } 35%, 88% { fill: var(--na-agua); } 96%, 100% { fill: var(--ink-2); } }
+@keyframes tempo-pv { 0%, 58% { opacity: 0; } 62%, 88% { opacity: 1; } 96%, 100% { opacity: 0; } }
+
+/* Fora da tela ou com a aba escondida, a água para onde está (ControleDaAnimacao). */
+.previa.pausada * { animation-play-state: paused !important; }
+
+/* Movimento reduzido, ou depois das três voltas: a água parada, já no fim do caminho. */
+.previa.terminou .pv-agua { stroke-dashoffset: 0; animation: none !important; }
+.previa.terminou .pv-nivel, .previa.terminou .pv-pulso, .previa.terminou .pv-tempo text, .previa.terminou .pv-escolhida rect, .previa.terminou .pv-escolhida text { animation: none !important; }
+.previa.terminou .molha-1 .pv-nivel, .previa.terminou .molha-2 .pv-nivel, .previa.terminou .molha-4 .pv-nivel, .previa.terminou .molha-5 .pv-nivel { opacity: .2; }
+.previa.terminou .pv-escolhida rect { fill: var(--wa-forte); stroke: var(--wa-forte); }
+.previa.terminou .pv-escolhida text { fill: var(--na-agua); }
+.previa.terminou .pv-tempo text { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .previa .pv-agua { stroke-dashoffset: 0; animation: none !important; }
+  .previa .pv-nivel, .previa .pv-pulso, .previa .pv-tempo text, .previa .pv-escolhida rect, .previa .pv-escolhida text { animation: none !important; }
+  .previa .molha-1 .pv-nivel, .previa .molha-2 .pv-nivel, .previa .molha-4 .pv-nivel, .previa .molha-5 .pv-nivel { opacity: .2; }
+  .previa .pv-escolhida rect { fill: var(--wa-forte); stroke: var(--wa-forte); }
+  .previa .pv-escolhida text { fill: var(--na-agua); }
+  .previa .pv-tempo text { opacity: 1; }
+}
+
+/* Celular: uma coluna, o formulário primeiro e a prévia menor embaixo. */
+@media (max-width: 820px) {
+  .entrada { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 28px; }
+  .entrada .lado-form { gap: 22px; }
+  .previa { max-width: 560px; width: 100%; justify-self: center; box-shadow: none; }
+}
+/* Bem estreito, a prévia (decorativa) teria letra de 6 px: sai. */
+@media (max-width: 419px) {
+  .previa { display: none; }
+}
+```
+
+`apps/web/src/app/conta/senha/page.tsx`:
+
+```tsx
+import Link from 'next/link';
+import { Marca } from '@/componentes/Marca';
+import { usuarioAtual } from '@/lib/dados';
+import { FormularioSenha } from './formulario';
+
+export const metadata = { title: 'Senha · Journey' };
+
+/**
+ * Escolher (ou trocar) a senha: quem acabou de confirmar o cadastro ("Criar conta"), quem veio de "Esqueci a senha"
+ * (o /auth/confirmar já gravou a sessão) e quem está logado e quer uma senha (entrou pelo Google ou pelo link). Sem
+ * sessão, `usuarioAtual` manda pro entrar. A senha é opcional: "Agora não" segue pra raiz, que aceita os convites.
+ */
+export default async function PaginaSenha() {
+  const { usuario } = await usuarioAtual();
+  return (
+    <main className="entrar">
+      <div className="cartao">
+        <Marca />
+        <h1>Tua senha</h1>
+        <p className="mudo">
+          Pra entrar com o e-mail <b>{usuario.email}</b> e uma senha. Os outros jeitos de entrar continuam valendo.
+        </p>
+        <FormularioSenha email={usuario.email ?? ''} />
+        <Link className="link-discreto" href="/">
+          Agora não
+        </Link>
+      </div>
+    </main>
+  );
+}
+```
+
+`apps/web/src/app/conta/senha/formulario.tsx`:
+
+```tsx
+'use client';
+
+import { useEffect, useId, useState } from 'react';
+import { SENHA_MINIMA, mensagemDoErro } from '@/lib/acesso';
+import { supabaseNavegador } from '@/lib/supabase/navegador';
+
+/** A senha nova vai pelo navegador (`updateUser`, com a sessão daqui); salva, volta pra casa da empresa. */
+export function FormularioSenha({ email }: { email: string }) {
+  const [pronto, setPronto] = useState(false);
+  useEffect(() => setPronto(true), []);
+  const [senha, setSenha] = useState('');
+  const [ver, setVer] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const id = useId();
+  const idRequisito = useId();
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault();
+    if (enviando) return;
+    if (senha.length < SENHA_MINIMA) return setErro(`A senha precisa de pelo menos ${SENHA_MINIMA} caracteres.`);
+    setEnviando(true);
+    setErro(null);
+    const { error } = await supabaseNavegador().auth.updateUser({ password: senha });
+    setEnviando(false);
+    if (error) {
+      console.error('[senha nova]', error.status, error.code, error.message);
+      return setErro(mensagemDoErro(error).texto);
+    }
+    window.location.assign('/');
+  }
+
+  return (
+    <form onSubmit={salvar} style={{ display: 'grid', gap: 10 }}>
+      {/* Pro gerenciador de senhas saber de qual conta é a senha nova. */}
+      <input type="email" autoComplete="username" value={email} readOnly hidden />
+      <label className="campo" htmlFor={id}>
+        Senha nova
+      </label>
+      <div style={{ display: 'flex', gap: 6, marginTop: -6 }}>
+        <input
+          id={id}
+          className="entrada-texto"
+          type={ver ? 'text' : 'password'}
+          autoComplete="new-password"
+          required
+          minLength={SENHA_MINIMA}
+          aria-describedby={idRequisito}
+          value={senha}
+          onChange={(e) => setSenha(e.target.value)}
+        />
+        <button className="botao" type="button" aria-pressed={ver} aria-controls={id} onClick={() => setVer(!ver)}>
+          {ver ? 'Ocultar' : 'Mostrar'}
+        </button>
+      </div>
+      <small id={idRequisito} style={{ color: 'var(--ink-2)', fontSize: 12.5 }}>
+        Pelo menos {SENHA_MINIMA} caracteres.
+      </small>
+      <button className="botao primario" type="submit" disabled={!pronto} aria-disabled={enviando || undefined}>
+        {enviando ? 'Salvando…' : 'Salvar a senha'}
+      </button>
+      <div role="alert">{erro && <p className="aviso-caixa erro">{erro}</p>}</div>
+    </form>
+  );
+}
+```
+
+`apps/web/src/app/e/[empresa]/layout.tsx`:
+
+```diff
+diff --git a/apps/web/src/app/e/[empresa]/layout.tsx b/apps/web/src/app/e/[empresa]/layout.tsx
+index 32a0cc3..cb87104 100644
+--- a/apps/web/src/app/e/[empresa]/layout.tsx
++++ b/apps/web/src/app/e/[empresa]/layout.tsx
+@@ -1,3 +1,4 @@
++import Link from 'next/link';
+ import { Marca } from '@/componentes/Marca';
+ import { Nav } from '@/componentes/Nav';
+ import { empresa } from '@/lib/dados';
+@@ -11,9 +12,15 @@ export default async function LayoutEmpresa({ children, params }: { children: Re
+         <Marca href={`/e/${id}`} />
+         <span className="migalhas">{e.nome}</span>
+         <Nav empresaId={id} />
+-        <form action="/sair" method="post" className="empurra">
+-          <button className="botao pequeno">Sair</button>
+-        </form>
++        <div className="empurra conta">
++          {/* Definir ou trocar a senha (quem entrou pelo Google ou pelo link também pode ter uma). */}
++          <Link className="botao pequeno" href="/conta/senha">
++            Senha
++          </Link>
++          <form action="/sair" method="post">
++            <button className="botao pequeno">Sair</button>
++          </form>
++        </div>
+       </header>
+       {children}
+     </div>
+```
+
+`apps/web/src/app/empresa/nova/page.tsx`:
+
+```diff
+diff --git a/apps/web/src/app/empresa/nova/page.tsx b/apps/web/src/app/empresa/nova/page.tsx
+index fa01879..8b47807 100644
+--- a/apps/web/src/app/empresa/nova/page.tsx
++++ b/apps/web/src/app/empresa/nova/page.tsx
+@@ -1,3 +1,4 @@
++import Link from 'next/link';
+ import { Marca } from '@/componentes/Marca';
+ import { FormularioEmpresa } from './formulario';
+ 
+@@ -9,6 +10,15 @@ export default function NovaEmpresa() {
+         <h1>Tua empresa</h1>
+         <p className="mudo">É o espaço onde ficam os fluxos, os cadastros e quem pode editar. Depois tu convida os colegas.</p>
+         <FormularioEmpresa />
++        {/* Quem ainda não tem empresa também escolhe a senha e sai daqui (o topo da empresa só existe depois). */}
++        <div className="conta-rodape">
++          <Link className="botao pequeno" href="/conta/senha">
++            Senha
++          </Link>
++          <form action="/sair" method="post">
++            <button className="botao pequeno">Sair</button>
++          </form>
++        </div>
+       </div>
+     </main>
+   );
+```
+
+`apps/web/src/app/globals.css`:
+
+```diff
+diff --git a/apps/web/src/app/globals.css b/apps/web/src/app/globals.css
+index d690ed8..2d3fc21 100644
+--- a/apps/web/src/app/globals.css
++++ b/apps/web/src/app/globals.css
+@@ -72,6 +72,10 @@ h2 { font-size: 18px; font-weight: 700; }
+ .nav a, .nav button { display: flex; align-items: center; gap: 7px; border: 0; background: none; border-radius: 8px; padding: 5px 11px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; text-decoration: none; }
+ .nav a[aria-current='page'], .nav button[aria-pressed='true'], .nav button[aria-selected='true'] { background: var(--node); color: var(--ink); box-shadow: 0 1px 0 var(--line); }
+ .empurra { margin-left: auto; }
++.empurra.conta { display: flex; gap: 8px; align-items: center; }
++/* Fora do editor (empresa nova, senha): o que é da conta fica embaixo do cartão, discreto. */
++.link-discreto { justify-self: start; font-size: 13px; color: var(--ink-2); text-underline-offset: 3px; }
++.conta-rodape { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+ 
+ /* Páginas comuns. */
+ .pagina { max-width: 1080px; width: 100%; margin: 0 auto; display: grid; gap: 16px; align-content: start; padding-bottom: 32px; }
+```
+
+- [ ] **Passo 7: rodar e ver passar**
+
+Run: `npm run typecheck && cd apps/web && npx vitest run test/lib/acesso.test.ts test/app/callback.test.ts test/app/confirmar.test.ts && npx playwright test e2e/conta.spec.ts e2e/entrar.spec.ts --trace=off`
+Expected: `tsc` limpo; `Tests  16 passed (16)`; `14 passed` (conta 6, entrar 8), entre eles: quem cadastrou o e-mail da convidada antes dela não entra; o link aberto em outro navegador funciona; abrir o link (GET) não entra nem gasta o token, e o POST de outro site dá 403.
+
+- [ ] **Passo 8: commit**
+
+```bash
+git add -A supabase apps/web
+git commit -m "entrar: e-mail e senha, Google e o link; a senha some na confirmação e ninguém troca o próprio e-mail; e-mails pelo /auth/confirm com botão" -m "$(cat .git/atribuicao.txt)"
+```
+
+---
+
+### Tarefa 11: documentação e fechamento
 
 **Arquivos:**
 - Modificar: `README.md`, `apps/web/README.md`, `packages/nucleo/README.md`
@@ -8038,7 +9765,7 @@ git commit -m "entrar: a página redesenhada (formulário e prévia do quadro), 
 
 ````diff
 diff --git a/README.md b/README.md
-index 67608f1..8cb9525 100644
+index 67608f1..82cf44a 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,11 +2,13 @@
@@ -8058,27 +9785,49 @@ index 67608f1..8cb9525 100644
  
  ## Rodar
  
-@@ -18,7 +20,7 @@ sed -i "s|^SUPABASE_SECRET_KEY=.*|SUPABASE_SECRET_KEY=$(npx supabase status -o j
+@@ -18,17 +20,34 @@ sed -i "s|^SUPABASE_SECRET_KEY=.*|SUPABASE_SECRET_KEY=$(npx supabase status -o j
  npm run dev        # http://127.0.0.1:3000
  ```
  
 -Testes: `npm test`, `npm run banco:testes`, `npm run e2e`, `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
-+Testes: `npm test` (525: fluxo 84, núcleo 253, app 188), `npm run banco:testes` (168), `npm run e2e` (17), `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
++Testes: `npm test` (539: fluxo 84, núcleo 253, app 202), `npm run banco:testes` (181), `npm run e2e` (25), `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
  
  ## Publicar
  
-@@ -26,9 +28,9 @@ Uma vez, com as contas da empresa:
+ Uma vez, com as contas da empresa:
  
- 1. **Supabase:** criar o projeto (região São Paulo). Em Authentication → URL Configuration, pôr o domínio de produção do app em Site URL e `https://<domínio de produção>/auth/callback` em Redirect URLs. Em Authentication → Providers → Email, deixar **Confirm email** ligado: o convite só vale pra e-mail confirmado, e sem a confirmação alguém entraria com o e-mail de outra pessoa. Pra entrar com Google, ligar o provedor Google com o cliente OAuth da empresa.
- 2. **E-mail do login:** em Authentication → SMTP Settings, ligar o SMTP próprio (ex.: o SMTP relay do Google Workspace da empresa, `smtp-relay.gmail.com`, com o remetente de um domínio dela) e, em Authentication → Rate Limits, subir o limite de e-mails por hora. O carteiro que vem com o Supabase só entrega pra quem é da equipe do projeto e manda pouquíssimos e-mails por hora: sem SMTP próprio, o link mágico não chega pra ninguém de fora.
+-1. **Supabase:** criar o projeto (região São Paulo). Em Authentication → URL Configuration, pôr o domínio de produção do app em Site URL e `https://<domínio de produção>/auth/callback` em Redirect URLs. Em Authentication → Providers → Email, deixar **Confirm email** ligado: o convite só vale pra e-mail confirmado, e sem a confirmação alguém entraria com o e-mail de outra pessoa. Pra entrar com Google, ligar o provedor Google com o cliente OAuth da empresa.
+-2. **E-mail do login:** em Authentication → SMTP Settings, ligar o SMTP próprio (ex.: o SMTP relay do Google Workspace da empresa, `smtp-relay.gmail.com`, com o remetente de um domínio dela) e, em Authentication → Rate Limits, subir o limite de e-mails por hora. O carteiro que vem com o Supabase só entrega pra quem é da equipe do projeto e manda pouquíssimos e-mails por hora: sem SMTP próprio, o link mágico não chega pra ninguém de fora.
 -3. **Banco:** `npx supabase link --project-ref <ref>` e `npx supabase db push` (aplica `supabase/migrations`).
-+3. **Banco:** `npx supabase link --project-ref <ref>` e `npx supabase db push` (aplica `supabase/migrations`). A migração da etapa C (`20261115000000`) apaga as tabelas e o bucket da v1 e para sozinha se achar dado neles; rode-a antes uma vez dentro de `begin; … rollback;` (no SQL Editor) pra conferir.
- 4. **Vercel:** importar o repositório com Root Directory `apps/web`. Variáveis: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (do projeto), `SUPABASE_SECRET_KEY` (a secret key do projeto, em Project Settings → API Keys; marcada como Sensitive, sem `NEXT_PUBLIC_`: os links públicos precisam dela no servidor) e, se o Google estiver ligado, `NEXT_PUBLIC_LOGIN_GOOGLE=sim`. `APP_URL` vai **só no ambiente Production**, com o domínio de produção (ex.: `https://journey.exemplo.com`), e o app passa a ser usado só por esse domínio: os redirecionamentos e a conferência do Sair usam ela, então num preview com a `APP_URL` de produção o login voltaria pra produção e o Sair recusaria o pedido. Sem `APP_URL` (os previews), o app confia nos cabeçalhos do pedido. Crie e compartilhe os links públicos pelo domínio de produção: o endereço do link usa o endereço em que o membro está, e um link criado num preview aponta pro preview (que a proteção da Vercel pode fechar pra quem não tem conta).
- 5. **Previews (se quiser entrar neles):** pôr também `https://*-<time>.vercel.app/**` em Redirect URLs no Supabase; sem isso o link mágico de um preview cai na Site URL.
+-4. **Vercel:** importar o repositório com Root Directory `apps/web`. Variáveis: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (do projeto), `SUPABASE_SECRET_KEY` (a secret key do projeto, em Project Settings → API Keys; marcada como Sensitive, sem `NEXT_PUBLIC_`: os links públicos precisam dela no servidor) e, se o Google estiver ligado, `NEXT_PUBLIC_LOGIN_GOOGLE=sim`. `APP_URL` vai **só no ambiente Production**, com o domínio de produção (ex.: `https://journey.exemplo.com`), e o app passa a ser usado só por esse domínio: os redirecionamentos e a conferência do Sair usam ela, então num preview com a `APP_URL` de produção o login voltaria pra produção e o Sair recusaria o pedido. Sem `APP_URL` (os previews), o app confia nos cabeçalhos do pedido. Crie e compartilhe os links públicos pelo domínio de produção: o endereço do link usa o endereço em que o membro está, e um link criado num preview aponta pro preview (que a proteção da Vercel pode fechar pra quem não tem conta).
+-5. **Previews (se quiser entrar neles):** pôr também `https://*-<time>.vercel.app/**` em Redirect URLs no Supabase; sem isso o link mágico de um preview cai na Site URL.
 -6. Entrar, criar a empresa e importar a planilha da central (até 4 MB somando os arquivos: a Vercel corta o corpo do pedido em 4,5 MB; mais que isso pede upload direto pro Storage, que fica pra depois).
-+6. Entrar, criar a empresa e o primeiro fluxo (em branco ou a partir de um modelo).
- 
+-
 -A cada etapa nova que traz migração, rode `npx supabase db push` **antes** de publicar o app na Vercel: o app novo lê tabelas novas e, sem a migração, a página da jornada dá erro.
++1. **Supabase:** criar o projeto (região São Paulo). No painel (o nome antigo de cada tela entre parênteses):
++   1. Authentication → URL Configuration: **Site URL** = o domínio de produção (`https://<domínio de produção>`; os links dos e-mails usam ela) e, em **Redirect URLs**, `https://<domínio de produção>/**` (a volta do Google, no `/auth/callback`).
++   2. Authentication → Sign In / Providers → Email (antes: Authentication → Providers → Email):
++      - **Confirm email** ligado: o convite só vale pra e-mail confirmado;
++      - **Secure password change** desligado (o padrão): quem está logado troca a senha sem digitar a atual;
++      - **Minimum password length** = **8** (o padrão é 6; o app já pede 8).
++   3. Authentication → Emails → Templates (antes: Authentication → Email Templates): trocar três modelos pelos do repositório, que mandam o link pro `/auth/confirm` do app: uma página com um botão, que confirma no servidor (assim o link abre em qualquer navegador ou aparelho, e não só no que pediu, e o leitor de links do provedor de e-mail não gasta o link só de abrir). Em cada um, o assunto e o HTML do arquivo, inteiro:
++      - **Confirm signup**: assunto `Confirma teu e-mail no Journey`, corpo `supabase/templates/confirmacao.html`;
++      - **Magic Link**: assunto `Teu link pra entrar no Journey`, corpo `supabase/templates/link.html`;
++      - **Reset Password**: assunto `Trocar a senha do Journey`, corpo `supabase/templates/recuperacao.html`.
++      Os outros (Invite user, Change email address, Reauthentication) o app não usa. Com o app já no ar, troque os modelos logo depois de publicar a versão que tem o `/auth/confirm`.
++   4. **Conferir que o cadastro direto pela API não conta quem tem conta:** com um e-mail que já tem conta confirmada, `curl -s -X POST https://<ref do projeto>.supabase.co/auth/v1/signup -H "apikey: <publishable key>" -H "content-type: application/json" -d '{"email":"<e-mail com conta>","password":"qualquer-coisa-123"}'`. Se a resposta for `user_already_exists` (no Supabase local é), a API conta quem tem conta. O app não usa esse cadastro (o "Criar conta" responde igual pra todo e-mail), então isso só aparece pra quem chama a API direto; anote como risco conhecido.
++   5. **Cuidados no painel:** criar gente pelo painel (Authentication → Users → Add user) só com **Create new user** e **Auto Confirm User** marcado, se for dar uma senha: com "Send invitation" (Invite user) ou sem confirmar na hora, a senha posta pelo painel some quando a pessoa confirma o e-mail (a trigger da migração `20261116000000`), e ela escolhe outra pelo link ou em "Esqueci a senha". Trocar o e-mail de alguém pelo painel funciona; pela própria pessoa, não (o app não oferece, e o banco recusa).
++2. **E-mail do login (SMTP):** o Supabase manda os e-mails de confirmar o cadastro, trocar a senha e do link de entrar. O carteiro que vem com ele só entrega pra quem é da equipe do projeto e manda pouquíssimos e-mails por hora (e recusa outro e-mail pro mesmo endereço em menos de 60 s): sem SMTP próprio, ninguém de fora consegue criar conta nem trocar a senha. Em Authentication → Emails → SMTP Settings (antes: Project Settings → Authentication → SMTP Settings), ligar **Enable custom SMTP**: host, porta, usuário e senha do provedor (ex.: o SMTP relay do Google Workspace da empresa, `smtp-relay.gmail.com`, porta 587), remetente com um endereço do domínio da empresa e nome `Journey`. Depois, em Authentication → Rate Limits, subir o limite de e-mails por hora (ex.: 100).
++3. **Entrar com Google (opcional):**
++   1. No Google Cloud Console da empresa, em Google Auth Platform (antes: APIs e serviços → Tela de permissão OAuth): em **Branding**, nome do app, e-mail de suporte e o domínio de produção em domínios autorizados; em **Audience**, tipo Externo, e **Publicar o app** (em teste, só entram os e-mails da lista de teste).
++   2. Em **Clients** → Criar cliente (antes: APIs e serviços → Credenciais → Criar credenciais → ID do cliente OAuth) → Aplicativo da Web. Em **Origens JavaScript autorizadas**, `https://<domínio de produção>`; em **URIs de redirecionamento autorizados**, `https://<ref do projeto>.supabase.co/auth/v1/callback` (a URL exata aparece no Supabase, no passo seguinte, como "Callback URL"). Guardar o ID do cliente e a chave secreta.
++   3. No Supabase: Authentication → Sign In / Providers → Google (antes: Providers → Google) → ligar, colar o ID do cliente e a chave secreta, salvar.
++   4. Na Vercel: `NEXT_PUBLIC_LOGIN_GOOGLE=sim` (e publicar de novo: a variável entra no build). Sem ela, o botão não aparece.
++4. **Banco:** `npx supabase link --project-ref <ref>` e `npx supabase db push` (aplica `supabase/migrations`). A migração da etapa C (`20261115000000`) apaga as tabelas e o bucket da v1 e para sozinha se achar dado neles; rode-a antes uma vez dentro de `begin; … rollback;` (no SQL Editor) pra conferir. A `20261116000000` põe duas travas em `auth.users`: apaga a senha na hora em que o e-mail é confirmado, e recusa a troca de e-mail pedida pela própria pessoa. Sem elas, quem cadastrasse antes o e-mail de uma pessoa convidada (com uma senha dele), ou trocasse o e-mail da conta dele pro dela, entraria na conta e na empresa dela depois que ela clicasse no e-mail.
++5. **Vercel:** importar o repositório com Root Directory `apps/web`. Variáveis: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (do projeto), `SUPABASE_SECRET_KEY` (a secret key do projeto, em Project Settings → API Keys; marcada como Sensitive, sem `NEXT_PUBLIC_`: os links públicos precisam dela no servidor) e, se o Google estiver ligado, `NEXT_PUBLIC_LOGIN_GOOGLE=sim`. `APP_URL` vai **só no ambiente Production**, com o domínio de produção (ex.: `https://journey.exemplo.com`), e o app passa a ser usado só por esse domínio: os redirecionamentos e a conferência do Sair usam ela, então num preview com a `APP_URL` de produção o login voltaria pra produção e o Sair recusaria o pedido. Sem `APP_URL` (os previews), o app confia nos cabeçalhos do pedido. Crie e compartilhe os links públicos pelo domínio de produção: o endereço do link usa o endereço em que o membro está, e um link criado num preview aponta pro preview (que a proteção da Vercel pode fechar pra quem não tem conta).
++6. **Previews (se quiser entrar neles):** com e-mail e senha, entra direto. Os links dos e-mails vão sempre pra Site URL (produção): "Esqueci a senha" pedido num preview troca a senha lá, e vale nos dois (o Supabase é o mesmo). Pro Google num preview, pôr também `https://*-<time>.vercel.app/**` em Redirect URLs.
++7. Criar a conta (Criar conta, abrir o link do e-mail, escolher a senha), a empresa e o primeiro fluxo (em branco ou a partir de um modelo).
++
 +A cada etapa nova que traz migração, rode `npx supabase db push` e publique o app na Vercel logo em seguida, nessa ordem: o app novo lê tabelas novas e, sem a migração, o editor dá erro; e o app velho lê tabelas que a migração nova apaga.
 ````
 
@@ -8086,7 +9835,7 @@ index 67608f1..8cb9525 100644
 
 ````diff
 diff --git a/apps/web/README.md b/apps/web/README.md
-index beaddec..c122b78 100644
+index beaddec..84740f8 100644
 --- a/apps/web/README.md
 +++ b/apps/web/README.md
 @@ -1,8 +1,6 @@
@@ -8099,7 +9848,13 @@ index beaddec..c122b78 100644
  
  ## Rodar
  
-@@ -21,99 +19,95 @@ O link mágico chega no Mailpit local: http://127.0.0.1:54324. Abre o app em `12
+@@ -16,104 +14,111 @@ sed -i "s|^SUPABASE_SECRET_KEY=.*|SUPABASE_SECRET_KEY=$(npx supabase status -o j
+ npm run dev                         # http://127.0.0.1:3000
+ ```
+ 
+-O link mágico chega no Mailpit local: http://127.0.0.1:54324. Abre o app em `127.0.0.1`, não em `localhost`: sem `APP_URL`, o link volta pro endereço do pedido e a sessão é por endereço.
++Os e-mails do login (confirmação, link, recuperação) chegam no Mailpit local: http://127.0.0.1:54324. Os links apontam pra Site URL do `config.toml` (`http://127.0.0.1:3000`): abre o app em `127.0.0.1`, não em `localhost`, porque a sessão é por endereço.
+ 
  ## Testes
  
  ```bash
@@ -8112,7 +9867,7 @@ index beaddec..c122b78 100644
  ```
  
 -`CAPTURAS=<pasta> npm run e2e -- e2e/capturas.spec.ts` tira capturas das telas principais (revisão, mapa, decisão, diagnóstico, celular, escuro, o "Compartilhar" e o link público). Sem `CAPTURAS`, o teste fica pulado.
-+Hoje: app 188 testes de unidade (29 arquivos), pgTAP 168 (`compartilhar`, `empresas`, `fluxos`), ponta a ponta 17 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
++Hoje: app 202 testes de unidade (31 arquivos), pgTAP 181 (`compartilhar`, `empresas`, `fluxos`, `senha`), ponta a ponta 25 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar e conta, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
  
  ## Partes
  
@@ -8156,11 +9911,9 @@ index beaddec..c122b78 100644
  - **Fluxo a partir de modelo:** os cadastros do modelo viram cadastros da empresa (o que já existe com o mesmo tipo e nome é reaproveitado), o fluxo nasce e o documento é salvo com `instanciarModelo`. Se salvar falha, o fluxo criado é apagado.
  - **Dois cuidados do quadro:** o palco tem `overflow: hidden`, mas o navegador ainda o rola pra mostrar um elemento com foco, então ele volta a (0, 0) a cada rolagem; e, com o ponteiro capturado pelo palco (o arrasto começa no primeiro clique), o duplo clique chega no palco, então o alvo é o elemento sob o mouse (`elementFromPoint`).
 -- **CSS do editor dentro de `.editor`**, pra não esbarrar no da v1, que ainda existe.
-+- **CSS do editor dentro de `.editor`** (o link público também usa: `.editor.visualizador`).
- 
+-
 -### Telas da v1
-+### Diagnóstico, cenários, versões e link (etapa C)
- 
+-
 -- **A tela importa o núcleo só pelos subcaminhos** (`@journey/nucleo/formato`, `/motor`, `/diagnostico`). A raiz reexporta `importacao` e `modelos`, que puxam o exceljs (~1 MB) pro navegador. O teste `test/cliente-sem-exceljs.test.ts` barra a raiz, `importacao` e `modelos` em `src/componentes`, `src/mapa`, `src/simulacao` e `src/diagnostico`; depois do build, `grep -rl ExcelJS apps/web/.next/static` tem que vir vazio. O servidor (páginas, `acoes`, `lib`, `importacao`) pode importar a raiz.
 -- **A tela nunca grava no catálogo nem nas versões:** só a função `confirmar_import` (security definer) troca o catálogo e cria versões. O catálogo guarda as colunas do formato em `dados` (jsonb), então coluna nova no formato não pede migração.
 -- **`confirmar_import` só aceita documento `journey/1`:** `formato` certo e as 8 listas (entradas, horários, feriados, ramais, filas, grupos, peças, saídas). Com outra forma a jornada não abriria. O conteúdo de cada lista é conferido pelo app.
@@ -8180,6 +9933,11 @@ index beaddec..c122b78 100644
 -- **Pontas (fim, celular externo, destino que não existe) se repetem** onde aparecem; os outros pontos aparecem uma vez e a segunda chegada vira atalho ("segue em" ou "volta pra").
 -- **Cenário aberto só enquanto o caminho é o dele** (`vinculo.ts`): mesma entrada, hora e modo, e as escolhas são o começo das dele. Outra escolha solta o cenário e o fim oferece salvar de novo. Aprovar grava o caminho inteiro (entrada, hora, modo e escolhas) junto com o esperado. A comparação com o aprovado aparece no fim e também no cartão da decisão e no "Fora deste mapa" (quando a água sai pra um ponto que não está neste mapa).
 -- **A decisão é um cartão** (região "Decisão", com a pergunta em `aria-live`), não um balão no nó: no computador fica por cima do mapa, no celular embaixo dele. Os chips nos canos que o motor usa também escolhem.
++- **CSS do editor dentro de `.editor`** (o link público também usa: `.editor.visualizador`).
+ 
+-### Links públicos (etapa 3)
++### Diagnóstico, cenários, versões e link (etapa C)
++
 +- **Diagnóstico ao vivo** (`diagnosticar` do pacote, sobre o documento adiado com `useDeferredValue`; uns 2 ms pra 500 peças). O botão do topo conta os abertos e abre uma gaveta em cima do quadro, lembrada por fluxo no navegador; a contagem é anunciada pro leitor de tela quando para de mudar. Cada achado tem "ver no quadro" (seleciona, enquadra e põe no holofote), "simular até aqui" e "marcar como intencional" (com nota, quem e quando). Marcação de achado que o documento não tem mais aparece como "antiga", com desmarcar.
 +- **"Simular até aqui" só pra peça que um Início alcança**: uma busca em largura por documento (`simulaveis`); o caminho em si (`caminhoAte`: a busca até a peça e o motor escolhendo a saída do caminho) só no clique, e o play toca em modo livre (no relógio, a escolha do horário não valeria) e pausa quando a água chega.
 +- **A chave de um achado não leva texto livre** (opções repetidas são chaveadas pelos ids das conexões; ciclo grande vira começo + FNV-1a): a marcação sobrevive a renomear e casa no link com os nomes escondidos.
@@ -8187,8 +9945,7 @@ index beaddec..c122b78 100644
 +- **Versão:** marcar é a foto do que está no banco, então o editor manda o que falta antes (`salv.agora()`) e só marca se chegou. Restaurar lê o documento da versão pelo navegador (vale a RLS), tira responsável que não é mais cadastro e entra como uma edição desfazível (o estilo da versão volta junto, mas não entra no Ctrl+Z).
 +- **As listas do editor ficam no estado dele**: cada ação devolve o que mudou (cenário, versão, link, intencional) e a tela atualiza no lugar, sem `revalidatePath` (refazer a página leria o documento inteiro de novo).
 +- **Confirmação no lugar** (apagar cenário, restaurar versão, revogar link): a escolha segura vem primeiro e fica com o foco, e os dois botões ignoram o segundo clique de um duplo clique (`detail > 1`). Depois, o foco volta pro botão que abriu ou pra lista.
- 
--### Links públicos (etapa 3)
++
 +### Link público
  
  - **O link é lido no servidor com a chave secreta**, e só por `src/lib/link.ts`: quem abre não tem sessão, e a função `abrir_link` só aceita a `service_role`. Assim ninguém com o token na mão chama a API e lê o que o servidor esconderia (com a chave pública, `abrir_link` e a tabela `links` dão 42501). O teste `test/chave-secreta.test.ts` barra a chave em qualquer outro arquivo e em componente de cliente.
@@ -8213,16 +9970,23 @@ index beaddec..c122b78 100644
 +
 +### Entrar
 +
-+- **A página de entrar mostra o produto:** o formulário de um lado (link por e-mail; Google se `NEXT_PUBLIC_LOGIN_GOOGLE=sim`) e, do outro, uma prévia do quadro com a água andando, trocando de cor do WhatsApp pro e-mail e parando na decisão. A prévia é SVG e CSS próprios (`app/entrar/previa.tsx` e `entrar.css`), decorativa e parada com movimento reduzido: a página não carrega o editor nem o `@journey/fluxo` (só o React, o Next e o cliente do Supabase, pro PKCE, e um componente pequeno que pausa a animação com a aba escondida ou a prévia fora da tela e para depois de três voltas, no quadro final). Abaixo de 420 px a prévia sai: a letra ficaria pequena demais.
++- **Três jeitos de entrar:** e-mail e senha (o principal, com as abas "Entrar" e "Criar conta"), Google (se `NEXT_PUBLIC_LOGIN_GOOGLE=sim`) e o link por e-mail, como alternativa discreta, junto com "Esqueci a senha". A raiz aceita os convites depois de qualquer um dos três.
++- **Os e-mails voltam pelo `/auth/confirm`**, e o Google pelo `/auth/callback`. Os modelos de e-mail (`supabase/templates`, ligados no `config.toml`; no hospedado, colados no painel) mandam o `token_hash` pro `/auth/confirm`, uma página com um botão; o POST do botão (`/auth/confirmar`) confirma no servidor (`verifyOtp`) e grava a sessão no cookie: o link abre em qualquer navegador ou aparelho. Com o link padrão do Supabase (PKCE), só abriria no navegador que pediu. Abrir o link não entra: o leitor de links do provedor de e-mail não gasta o token, e um link com o token de outra pessoa não põe ninguém na conta dela. O POST só vale da origem do app (Origin igual; sem Origin, recusa), contra login CSRF. Os tipos aceitos são só os dos modelos (`email` e `recovery`). As voltas só seguem pra caminho deste app (`caminhoInterno`: nada de `//outro.site`); o Google cancelado volta com `error` e a tela diz (`/entrar?erro=google`).
++- **Criar conta pede só o e-mail.** O link de confirmação leva a `/conta/senha`, onde a pessoa escolhe a senha (ou "Agora não"). A senha não vai no cadastro porque o Supabase deixa qualquer um cadastrar qualquer e-mail com uma senha, e não troca essa senha quando a dona aparece: quem chegou antes entraria na conta (e na empresa que a convidou) depois que ela confirmasse. Por isso o banco apaga a senha na hora em que o e-mail é confirmado (trigger em `auth.users`, migração `20261116000000`), e a senha de verdade vem depois, já com a sessão do link. Conta criada já confirmada (painel, API de admin) fica com a senha. "Criar conta" e o link usam o mesmo pedido (`signInWithOtp`): e-mail novo recebe a confirmação; e-mail que já tem conta recebe o link de entrar. A tela diz o mesmo nos dois casos, sem contar quem tem conta.
++- **Senha mínima de 8** (`SENHA_MINIMA`; `minimum_password_length = 8` no config.toml; no hospedado, o README da raiz manda subir). Campos com `autocomplete` certo pro gerenciador de senhas (`email`, `current-password`, `new-password`) e "Mostrar" a senha.
++- **`/conta/senha`** (só com sessão; sem ela, o proxy manda pro entrar): depois de criar a conta, de "Esqueci a senha", ou pelo link "Senha" (no topo da empresa, ao lado de "Sair", e embaixo do cartão de criar a empresa). Quem está logado troca sem digitar a atual (`secure_password_change` desligado: a sessão basta); se alguém ligar no painel, o Supabase pede reautenticação e a tela diz pra sair e entrar de novo. Trocar a senha encerra as outras sessões da pessoa (o Supabase recusa o refresh delas), mas o token de acesso que cada uma já tem vale até vencer (até 1 h).
++- **Os erros do Supabase Auth em português** (`lib/acesso.ts`, pelo código e pelo status): e-mail ou senha que não conferem, e-mail não confirmado, senha fraca, senha igual, limite de e-mail (`over_email_send_rate_limit`: "já mandamos um e-mail") separado do limite de tentativas (`over_request_rate_limit`: "muitas tentativas"). O erro cru vai só pro `console.error`.
++- **A página de entrar mostra o produto:** o formulário de um lado e, do outro, uma prévia do quadro com a água andando, trocando de cor do WhatsApp pro e-mail e parando na decisão. A prévia é SVG e CSS próprios (`app/entrar/previa.tsx` e `entrar.css`), decorativa e parada com movimento reduzido: a página não carrega o editor nem o `@journey/fluxo` (só o React, o Next e o cliente do Supabase, pro PKCE, e um componente pequeno que pausa a animação com a aba escondida ou a prévia fora da tela e para depois de três voltas, no quadro final). Abaixo de 420 px a prévia sai: a letra ficaria pequena demais.
++- **"Esqueci a senha" e o link ficam fora das abas,** com título próprio e "Entrar com a senha" pra voltar. As abas andam com as setas, Home e End.
 +- **Depois de pedir o link,** o e-mail continua no campo, o aviso diz pra qual e-mail foi, e "Usar outro e-mail" limpa e volta o foco pro campo. As regiões de aviso (`role=status`, `role=alert`) ficam montadas vazias.
 +- **O botão só liga depois da hidratação:** antes, um Enter mandaria o formulário pelo navegador. O campo não tem `name`, então o e-mail nunca vai pra URL.
-+- **Mandar de novo espera 30 s** pro mesmo e-mail (o Supabase recusa outro pedido em menos de 60 s); se mesmo assim vier o limite (429 ou `over_email_send_rate_limit`), a mensagem é em português, a espera vira 60 s e o aviso de "enviado" fica. Os erros viram texto pelo código e pelo status (`app/entrar/mensagens.ts`), nunca pelo texto em inglês, que vai só pro `console.error`. Ocupado, o botão fica com `aria-disabled` (e não `disabled`), pra não perder o foco.
++- **Mandar de novo espera 30 s** pro mesmo e-mail (o Supabase recusa outro pedido em menos de 60 s); se mesmo assim vier o limite (429 ou `over_email_send_rate_limit`), a mensagem é em português, a espera vira 60 s e o aviso de "enviado" fica. Os erros viram texto pelo código e pelo status, nunca pelo texto em inglês. Ocupado, o botão fica com `aria-disabled` (e não `disabled`), pra não perder o foco.
 +
 +### Banco e acesso
 +
 +- **Chaves estrangeiras compostas por empresa:** tabela filha liga o pai pela dupla `(id, empresa_id)` (cenários, intencionais e links pela dupla `(fluxo_id, empresa_id)`), então uma linha nunca aponta pra linha de outra empresa. Apagar o fluxo apaga os cenários, os intencionais e os links dele.
 +- **Membro só muda algumas colunas:** em `empresas`, `nome`; em `cenarios`, `nome`, `escolhas`, `esperado` e `revisao_aprovada` (o começo não muda); em `achados_intencionais`, as quatro que o upsert manda; em `links`, só `revogado_em`. O resto não se reescreve pela API.
-+- **Convite só vale pra e-mail confirmado** (`email_confirmado()` lê `auth.users`, não o token) e o Supabase fica com `enable_confirmations = true`. Sem isso, alguém criaria conta com o e-mail de outra pessoa e entraria na empresa dela.
++- **Convite só vale pra e-mail confirmado** (`email_confirmado()` lê `auth.users`, não o token) e o Supabase fica com `enable_confirmations = true`. Sem isso, alguém criaria conta com o e-mail de outra pessoa e entraria na empresa dela. A confirmação sozinha não basta: quem cadastrou o e-mail antes com uma senha entraria depois que a dona confirmasse. Por isso a senha some na confirmação (trigger `senha_some_na_confirmacao` em `auth.users`; a conta criada na mesma transação, como a do painel, fica marcada e não perde a senha). E a pessoa não troca o e-mail da conta (trigger `troca_de_email_recusada`, quando o Supabase grava `email_change`): trocar o e-mail da conta dele pro da convidada, com ela clicando no "confirme o novo e-mail", daria no mesmo. O admin e o painel trocam `email` direto e continuam podendo; o pedido recusado ainda manda os e-mails de confirmação (o Supabase manda antes de gravar), mas os links não valem.
 +- **`APP_URL` em produção:** os redirecionamentos e a conferência do Origin (no Sair) usam ela. Sem ela o app cai nos cabeçalhos do pedido (`X-Forwarded-*`, `Host`), que o cliente forja; serve só no desenvolvimento.
 +- **Sair só neste aparelho** (`scope: 'local'`): as outras sessões da pessoa continuam.
  
@@ -8236,10 +10000,15 @@ index beaddec..c122b78 100644
  
  ## Gotchas
  
- - **O pedido do link mágico sai do navegador:** o código do PKCE fica num cookie dele, e o `/auth/callback` troca o código pela sessão. Pedido por server action, o cookie não chega e o login volta pra tela de entrar.
+-- **O pedido do link mágico sai do navegador:** o código do PKCE fica num cookie dele, e o `/auth/callback` troca o código pela sessão. Pedido por server action, o cookie não chega e o login volta pra tela de entrar.
++- **O Google sai do navegador:** o código do PKCE fica num cookie dele, e o `/auth/callback` troca o código pela sessão. Pedido por server action, o cookie não chega e o login volta pra tela de entrar. Os e-mails não dependem disso: o `/auth/confirm` confirma pelo `token_hash`.
++- **Mudou o modelo de e-mail?** Mude também no painel do hospedado (o README da raiz tem o passo a passo): `supabase/templates` só vale no local.
  - **Sem `APP_URL`, o redirecionamento usa o host do pedido** (`origemDe`): no `next dev`, `request.url` vem como `localhost` mesmo com o navegador em `127.0.0.1`, e a sessão (cookie por host) se perde.
 -- **jsonb reordena as chaves:** comparar o resultado guardado de um cenário com o de agora é por valor (`comparar`), não por texto, senão todo cenário aparece como "mudou".
 -- **Next 16: `proxyClientMaxBodySize` é 10 MB por padrão.** Com o `proxy.ts` no meio, o corpo maior é cortado em silêncio e o import chega quebrado; por isso está em 5 MB no `next.config.ts` (um pouco acima do teto de 4 MB).
++- **Os testes ponta a ponta entram com senha** (`entrar()` no `e2e/apoio.ts`): a conta nasce já confirmada pela API de administração (com a chave secreta lida da CLI) e entra pela tela, sem esperar e-mail e sem gastar os limites por IP do link mágico (30 a cada 5 minutos), que outro clone rodando os mesmos testes no mesmo Supabase também gasta. O link mágico, a confirmação e a recuperação têm os testes deles, pelo Mailpit (o link e a recuperação abertos em outro navegador), e o cadastro antecipado por outra pessoa também (`conta.spec.ts`).
++- **A senha some em qualquer confirmação de e-mail de conta que já existia:** convite do painel ("Invite user"), "Add user" sem "Auto Confirm User", e também um dia em que o Supabase preencha `email_confirmed_at` de contas antigas numa migração dele (um backfill): essas contas ficariam sem senha e entrariam pelo link ou por "Esqueci a senha". Não acontece hoje; vale olhar as notas de versão do Auth.
++- **Mudou o `config.toml` do Auth?** Só vale depois de reiniciar o Supabase local (`npm run banco:parar` e `npm run banco`).
  - **Upsert do PostgREST pede UPDATE em toda coluna que ele manda:** o `on conflict do update set` leva todas, e sem permissão em uma delas até o primeiro upsert falha. Por isso as quatro colunas em `achados_intencionais`.
 -- **Sem `SUPABASE_SECRET_KEY` no servidor, o link público não abre** (aparece a tela de falha do link, `l/[token]/error.tsx`) e criar link é recusado, com um aviso pra pessoa. Local: a linha do `sed` em "Rodar"; no `next dev` já aberto, reinicie depois de mudar o `.env.local`.
 +- **Sem `SUPABASE_SECRET_KEY` no servidor, o link público não abre** (aparece a tela de falha do link, `l/[token]/error.tsx`) e o "Compartilhar" explica e não cria. Local: a linha do `sed` em "Rodar"; no `next dev` já aberto, reinicie depois de mudar o `.env.local`.
@@ -8274,7 +10043,7 @@ index 04d43b3..1ec50a5 100644
 - [ ] **Passo 2: tudo de novo**
 
 Run (da raiz): `npx supabase test db && npm test && npm run typecheck && npm run build && cd apps/web && npx playwright test --trace=off`
-Expected: pgTAP `Tests=168`, `Result: PASS`; fluxo 84, núcleo 253, app 188; `tsc` limpo; build com `/l/[token]` e sem as rotas da v1; ponta a ponta `17 passed`. O pgTAP vem antes da ponta a ponta (a ponta a ponta deixa fluxos e links de teste no banco local; o pgTAP não depende deles, mas começar limpo ajuda a ler uma falha).
+Expected: pgTAP `Tests=181`, `Result: PASS`; fluxo 84, núcleo 253, app 202; `tsc` limpo; build com `/l/[token]`, `/auth/confirm`, `/auth/confirmar`, `/conta/senha` e sem as rotas da v1; ponta a ponta `25 passed`. O pgTAP vem antes da ponta a ponta (a ponta a ponta deixa fluxos e links de teste no banco local; o pgTAP não depende deles, mas começar limpo ajuda a ler uma falha).
 
 - [ ] **Passo 3: commit e push**
 
@@ -8287,8 +10056,9 @@ git push -u origin claude/journey-etapa-3-public-links-5wx03t
 ## Produção
 
 1. Antes de mesclar: conferir no banco de produção que a v1 está vazia e o bucket `imports` não tem arquivos, e rodar a migração uma vez dentro de `begin; … rollback;` (prova as permissões do Storage hospedado).
-2. Mesclar o PR; aplicar a migração (`apply_migration` com o conteúdo do arquivo) e, logo em seguida, a Vercel publica (entre um e outro, as telas da v1 do deploy antigo dão erro: são poucos minutos, sem uso em produção).
-3. Conferir: `/entrar` nova; um fluxo com cenário salvo; um link criado abre numa janela anônima e toca o cenário.
+2. No painel do Supabase, antes de mesclar: os passos do README da raiz ("Publicar": URL do site e de volta, e-mail com confirmação e senha mínima 8, os três modelos de e-mail de `supabase/templates`, SMTP próprio; Google é opcional).
+3. Mesclar o PR; aplicar as duas migrações (`apply_migration` com o conteúdo de cada arquivo, na ordem) e, logo em seguida, a Vercel publica (entre um e outro, as telas da v1 do deploy antigo dão erro: são poucos minutos, sem uso em produção).
+4. Conferir: `/entrar` nova (criar uma conta de teste, confirmar pelo e-mail, escolher a senha, sair e entrar com ela); um fluxo com cenário salvo; um link criado abre numa janela anônima e toca o cenário.
 
 ## Cobertura do spec
 
