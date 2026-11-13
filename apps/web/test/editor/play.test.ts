@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MODELOS, type Opcao } from '@journey/fluxo';
-import { agora, duracaoCano, espera, opcaoDaTecla, rodar, visual, voltar } from '@/editor/play';
+import { MODELOS, type Documento, type Opcao } from '@journey/fluxo';
+import { agora, duracaoCano, espera, opcaoDaTecla, quandoValido, rodar, visual, voltar } from '@/editor/play';
 
 const m = MODELOS.find((x) => x.chave === 'whatsapp')!;
 const ctx = { cadastros: m.cadastros, canal: m.canal };
@@ -50,9 +50,34 @@ describe('editor/play', () => {
     expect(opcaoDaTecla(ops, '1', valores)?.conexao).toBe('c8');
     expect(opcaoDaTecla(ops, '3', valores)).toBeNull();
     expect(opcaoDaTecla(ops, 'x', valores)).toBeNull();
+    // Códigos "2" e "3": a tecla 1 não cai na posição (senão 1 e 2 escolheriam a mesma opção).
+    const dig = new Map([['c8', '2'], ['c9', '3']]);
+    expect(opcaoDaTecla(ops, '1', dig)).toBeNull();
+    expect(opcaoDaTecla(ops, '2', dig)?.conexao).toBe('c8');
+  });
+
+  it('a água passa de novo por um cano já cheio: ele volta a correr', () => {
+    const loop: Documento = { ...m.documento, conexoes: [...m.documento.conexoes, { id: 'cv', de: 'aguardando', para: 'assunto', regra: 'condicao', valor: 'voltar ao menu' }] };
+    const x = rodar(loop, ctx, { ...PLAY, escolhas: ['c6', 'cv', 'c6'] });
+    const vezes = x.eventos.flatMap((e, i) => (e.tipo === 'correu' && e.conexao === 'c8' ? [i] : []));
+    expect(vezes).toHaveLength(2);
+    const v = visual(x.eventos, vezes[1]! + 1);
+    expect(v.correndo?.conexao).toBe('c8');
+    expect(v.cheias.has('c8')).toBe(false);
+    expect(visual(x.eventos, vezes[1]! + 2).cheias.has('c8')).toBe(true);
+  });
+
+  it('voltar tira a última escolha que o motor aceitou; quando inválido é recusado', () => {
+    expect(voltar({ ...PLAY, escolhas: ['c6', 'velha'] }, ['c6']).escolhas).toEqual([]);
+    expect(quandoValido('2026-11-23T10:00')).toBe(true);
+    expect(quandoValido('20266-11-23T10:00')).toBe(false);
+    expect(quandoValido('2026-13-40T10:00')).toBe(false);
   });
 
   it('agora em São Paulo, no formato do motor', () => {
     expect(agora(new Date('2026-11-23T13:05:00Z'))).toBe('2026-11-23T10:05');
+    expect(agora(new Date('2026-11-23T03:00:00Z'))).toBe('2026-11-23T00:00');
+    // Horário de verão antigo de São Paulo (começou em 4/11/2018): a meia-noite pulou pra 1h.
+    expect(agora(new Date('2018-11-04T03:00:00Z'))).toBe('2018-11-04T01:00');
   });
 });

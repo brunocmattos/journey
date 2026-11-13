@@ -22,6 +22,9 @@ export function rodar(doc: Documento, ctx: Contexto, p: Play): Execucao {
   return simular(doc, { cadastros: ctx.cadastros, ...(ctx.canal && { canal: ctx.canal }) }, { inicio: p.inicio, quando: p.quando, modo: p.modo, escolhas: p.escolhas });
 }
 
+/** `quando` no formato que o motor aceita (o campo de data do navegador deixa passar ano de 5 ou 6 dígitos). */
+export const quandoValido = (q: string): boolean => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(q) && !Number.isNaN(Date.parse(`${q}:00Z`));
+
 /** A hora de agora em São Paulo, no formato do motor. */
 export function agora(d = new Date()): string {
   const partes = Object.fromEntries(
@@ -45,7 +48,7 @@ export interface Visual {
   fim: { motivo: MotivoFim; peca: string | null } | null;
   relogio_s: number;
   canal: string | null;
-  /** Cada chegada, com o tempo do cliente naquele momento. */
+  /** Cada chegada, com o tempo do cliente naquele momento (uma peça visitada duas vezes aparece duas vezes). */
   linha: { peca: string; relogio_s: number }[];
 }
 
@@ -64,7 +67,10 @@ export function visual(eventos: readonly Evento[], n: number): Visual {
       v.molhadas.set(e.peca, e.canal);
       v.linha.push({ peca: e.peca, relogio_s: e.relogio_s });
     } else if (e.tipo === 'correu') {
+      // A água pode passar de novo por um cano já cheio (volta ao menu, tenta de novo): ele volta a correr.
+      v.cheias.delete(e.conexao);
       v.correndo = { conexao: e.conexao, canal: v.canal };
+      // O relógio já inclui o tempo do cano (regra tempo): o cartão mostra a hora em que a água chega do outro lado.
       v.relogio_s = e.relogio_s;
     } else if (e.tipo === 'pede_escolha') {
       v.pergunta = { peca: e.peca, opcoes: e.opcoes };
@@ -89,10 +95,16 @@ export function espera(e: Evento): number | 'cano' {
 /** Duração da água num cano de comprimento `L` (px), na velocidade dada. */
 export const duracaoCano = (L: number, velocidade: number): number => Math.max(380, L * 2.4) / velocidade;
 
-/** Voltar uma decisão: tira a última escolha. Sem escolha, recomeça. */
-export const voltar = (p: Play): Play => ({ ...p, escolhas: p.escolhas.slice(0, -1) });
+/**
+ * Voltar uma decisão: tira a última escolha que o motor aceitou (`aplicadas`, de `Execucao.escolhas`; uma escolha
+ * guardada que não serve mais já não conta). Sem escolha, recomeça.
+ */
+export const voltar = (p: Play, aplicadas: readonly string[] = p.escolhas): Play => ({ ...p, escolhas: aplicadas.slice(0, -1) });
 
-/** A opção que uma tecla escolhe: o número da posição (1 a 9) ou o código de uma letra/dígito da opção. */
+/**
+ * A opção que uma tecla escolhe: o código de uma letra/dígito da opção ou, se nenhuma opção tem dígito como código,
+ * o número da posição (1 a 9). Com códigos "2" e "3", a tecla 1 não escolhe nada (senão 1 e 2 dariam na mesma).
+ */
 export function opcaoDaTecla(opcoes: readonly Opcao[], tecla: string, valores: ReadonlyMap<string, string | undefined>): Opcao | null {
   const k = tecla.toLowerCase();
   const porValor = opcoes.find((o) => {
@@ -100,7 +112,8 @@ export function opcaoDaTecla(opcoes: readonly Opcao[], tecla: string, valores: R
     return v !== undefined && v.length === 1 && v.toLowerCase() === k;
   });
   if (porValor) return porValor;
-  if (/^[1-9]$/.test(tecla)) return opcoes[Number(tecla) - 1] ?? null;
+  const digitos = opcoes.some((o) => /^\d$/.test(valores.get(o.conexao) ?? ''));
+  if (!digitos && /^[1-9]$/.test(tecla)) return opcoes[Number(tecla) - 1] ?? null;
   return null;
 }
 

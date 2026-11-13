@@ -9,6 +9,9 @@ export interface TipoCadastro {
 /** Comparar nomes como o banco compara (índice único em lower(btrim(nome))). */
 export const nomeNormalizado = (nome: string): string => nome.trim().toLowerCase();
 
+/** Pra busca: sem caixa e sem acento ("cobranca" acha "Fila Cobrança"). */
+const paraBusca = (s: string): string => nomeNormalizado(s).normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
 /** O Horário que nasce do uso: segunda a sexta, 8h às 18h, sem feriado. Dá pra mudar na tela de Cadastros. */
 export const HORARIO_PADRAO: CamposHorario = { janelas: [{ dias: ['seg', 'ter', 'qua', 'qui', 'sex'], inicio: '08:00', fim: '18:00' }], feriados: [] };
 
@@ -17,13 +20,14 @@ export const HORARIO_PADRAO: CamposHorario = { janelas: [{ dias: ['seg', 'ter', 
  * "Horário …" é horário, peça Sistema é sistema; o resto é pessoa (o tipo dá pra trocar antes de criar).
  */
 export function tipoSugerido(nome: string, tipoPeca: TipoPeca, tipos: readonly TipoCadastro[]): string {
-  const n = nomeNormalizado(nome);
+  const n = paraBusca(nome);
   const tem = (k: string) => tipos.some((t) => t.chave === k);
-  const escolha = n.startsWith('fila')
+  // Palavra inteira: "Filadelfo" não é fila, "Timeout" não é equipe.
+  const escolha = /^fila\b/.test(n)
     ? 'fila'
-    : n.startsWith('equipe') || n.startsWith('time')
+    : /^(equipe|time)\b/.test(n)
       ? 'equipe'
-      : n.includes('horário') || n.includes('horario')
+      : /\bhorario\b/.test(n)
         ? 'horario'
         : tipoPeca === 'sistema'
           ? 'sistema'
@@ -33,12 +37,12 @@ export function tipoSugerido(nome: string, tipoPeca: TipoPeca, tipos: readonly T
   return tem(escolha) ? escolha : (tipos[0]?.chave ?? 'pessoa');
 }
 
-/** Cadastros que batem com o que a pessoa escreveu (o nome começa ou contém), os que começam primeiro. */
+/** Cadastros que batem com o que a pessoa escreveu (o nome começa ou contém; sem acento), os que começam primeiro. */
 export function buscar(cadastros: readonly Cadastro[], termo: string, limite = 8): Cadastro[] {
-  const t = nomeNormalizado(termo);
+  const t = paraBusca(termo);
   if (!t) return cadastros.slice(0, limite);
-  const comeca = cadastros.filter((k) => nomeNormalizado(k.nome).startsWith(t));
-  const contem = cadastros.filter((k) => !nomeNormalizado(k.nome).startsWith(t) && nomeNormalizado(k.nome).includes(t));
+  const comeca = cadastros.filter((k) => paraBusca(k.nome).startsWith(t));
+  const contem = cadastros.filter((k) => !paraBusca(k.nome).startsWith(t) && paraBusca(k.nome).includes(t));
   return [...comeca, ...contem].slice(0, limite);
 }
 

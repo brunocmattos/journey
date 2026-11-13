@@ -18,10 +18,14 @@ describe('editor/cadastros', () => {
     expect(tipoSugerido('Comercial', 'decisao', TIPOS)).toBe('horario');
     expect(tipoSugerido('Maria', 'atendimento', TIPOS)).toBe('pessoa');
     expect(tipoSugerido('Maria', 'atendimento', [{ chave: 'loja', nome: 'Loja' }])).toBe('loja');
+    // Palavra inteira: "Filadelfo" e "Timeout" não são fila nem equipe.
+    expect(tipoSugerido('Filadelfo Souza', 'atendimento', TIPOS)).toBe('pessoa');
+    expect(tipoSugerido('Timeout do gateway', 'sistema', TIPOS)).toBe('sistema');
   });
 
   it('busca: começa com antes de contém; nome igual sem caixa nem espaços', () => {
     expect(buscar(K, 'cob').map((k) => k.id)).toEqual(['3', '1']);
+    expect(buscar(K, 'cobranca').map((k) => k.id)).toEqual(['3', '1']);
     expect(buscar(K, '').map((k) => k.id)).toEqual(['1', '2', '3']);
     expect(comNome(K, '  fila cobrança ')?.id).toBe('1');
     expect(comNome(K, 'Fila')).toBeUndefined();

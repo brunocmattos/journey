@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa A) mesclada. Este plano, o código e o PR da etapa B saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 245 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 254 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Sem migração nova.** A etapa B usa as tabelas e funções da etapa A (`fluxos`, `cadastros`, `canais`, `tipos_cadastro`, `salvar_fluxo`, `pegar_trava`, `soltar_trava`), que já estão em produção.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`, "Rodar").
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -37,8 +37,10 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Sem mudança, o mesmo documento** (mover pro mesmo lugar da grade, remendo que não muda nada, id que não existe) | O histórico não ganha passo vazio e o salvamento não manda à toa | Sempre um documento novo |
 | **Desfazer: 120 passos; arrasto é um passo só** (o primeiro quadro registra, os seguintes substituem) | Ctrl+Z depois de arrastar volta a peça pro lugar de antes, não um pixel | Um passo por quadro |
 | **Salvamento automático pelo navegador**, direto no `salvar_fluxo`, meio segundo depois da última mudança, um envio por vez, com a revisão | O documento vai inteiro (até ~300 KB com 500 peças); pelo servidor do Next seria uma ida a mais. A função do banco confere empresa, revisão, trava e responsáveis | Server action a cada mudança: mais lenta e o mesmo controle |
-| **Sem rede: cópia no navegador e tentar de novo** (2 s, 4 s… até 30 s); ao abrir, a cópia volta se partiu da mesma revisão | Spec 7.1 ("cópia local até voltar"). Cópia de outra revisão é descartada: o banco já tem coisa mais nova | Pedir pra pessoa recarregar e perder o que fez |
-| **Conflito (40001), trava perdida (P0001) ou recusa param o salvamento** e a tela pede pra recarregar | Salvar por cima do que outra pessoa salvou é exatamente o que a revisão impede | Mesclar documentos: fora da v1 (spec 4) |
+| **A cópia no navegador fica enquanto o banco não confirma** (escrita a cada envio, apagada na confirmação); sem rede, tenta de novo (2 s, 4 s… até 30 s); envio sem resposta em 20 s desiste (e conta como sem rede); ao abrir, a cópia volta se partiu da mesma revisão | Spec 7.1 ("cópia local até voltar"). Guardar só quando falha perde tudo se o pedido nunca volta e a aba fecha. Cópia de outra revisão é descartada: o banco já tem coisa mais nova | Pedir pra pessoa recarregar e perder o que fez |
+| **Conflito logo depois de falta de rede é conferido:** se o banco está uma revisão à frente com uma das versões mandadas sem resposta, o envio chegou; segue dessa revisão | A resposta pode se perder depois de o banco gravar; o próximo envio daria 40001 e a tela diria que outra pessoa salvou, perdendo o que veio depois. O `jsonb` reordena as chaves: a comparação é por valor (`mesmoJson`) | Um id de salvamento no banco: mais uma migração |
+| **Login vencido (PGRST301/PGRST303/401) não é "sem rede" nem recusa:** tenta de novo, com "entre de novo pra salvar"; erro passageiro (sem código, 5xx, 429, 57014, 40P01) tenta de novo; o motivo vem do código e do status, nunca do texto da mensagem | O cliente do Supabase renova o login sozinho na maioria das vezes; parar de vez por isso perderia o trabalho | Tratar tudo que não é 40001/P0001 como recusa |
+| **Conflito (40001), trava perdida (P0001) ou recusa param o salvamento** e a tela pede pra recarregar; a cópia de uma recusa não fica | Salvar por cima do que outra pessoa salvou é exatamente o que a revisão impede. Uma cópia recusada voltaria a cada abertura e seria recusada de novo | Mesclar documentos: fora da v1 (spec 4) |
 | **Trava ao abrir, renovada a cada 4 minutos, solta ao sair** (`fetch` com `keepalive`); sem trava, só leitura com "Fulano está editando" | Spec 4: sem edição simultânea, mas quem abre depois vê e dá play | Abrir pra editar e descobrir o conflito no primeiro salvamento |
 | **O responsável é uma busca nos cadastros com "Criar" no fim**, com o tipo sugerido pelo nome ("Fila …", "Equipe …", "Horário …") ou pela peça (Sistema, Decisão); a peça guarda o id | Critério 2: o cadastro nasce do desenho e renomear muda em todos os fluxos sem tocar nos documentos | Guardar o nome na peça, como o protótipo: renomear teria que varrer os fluxos |
 | **Horário nasce de segunda a sexta, 8h às 18h**, e a tela Cadastros edita janelas e feriados | Uma decisão de horário funciona no play desde o primeiro minuto | Horário vazio: o relógio diria "fora" sempre |
@@ -56,6 +58,8 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **`<select>` dentro de `<label>` leva o texto das opções no nome acessível** ("Canal principal Telefonia WhatsApp E-mail…"): `getByLabel('E-mail')` achava o select. Todo select assim tem `aria-label`.
 - **Turbopack não compila arquivo fora da raiz do projeto:** um `node_modules` que é link pra outra pasta quebra o `next dev` ("Could not find the Next.js package"). Rode `npm install` de verdade.
 - **Teclas no play só valem com a pergunta na tela:** a peça aparece (evento `chegou`) meio segundo antes da pergunta (`pede_escolha`). Os testes esperam o botão da opção antes de apertar a tecla.
+- **O modo estrito do React roda a limpeza do efeito uma vez ao montar:** a limpeza do editor não pode `parar()` o salvamento (ele ficaria parado de vez). Ela só espera o que falta (`agora()`) e solta a trava.
+- **A água passa de novo por um cano já cheio** (voltar ao menu, "fechado, espera e tenta de novo"): o `correu` tira o cano das cheias, senão o quadro desenha o cano cheio, a água nunca chega e o play para.
 - **Hora da trava no fuso de São Paulo** (`timeZone: FUSO`): o servidor e o navegador de teste rodam em UTC.
 - **Um canal chamado `constructor`** acharia a função do `Object` em `estilo.canais[chave]`: a cor só vale se for própria do objeto (`Object.hasOwn`). E o `ESTILO_PADRAO` é congelado: quem quer mudar, copia.
 - **`naGrade` devolve 0, não -0:** `Math.round(-0.1) * 10` é `-0`, e o `toEqual` do Vitest diferencia.
@@ -1165,8 +1169,8 @@ git commit -m "editor: mudanças no documento, desfazer e refazer" -m "$(cat .gi
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { MODELOS, type Opcao } from '@journey/fluxo';
-import { agora, duracaoCano, espera, opcaoDaTecla, rodar, visual, voltar } from '@/editor/play';
+import { MODELOS, type Documento, type Opcao } from '@journey/fluxo';
+import { agora, duracaoCano, espera, opcaoDaTecla, quandoValido, rodar, visual, voltar } from '@/editor/play';
 
 const m = MODELOS.find((x) => x.chave === 'whatsapp')!;
 const ctx = { cadastros: m.cadastros, canal: m.canal };
@@ -1216,10 +1220,35 @@ describe('editor/play', () => {
     expect(opcaoDaTecla(ops, '1', valores)?.conexao).toBe('c8');
     expect(opcaoDaTecla(ops, '3', valores)).toBeNull();
     expect(opcaoDaTecla(ops, 'x', valores)).toBeNull();
+    // Códigos "2" e "3": a tecla 1 não cai na posição (senão 1 e 2 escolheriam a mesma opção).
+    const dig = new Map([['c8', '2'], ['c9', '3']]);
+    expect(opcaoDaTecla(ops, '1', dig)).toBeNull();
+    expect(opcaoDaTecla(ops, '2', dig)?.conexao).toBe('c8');
+  });
+
+  it('a água passa de novo por um cano já cheio: ele volta a correr', () => {
+    const loop: Documento = { ...m.documento, conexoes: [...m.documento.conexoes, { id: 'cv', de: 'aguardando', para: 'assunto', regra: 'condicao', valor: 'voltar ao menu' }] };
+    const x = rodar(loop, ctx, { ...PLAY, escolhas: ['c6', 'cv', 'c6'] });
+    const vezes = x.eventos.flatMap((e, i) => (e.tipo === 'correu' && e.conexao === 'c8' ? [i] : []));
+    expect(vezes).toHaveLength(2);
+    const v = visual(x.eventos, vezes[1]! + 1);
+    expect(v.correndo?.conexao).toBe('c8');
+    expect(v.cheias.has('c8')).toBe(false);
+    expect(visual(x.eventos, vezes[1]! + 2).cheias.has('c8')).toBe(true);
+  });
+
+  it('voltar tira a última escolha que o motor aceitou; quando inválido é recusado', () => {
+    expect(voltar({ ...PLAY, escolhas: ['c6', 'velha'] }, ['c6']).escolhas).toEqual([]);
+    expect(quandoValido('2026-11-23T10:00')).toBe(true);
+    expect(quandoValido('20266-11-23T10:00')).toBe(false);
+    expect(quandoValido('2026-13-40T10:00')).toBe(false);
   });
 
   it('agora em São Paulo, no formato do motor', () => {
     expect(agora(new Date('2026-11-23T13:05:00Z'))).toBe('2026-11-23T10:05');
+    expect(agora(new Date('2026-11-23T03:00:00Z'))).toBe('2026-11-23T00:00');
+    // Horário de verão antigo de São Paulo (começou em 4/11/2018): a meia-noite pulou pra 1h.
+    expect(agora(new Date('2018-11-04T03:00:00Z'))).toBe('2018-11-04T01:00');
   });
 });
 ```
@@ -1258,6 +1287,9 @@ export function rodar(doc: Documento, ctx: Contexto, p: Play): Execucao {
   return simular(doc, { cadastros: ctx.cadastros, ...(ctx.canal && { canal: ctx.canal }) }, { inicio: p.inicio, quando: p.quando, modo: p.modo, escolhas: p.escolhas });
 }
 
+/** `quando` no formato que o motor aceita (o campo de data do navegador deixa passar ano de 5 ou 6 dígitos). */
+export const quandoValido = (q: string): boolean => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(q) && !Number.isNaN(Date.parse(`${q}:00Z`));
+
 /** A hora de agora em São Paulo, no formato do motor. */
 export function agora(d = new Date()): string {
   const partes = Object.fromEntries(
@@ -1281,7 +1313,7 @@ export interface Visual {
   fim: { motivo: MotivoFim; peca: string | null } | null;
   relogio_s: number;
   canal: string | null;
-  /** Cada chegada, com o tempo do cliente naquele momento. */
+  /** Cada chegada, com o tempo do cliente naquele momento (uma peça visitada duas vezes aparece duas vezes). */
   linha: { peca: string; relogio_s: number }[];
 }
 
@@ -1300,7 +1332,10 @@ export function visual(eventos: readonly Evento[], n: number): Visual {
       v.molhadas.set(e.peca, e.canal);
       v.linha.push({ peca: e.peca, relogio_s: e.relogio_s });
     } else if (e.tipo === 'correu') {
+      // A água pode passar de novo por um cano já cheio (volta ao menu, tenta de novo): ele volta a correr.
+      v.cheias.delete(e.conexao);
       v.correndo = { conexao: e.conexao, canal: v.canal };
+      // O relógio já inclui o tempo do cano (regra tempo): o cartão mostra a hora em que a água chega do outro lado.
       v.relogio_s = e.relogio_s;
     } else if (e.tipo === 'pede_escolha') {
       v.pergunta = { peca: e.peca, opcoes: e.opcoes };
@@ -1325,10 +1360,16 @@ export function espera(e: Evento): number | 'cano' {
 /** Duração da água num cano de comprimento `L` (px), na velocidade dada. */
 export const duracaoCano = (L: number, velocidade: number): number => Math.max(380, L * 2.4) / velocidade;
 
-/** Voltar uma decisão: tira a última escolha. Sem escolha, recomeça. */
-export const voltar = (p: Play): Play => ({ ...p, escolhas: p.escolhas.slice(0, -1) });
+/**
+ * Voltar uma decisão: tira a última escolha que o motor aceitou (`aplicadas`, de `Execucao.escolhas`; uma escolha
+ * guardada que não serve mais já não conta). Sem escolha, recomeça.
+ */
+export const voltar = (p: Play, aplicadas: readonly string[] = p.escolhas): Play => ({ ...p, escolhas: aplicadas.slice(0, -1) });
 
-/** A opção que uma tecla escolhe: o número da posição (1 a 9) ou o código de uma letra/dígito da opção. */
+/**
+ * A opção que uma tecla escolhe: o código de uma letra/dígito da opção ou, se nenhuma opção tem dígito como código,
+ * o número da posição (1 a 9). Com códigos "2" e "3", a tecla 1 não escolhe nada (senão 1 e 2 dariam na mesma).
+ */
 export function opcaoDaTecla(opcoes: readonly Opcao[], tecla: string, valores: ReadonlyMap<string, string | undefined>): Opcao | null {
   const k = tecla.toLowerCase();
   const porValor = opcoes.find((o) => {
@@ -1336,7 +1377,8 @@ export function opcaoDaTecla(opcoes: readonly Opcao[], tecla: string, valores: R
     return v !== undefined && v.length === 1 && v.toLowerCase() === k;
   });
   if (porValor) return porValor;
-  if (/^[1-9]$/.test(tecla)) return opcoes[Number(tecla) - 1] ?? null;
+  const digitos = opcoes.some((o) => /^\d$/.test(valores.get(o.conexao) ?? ''));
+  if (!digitos && /^[1-9]$/.test(tecla)) return opcoes[Number(tecla) - 1] ?? null;
   return null;
 }
 
@@ -1353,7 +1395,7 @@ export const tituloDoFim = (m: MotivoFim): string => NOMES_FIM[m];
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  36 passed (36)`; `tsc` sem saída.
+Expected: `Tests  38 passed (38)`; `tsc` sem saída.
 
 - [ ] **Passo 5: commit**
 
@@ -1378,11 +1420,11 @@ git commit -m "editor: play em cima do motor" -m "$(cat .git/atribuicao.txt)"
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { documentoVazio, type Documento } from '@journey/fluxo';
 import { ESTILO_PADRAO } from '@/editor/estilo';
-import { Salvamento, copiaValida, motivoDoErro, proximaTentativa, type Resposta, type Situacao } from '@/editor/salvamento';
+import { Salvamento, copiaValida, mesmoJson, motivoDoErro, proximaTentativa, type NoBanco, type Resposta, type Situacao } from '@/editor/salvamento';
 
 const doc = (n: string): Documento => ({ ...documentoVazio(), notas: [{ id: n, texto: n, x: 0, y: 0, w: 1, h: 1 }] });
 
-function montar(respostas: Resposta[]) {
+function montar(respostas: Resposta[], ler?: () => Promise<NoBanco | null>) {
   const enviados: { revisao: number; doc: Documento }[] = [];
   const situacoes: Situacao[] = [];
   const guardados: unknown[] = [];
@@ -1396,6 +1438,7 @@ function montar(respostas: Resposta[]) {
     },
     aoMudar: (x) => situacoes.push(x),
     guardar: (c) => guardados.push(c),
+    ...(ler && { ler }),
   });
   const responder = async () => {
     soltar?.();
@@ -1420,7 +1463,8 @@ describe('editor/salvamento', () => {
     await t.responder();
     expect(t.s.revisao).toBe(4);
     expect(t.situacoes.at(-1)).toBe('salvo');
-    expect(t.guardados).toEqual([null]);
+    // A cópia fica no navegador enquanto o banco não confirma, e sai quando ele confirma.
+    expect(t.guardados).toEqual([{ revisao: 3, documento: doc('b'), estilo: ESTILO_PADRAO }, null]);
   });
 
   it('mudou enquanto mandava: manda de novo com a revisão nova', async () => {
@@ -1466,11 +1510,121 @@ describe('editor/salvamento', () => {
     expect(t.guardados.at(-1)).toMatchObject({ documento: doc('a') });
   });
 
+  it('recusa para e não deixa cópia (senão voltaria a cada vez que o fluxo abrisse)', async () => {
+    const t = montar([{ ok: false, motivo: 'recusado', mensagem: 'responsável' }]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('recusado');
+    expect(t.guardados.at(-1)).toBeNull();
+  });
+
+  it('envio que ficou sem resposta mas chegou: o conflito seguinte não é conflito', async () => {
+    let banco: NoBanco = { revisao: 3, documento: null, estilo: null };
+    const t = montar([{ ok: false, motivo: 'rede' }, { ok: false, motivo: 'conflito' }], async () => banco);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    // O banco gravou 'a' (revisão 4), mas a resposta se perdeu; o jsonb volta com as chaves em outra ordem.
+    banco = { revisao: 4, documento: Object.fromEntries(Object.entries(doc('a')).reverse()), estilo: { ...ESTILO_PADRAO } };
+    await t.responder();
+    t.s.mudou(doc('b'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    // 'b' foi com a revisão 3 e deu 40001; o banco tem a revisão 4 com 'a': segue da 4 e manda 'b' de novo.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.enviados.map((e) => [e.revisao, e.doc.notas[0]!.id])).toEqual([[3, 'a'], [3, 'b'], [4, 'b']]);
+    await t.responder();
+    expect(t.s.revisao).toBe(5);
+    expect(t.situacoes.at(-1)).toBe('salvo');
+    expect(t.situacoes).not.toContain('conflito');
+  });
+
+  it('conflito de verdade (o banco tem outra coisa) para mesmo depois de falta de rede', async () => {
+    const t = montar([{ ok: false, motivo: 'rede' }, { ok: false, motivo: 'conflito' }], async () => ({ revisao: 4, documento: doc('outra'), estilo: ESTILO_PADRAO }));
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    await vi.advanceTimersByTimeAsync(2000);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('conflito');
+  });
+
+  it('envio que nunca volta: desiste no limite, com a cópia no navegador', async () => {
+    const t = montar([]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(t.guardados.at(-1)).toMatchObject({ revisao: 3, documento: doc('a') });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(t.situacoes.at(-1)).toBe('sem_rede');
+    expect(t.s.sujo).toBe(true);
+  });
+
+  it('agora espera o envio no ar e o que mudou no meio', async () => {
+    const t = montar([]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    t.s.mudou(doc('b'), ESTILO_PADRAO);
+    let fim = false;
+    void t.s.agora().then(() => (fim = true));
+    await t.responder();
+    expect(fim).toBe(false);
+    expect(t.enviados.map((e) => [e.revisao, e.doc.notas[0]!.id])).toEqual([[3, 'a'], [4, 'b']]);
+    await t.responder();
+    expect(fim).toBe(true);
+    expect(t.s.sujo).toBe(false);
+  });
+
+  it('parar com envio no ar: não agenda nem muda a tela; retomar manda o que ficou', async () => {
+    const t = montar([]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    t.s.parar();
+    const n = t.situacoes.length;
+    t.s.mudou(doc('b'), ESTILO_PADRAO);
+    await t.responder();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(t.situacoes.length).toBe(n);
+    expect(t.enviados).toHaveLength(1);
+    expect(t.s.revisao).toBe(4);
+    t.s.retomar();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.enviados.map((e) => [e.revisao, e.doc.notas[0]!.id])).toEqual([[3, 'a'], [4, 'b']]);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('salvo');
+  });
+
+  it('sessão vencida tenta de novo, com outro aviso', async () => {
+    const t = montar([{ ok: false, motivo: 'sessao' }]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('sem_sessao');
+    await vi.advanceTimersByTimeAsync(2000);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('salvo');
+  });
+
   it('erro do banco vira motivo; cópia local só vale da mesma revisão', () => {
+    const motivo = (...a: Parameters<typeof motivoDoErro>) => {
+      const r = motivoDoErro(...a);
+      return r.ok ? null : r.motivo;
+    };
     expect(motivoDoErro({ code: '40001' })).toEqual({ ok: false, motivo: 'conflito' });
     expect(motivoDoErro({ code: 'P0001' })).toEqual({ ok: false, motivo: 'trava' });
-    expect(motivoDoErro({ code: '', message: 'TypeError: Failed to fetch' })).toEqual({ ok: false, motivo: 'rede' });
+    expect(motivoDoErro({ code: '', message: 'TypeError: Failed to fetch' }, 0)).toEqual({ ok: false, motivo: 'rede' });
     expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'responsável' });
+    // A mensagem não decide: código do banco com "failed" no texto continua recusa.
+    expect(motivo({ code: '22023', message: 'validation failed' }, 400)).toBe('recusado');
+    expect(motivo({ code: 'PGRST301' }, 401)).toBe('sessao');
+    expect(motivo({ code: 'PGRST303' }, 401)).toBe('sessao');
+    expect(motivo({ message: 'Invalid authentication credentials' }, 401)).toBe('sessao');
+    expect(motivo({ code: '57014' }, 500)).toBe('rede');
+    expect(motivo({ code: '40P01' }, 500)).toBe('rede');
+    expect(motivo({ message: 'rate limit' }, 429)).toBe('rede');
+    expect(motivoDoErro({ message: 'Request size limit exceeded' }, 413)).toEqual({ ok: false, motivo: 'recusado', mensagem: 'o fluxo ficou grande demais pra salvar' });
+    expect(mesmoJson({ a: 1, b: [1, { c: 2 }] }, { b: [1, { c: 2 }], a: 1, d: undefined })).toBe(true);
+    expect(mesmoJson({ a: 1 }, { a: 2 })).toBe(false);
+    expect(mesmoJson([1], { 0: 1 })).toBe(false);
     const c = { revisao: 3, documento: doc('a'), estilo: ESTILO_PADRAO };
     expect(copiaValida(c, 3)).toBe(c);
     expect(copiaValida(c, 4)).toBeNull();
@@ -1502,10 +1656,14 @@ describe('editor/cadastros', () => {
     expect(tipoSugerido('Comercial', 'decisao', TIPOS)).toBe('horario');
     expect(tipoSugerido('Maria', 'atendimento', TIPOS)).toBe('pessoa');
     expect(tipoSugerido('Maria', 'atendimento', [{ chave: 'loja', nome: 'Loja' }])).toBe('loja');
+    // Palavra inteira: "Filadelfo" e "Timeout" não são fila nem equipe.
+    expect(tipoSugerido('Filadelfo Souza', 'atendimento', TIPOS)).toBe('pessoa');
+    expect(tipoSugerido('Timeout do gateway', 'sistema', TIPOS)).toBe('sistema');
   });
 
   it('busca: começa com antes de contém; nome igual sem caixa nem espaços', () => {
     expect(buscar(K, 'cob').map((k) => k.id)).toEqual(['3', '1']);
+    expect(buscar(K, 'cobranca').map((k) => k.id)).toEqual(['3', '1']);
     expect(buscar(K, '').map((k) => k.id)).toEqual(['1', '2', '3']);
     expect(comNome(K, '  fila cobrança ')?.id).toBe('1');
     expect(comNome(K, 'Fila')).toBeUndefined();
@@ -1521,7 +1679,7 @@ describe('editor/cadastros', () => {
 - [ ] **Passo 2: rodar e ver falhar**
 
 Run: `cd apps/web && npx vitest run test/editor`
-Expected: FAIL nos dois arquivos novos; os 36 anteriores passam.
+Expected: FAIL nos dois arquivos novos; os 38 anteriores passam.
 
 - [ ] **Passo 3: o salvamento**
 
@@ -1534,42 +1692,61 @@ import type { Estilo } from './estilo';
 /** O que o banco respondeu a um salvamento. */
 export type Resposta =
   | { ok: true; revisao: number }
-  /** conflito: outra pessoa salvou no meio (40001); trava: outra pessoa pegou a trava (P0001); rede: não chegou. */
-  | { ok: false; motivo: 'conflito' | 'trava' | 'rede' | 'recusado'; mensagem?: string };
+  /**
+   * conflito: outra pessoa salvou no meio (40001); trava: outra pessoa pegou a trava (P0001); rede: não chegou ou
+   * deu um erro passageiro (tenta de novo); sessao: o login venceu (tenta de novo até a pessoa entrar outra vez).
+   */
+  | { ok: false; motivo: 'conflito' | 'trava' | 'rede' | 'sessao' | 'recusado'; mensagem?: string };
 
-export type Situacao = 'salvo' | 'esperando' | 'salvando' | 'sem_rede' | 'conflito' | 'sem_trava' | 'recusado';
+export type Situacao = 'salvo' | 'esperando' | 'salvando' | 'sem_rede' | 'sem_sessao' | 'conflito' | 'sem_trava' | 'recusado';
 
-/** O que fica no navegador quando o salvamento não chega: o documento e a revisão de onde ele partiu. */
+/** O que fica no navegador enquanto uma mudança não chegou no banco: o documento e a revisão de onde ele partiu. */
 export interface CopiaLocal {
   revisao: number;
   documento: Documento;
   estilo: Estilo;
 }
 
+/** O que o banco tem agora (pra saber se um envio que ficou sem resposta chegou). */
+export interface NoBanco {
+  revisao: number;
+  documento: unknown;
+  estilo: unknown;
+}
+
 export interface OpcoesSalvamento {
   revisao: number;
-  enviar: (revisao: number, documento: Documento, estilo: Estilo) => Promise<Resposta>;
+  /** Manda pro banco. `sinal` aborta quando passa do `limite`. */
+  enviar: (revisao: number, documento: Documento, estilo: Estilo, sinal: AbortSignal) => Promise<Resposta>;
+  /** Lê a revisão, o documento e o estilo do banco; sem isso, um conflito depois de falta de rede para tudo. */
+  ler?: () => Promise<NoBanco | null>;
   aoMudar: (s: Situacao, mensagem?: string) => void;
   guardar: (copia: CopiaLocal | null) => void;
   /** Quanto espera depois da última mudança (padrão 500 ms). */
   espera?: number;
+  /** Quanto espera a resposta de um envio antes de desistir dele (padrão 20 s). */
+  limite?: number;
 }
 
 /** Espera entre tentativas sem rede: 2 s, 4 s, 8 s… até 30 s. */
 export const proximaTentativa = (n: number): number => Math.min(30_000, 2000 * 2 ** n);
 
+type Versao = { documento: Documento; estilo: Estilo };
+
 /**
  * Salvamento automático: espera a pessoa parar de mexer, manda o documento inteiro com a revisão que tem e,
- * se mudou de novo enquanto mandava, manda outra vez. Um envio por vez. Sem rede, guarda no navegador e
- * tenta de novo; conflito, trava perdida ou recusa param tudo (a tela explica e pede pra recarregar).
+ * se mudou de novo enquanto mandava, manda outra vez. Um envio por vez, e a cópia fica no navegador até o banco
+ * confirmar. Sem rede (ou sessão vencida), tenta de novo; conflito, trava perdida ou recusa param (a tela explica).
  */
 export class Salvamento {
   revisao: number;
-  private pendente: { documento: Documento; estilo: Estilo } | null = null;
-  private enviando = false;
+  private pendente: Versao | null = null;
+  private voo: Promise<boolean> | null = null;
   private parado = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private tentativas = 0;
+  /** Versões mandadas desde a última confirmação que ficaram sem resposta: podem ter chegado (ver `conferir`). */
+  private semResposta: Versao[] = [];
   private readonly o: OpcoesSalvamento;
 
   constructor(o: OpcoesSalvamento) {
@@ -1579,26 +1756,40 @@ export class Salvamento {
 
   /** Tem mudança que ainda não chegou no banco? */
   get sujo(): boolean {
-    return this.pendente !== null || this.enviando;
+    return this.pendente !== null || this.voo !== null;
   }
 
   mudou(documento: Documento, estilo: Estilo): void {
-    if (this.parado) return;
     this.pendente = { documento, estilo };
-    this.o.aoMudar('esperando');
+    // Parado, a mudança fica na fila (sem barulho na tela) e vai se alguém chamar `retomar`.
+    if (this.parado) return;
+    if (!this.voo) this.o.aoMudar('esperando');
     this.agendar(this.o.espera ?? 500);
   }
 
-  /** Manda já o que estiver pendente (ao sair da página, por exemplo). */
+  /** Manda já o que estiver pendente e espera tudo chegar (ou falhar). Ao sair da página, por exemplo. */
   async agora(): Promise<void> {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
-    await this.enviar();
+    while (!this.parado && (this.voo || this.pendente)) {
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+      if (!(await (this.voo ?? this.enviar()))) return;
+    }
   }
 
+  /** Para de mandar. O que estiver no ar termina, mas não agenda mais nada. */
   parar(): void {
     this.parado = true;
     if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  /** Volta a mandar depois de um `parar` (por exemplo, apagar o fluxo deu errado). */
+  retomar(): void {
+    this.parado = false;
+    if (this.pendente) {
+      this.o.aoMudar('esperando');
+      this.agendar(0);
+    } else if (!this.voo) this.o.aoMudar('salvo');
   }
 
   private agendar(ms: number): void {
@@ -1609,50 +1800,121 @@ export class Salvamento {
     }, ms);
   }
 
-  private async enviar(): Promise<void> {
-    if (this.parado || this.enviando || !this.pendente) return;
-    const atual = this.pendente;
+  private enviar(): Promise<boolean> {
+    if (this.voo) return this.voo;
+    if (this.parado || !this.pendente) return Promise.resolve(true);
+    this.voo = this.mandar().finally(() => (this.voo = null));
+    return this.voo;
+  }
+
+  /** Um envio. Devolve se chegou. */
+  private async mandar(): Promise<boolean> {
+    const atual = this.pendente!;
     this.pendente = null;
-    this.enviando = true;
     this.o.aoMudar('salvando');
-    let r: Resposta;
-    try {
-      r = await this.o.enviar(this.revisao, atual.documento, atual.estilo);
-    } catch {
-      r = { ok: false, motivo: 'rede' };
-    }
-    this.enviando = false;
+    // Enquanto o banco não confirma, a cópia fica no navegador (aba fechada ou pedido que nunca volta).
+    this.o.guardar({ revisao: this.revisao, ...atual });
+    let r = await this.tentar(atual);
+    if (!r.ok && r.motivo === 'conflito') r = await this.conferir(atual, r);
     if (r.ok) {
       this.revisao = r.revisao;
       this.tentativas = 0;
+      this.semResposta = [];
+      if (!this.pendente) this.o.guardar(null);
+      if (this.parado) return true;
       if (this.pendente) {
         this.o.aoMudar('esperando');
         this.agendar(0);
-      } else {
-        this.o.guardar(null);
-        this.o.aoMudar('salvo');
-      }
-      return;
+      } else this.o.aoMudar('salvo');
+      return true;
     }
-    // O que não chegou volta pra fila (a não ser que já tenha coisa mais nova) e fica guardado no navegador.
+    // O que não chegou volta pra fila (a não ser que já tenha coisa mais nova).
     this.pendente ??= atual;
-    this.o.guardar({ revisao: this.revisao, ...this.pendente });
-    if (r.motivo === 'rede') {
-      this.o.aoMudar('sem_rede');
+    if (r.motivo === 'recusado') {
+      // Uma cópia recusada voltaria a cada vez que o fluxo abrisse e seria recusada de novo: não fica.
+      this.o.guardar(null);
+    } else this.o.guardar({ revisao: this.revisao, ...this.pendente });
+    if (this.parado) return false;
+    if (r.motivo === 'rede' || r.motivo === 'sessao') {
+      this.o.aoMudar(r.motivo === 'rede' ? 'sem_rede' : 'sem_sessao');
       this.agendar(proximaTentativa(this.tentativas++));
-      return;
+      return false;
     }
     this.parar();
     this.o.aoMudar(r.motivo === 'conflito' ? 'conflito' : r.motivo === 'trava' ? 'sem_trava' : 'recusado', r.mensagem);
+    return false;
+  }
+
+  /** Manda, desistindo depois do `limite`. Exceção ou tempo esgotado é rede (e o envio pode ter chegado). */
+  private async tentar(v: Versao): Promise<Resposta> {
+    const ctl = new AbortController();
+    let relogio: ReturnType<typeof setTimeout> | undefined;
+    const esgotou = new Promise<Resposta>((resolve) => {
+      relogio = setTimeout(() => {
+        ctl.abort();
+        resolve({ ok: false, motivo: 'rede' });
+      }, this.o.limite ?? 20_000);
+    });
+    let r: Resposta;
+    try {
+      r = await Promise.race([this.o.enviar(this.revisao, v.documento, v.estilo, ctl.signal), esgotou]);
+    } catch {
+      r = { ok: false, motivo: 'rede' };
+    } finally {
+      clearTimeout(relogio);
+    }
+    if (!r.ok && r.motivo === 'rede') this.semResposta = [...this.semResposta.slice(-19), v];
+    return r;
+  }
+
+  /**
+   * Conflito depois de um envio sem resposta pode ser o próprio envio, que chegou: o banco está uma revisão à frente
+   * com uma das versões daqui. Aí não é conflito: segue dessa revisão (e manda de novo só se ainda falta algo).
+   */
+  private async conferir(atual: Versao, conflito: Resposta): Promise<Resposta> {
+    if (!this.semResposta.length || !this.o.ler) return conflito;
+    let b: NoBanco | null = null;
+    try {
+      b = await this.o.ler();
+    } catch {
+      // Sem conseguir ler, fica o conflito.
+    }
+    const igual = (v: Versao) => b !== null && mesmoJson(b.documento, v.documento) && mesmoJson(b.estilo, v.estilo);
+    if (!b || b.revisao !== this.revisao + 1 || !this.semResposta.some(igual)) return conflito;
+    if (!igual(atual)) this.pendente ??= atual;
+    return { ok: true, revisao: b.revisao };
   }
 }
 
-/** Erro do Postgres → motivo. 40001: revisão velha; P0001: trava de outra pessoa. */
-export function motivoDoErro(e: { code?: string; message?: string } | null | undefined): Resposta {
+/** Compara dois valores JSON sem ligar pra ordem das chaves (o jsonb do banco reordena). */
+export function mesmoJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const lb = b as unknown[];
+    return a.length === lb.length && a.every((x, i) => mesmoJson(x, lb[i]));
+  }
+  const oa = a as Record<string, unknown>;
+  const ob = b as Record<string, unknown>;
+  const ka = Object.keys(oa).filter((k) => oa[k] !== undefined);
+  const kb = Object.keys(ob).filter((k) => ob[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => Object.hasOwn(ob, k) && mesmoJson(oa[k], ob[k]));
+}
+
+/**
+ * Erro do salvar_fluxo → motivo. 40001: revisão velha; P0001: trava de outra pessoa; login vencido ou inválido
+ * (PGRST301/PGRST303/401): sessão; erro passageiro do banco ou do caminho (sem código, 5xx, 429, cancelado,
+ * deadlock, tempo do comando): rede; o resto (o banco disse não): recusado.
+ */
+export function motivoDoErro(e: { code?: string; message?: string } | null | undefined, status?: number): Resposta {
   if (!e) return { ok: false, motivo: 'rede' };
-  if (e.code === '40001') return { ok: false, motivo: 'conflito' };
-  if (e.code === 'P0001') return { ok: false, motivo: 'trava' };
-  if (!e.code || e.code === 'PGRST301' || /fetch|network|Failed/i.test(e.message ?? '')) return { ok: false, motivo: 'rede' };
+  const c = e.code ?? '';
+  if (c === '40001') return { ok: false, motivo: 'conflito' };
+  if (c === 'P0001') return { ok: false, motivo: 'trava' };
+  if (c === 'PGRST301' || c === 'PGRST303' || status === 401) return { ok: false, motivo: 'sessao' };
+  if (c === '57014' || c === '40P01' || /^(08|53)/.test(c) || status === 429 || (status !== undefined && status >= 500)) return { ok: false, motivo: 'rede' };
+  if (!c && status === 413) return { ok: false, motivo: 'recusado', mensagem: 'o fluxo ficou grande demais pra salvar' };
+  if (!c && !(status !== undefined && status >= 400)) return { ok: false, motivo: 'rede' };
   return { ok: false, motivo: 'recusado', mensagem: e.message };
 }
 
@@ -1680,6 +1942,9 @@ export interface TipoCadastro {
 /** Comparar nomes como o banco compara (índice único em lower(btrim(nome))). */
 export const nomeNormalizado = (nome: string): string => nome.trim().toLowerCase();
 
+/** Pra busca: sem caixa e sem acento ("cobranca" acha "Fila Cobrança"). */
+const paraBusca = (s: string): string => nomeNormalizado(s).normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
 /** O Horário que nasce do uso: segunda a sexta, 8h às 18h, sem feriado. Dá pra mudar na tela de Cadastros. */
 export const HORARIO_PADRAO: CamposHorario = { janelas: [{ dias: ['seg', 'ter', 'qua', 'qui', 'sex'], inicio: '08:00', fim: '18:00' }], feriados: [] };
 
@@ -1688,13 +1953,14 @@ export const HORARIO_PADRAO: CamposHorario = { janelas: [{ dias: ['seg', 'ter', 
  * "Horário …" é horário, peça Sistema é sistema; o resto é pessoa (o tipo dá pra trocar antes de criar).
  */
 export function tipoSugerido(nome: string, tipoPeca: TipoPeca, tipos: readonly TipoCadastro[]): string {
-  const n = nomeNormalizado(nome);
+  const n = paraBusca(nome);
   const tem = (k: string) => tipos.some((t) => t.chave === k);
-  const escolha = n.startsWith('fila')
+  // Palavra inteira: "Filadelfo" não é fila, "Timeout" não é equipe.
+  const escolha = /^fila\b/.test(n)
     ? 'fila'
-    : n.startsWith('equipe') || n.startsWith('time')
+    : /^(equipe|time)\b/.test(n)
       ? 'equipe'
-      : n.includes('horário') || n.includes('horario')
+      : /\bhorario\b/.test(n)
         ? 'horario'
         : tipoPeca === 'sistema'
           ? 'sistema'
@@ -1704,12 +1970,12 @@ export function tipoSugerido(nome: string, tipoPeca: TipoPeca, tipos: readonly T
   return tem(escolha) ? escolha : (tipos[0]?.chave ?? 'pessoa');
 }
 
-/** Cadastros que batem com o que a pessoa escreveu (o nome começa ou contém), os que começam primeiro. */
+/** Cadastros que batem com o que a pessoa escreveu (o nome começa ou contém; sem acento), os que começam primeiro. */
 export function buscar(cadastros: readonly Cadastro[], termo: string, limite = 8): Cadastro[] {
-  const t = nomeNormalizado(termo);
+  const t = paraBusca(termo);
   if (!t) return cadastros.slice(0, limite);
-  const comeca = cadastros.filter((k) => nomeNormalizado(k.nome).startsWith(t));
-  const contem = cadastros.filter((k) => !nomeNormalizado(k.nome).startsWith(t) && nomeNormalizado(k.nome).includes(t));
+  const comeca = cadastros.filter((k) => paraBusca(k.nome).startsWith(t));
+  const contem = cadastros.filter((k) => !paraBusca(k.nome).startsWith(t) && paraBusca(k.nome).includes(t));
   return [...comeca, ...contem].slice(0, limite);
 }
 
@@ -1727,7 +1993,7 @@ export function usosNoDocumento(doc: Documento): Map<string, number> {
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  44 passed (44)`; `tsc` sem saída.
+Expected: `Tests  53 passed (53)`; `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -4031,7 +4297,7 @@ function PainelCadastros({ doc, cadastros, tipos, acoes }: PropsPainel) {
 import { formatarTempo, type Documento } from '@journey/fluxo';
 import { Icone } from '@/componentes/Icone';
 import { VELOCIDADES, type CanalEditor } from '@/editor/estilo';
-import { tituloDoFim, type Play, type Visual } from '@/editor/play';
+import { quandoValido, tituloDoFim, type Play, type Visual } from '@/editor/play';
 
 export interface AcoesPlay {
   escolher(conexao: string): void;
@@ -4130,7 +4396,7 @@ export function CartaoPlay({
         </div>
         <div className="numeros">
           <span>
-            <b>{visual.linha.length}</b>peças
+            <b>{new Set(visual.linha.map((l) => l.peca)).size}</b>peças
           </span>
           <span>
             <b>{formatarTempo(visual.relogio_s)}</b>pro cliente
@@ -4200,7 +4466,7 @@ export function CartaoPlay({
       <div className="quando">
         <label>
           Dia e hora
-          <input type="datetime-local" value={play.quando} onChange={(e) => e.target.value && acoes.quando(e.target.value)} />
+          <input type="datetime-local" value={play.quando} onChange={(e) => quandoValido(e.target.value) && acoes.quando(e.target.value)} />
         </label>
         <label>
           <input type="checkbox" checked={play.modo === 'relogio'} onChange={(e) => acoes.relogio(e.target.checked)} />o relógio decide os horários
@@ -4687,12 +4953,17 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const salv = useRef<Salvamento | null>(null);
   salv.current ??= new Salvamento({
     revisao: fluxo.revisao,
-    enviar: async (revisao, documento, est) => {
+    enviar: async (revisao, documento, est, sinal) => {
       // O banco só confere a forma: um documento que o lerDocumento recusa salvaria e depois não abriria mais.
       const lido = lerDocumento(documento);
       if (!lido.documento) return { ok: false, motivo: 'recusado', mensagem: lido.problemas.map((p) => p.mensagem).join(' ') };
-      const r = await supabase.rpc('salvar_fluxo', { p_fluxo: fluxo.id, p_revisao: revisao, p_documento: documento, p_estilo: est });
-      return r.error ? motivoDoErro(r.error) : { ok: true, revisao: r.data as number };
+      const r = await supabase.rpc('salvar_fluxo', { p_fluxo: fluxo.id, p_revisao: revisao, p_documento: documento, p_estilo: est }).abortSignal(sinal);
+      return r.error ? motivoDoErro(r.error, r.status) : { ok: true, revisao: r.data as number };
+    },
+    // Pra saber se um envio que ficou sem resposta chegou (senão o próximo daria um falso conflito).
+    ler: async () => {
+      const r = await supabase.from('fluxos').select('revisao, documento, estilo').eq('id', fluxo.id).maybeSingle();
+      return r.data;
     },
     aoMudar: (s, mensagem) => setSituacao({ s, ...(mensagem && { mensagem }) }),
     guardar: (copia) => {
@@ -4751,6 +5022,8 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       clearInterval(intervalo);
       removeEventListener('pagehide', soltar);
       removeEventListener('beforeunload', antesDeSair);
+      // Saindo pra outra tela: espera o que falta chegar e solta a trava. Sem `parar`: no modo estrito do React a
+      // limpeza roda uma vez ao montar, e sem rede o salvamento segue tentando (a cópia está no navegador).
       void salv.current?.agora().finally(soltar);
     };
     // Uma vez por fluxo aberto.
@@ -4929,11 +5202,11 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
 
   const voltar = () => {
     if (!play) return;
-    if (!play.escolhas.length) {
+    if (!(exec?.escolhas ?? play.escolhas).length) {
       setPlay({ ...play });
       return setMostrados(0);
     }
-    const p = voltarPlay(play);
+    const p = voltarPlay(play, exec?.escolhas);
     setPlay(p);
     setMostrados(rodar(docPlay, ctx, p).eventos.length);
     setPausado(false);
@@ -5059,6 +5332,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     esperando: 'salvando…',
     salvando: 'salvando…',
     sem_rede: 'sem conexão: guardado neste navegador, tentando de novo',
+    sem_sessao: 'o login venceu: entre de novo (em outra aba) pra salvar; está guardado neste navegador',
     conflito: 'não salvo',
     sem_trava: 'não salvo',
     recusado: 'não salvo',
@@ -5230,7 +5504,10 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             apagarFluxo: async () => {
               salv.current!.parar();
               const r = await apagarFluxo(empresaId, fluxo.id);
-              if (r.erro) return avisar(r.erro);
+              if (r.erro) {
+                salv.current!.retomar();
+                return avisar(r.erro);
+              }
               router.push(`/e/${empresaId}`);
             },
             criarCadastro: criarUmCadastro,
@@ -5552,7 +5829,7 @@ export function Nav({ empresaId }: { empresaId: string }) {
 - [ ] **Passo 8: rodar e ver passar**
 
 Run: `npm run typecheck && npm test -w apps/web && npm run e2e -- e2e/editor.spec.ts e2e/fluxos.spec.ts e2e/membros.spec.ts e2e/aceitacao.spec.ts --trace=off`
-Expected: `tsc` sem saída; app `Tests  245 passed (245)` (com o Supabase no ar); os 6 de ponta a ponta passando.
+Expected: `tsc` sem saída; app `Tests  254 passed (254)` (com o Supabase no ar); os 6 de ponta a ponta passando.
 
 - [ ] **Passo 9: commit**
 
@@ -5989,7 +6266,7 @@ index 78941d5..beaddec 100644
 - [ ] **Passo 2: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes && npm run build && npm run e2e -- --trace=off`
-Expected: fluxo 78, núcleo 253, app 245; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
+Expected: fluxo 78, núcleo 253, app 254; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
 
 - [ ] **Passo 3: commit e push**
 
