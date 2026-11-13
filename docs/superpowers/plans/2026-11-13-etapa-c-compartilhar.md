@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa B) mesclada. Este plano, o código e o PR da etapa C saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch, e cada parte passou por uma revisão independente antes de virar plano: `@journey/fluxo` 84 testes (eram 78), núcleo 253, app 186 (eram 258: a v1 sai), pgTAP 168 (eram 136), ponta a ponta 15 (eram 30 + 1 pulado: os da v1 saem), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch, e cada parte passou por uma revisão independente antes de virar plano: `@journey/fluxo` 84 testes (eram 78), núcleo 253, app 188 (eram 258: a v1 sai), pgTAP 168 (eram 136), ponta a ponta 17 (eram 30 + 1 pulado: os da v1 saem), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Migração nova:** `20261115000000_journey_v2_compartilhar.sql`. Ela apaga tabelas da v1 e para (`raise exception`) se a v1 tiver dados ou se o bucket `imports` tiver arquivos. No banco local a v1 tem sobras de testes antigos: a tarefa 2 explica como passar por isso sem apagar nada à mão.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`), com `SUPABASE_SECRET_KEY` pros testes do link público.
 - **Commits:** `.git/atribuicao.txt` tem as duas linhas de atribuição da sessão. Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -41,7 +41,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **O play num hook (`usePlay`)** usado pelo editor e pelo link | A página do link toca o mesmo play sem carregar trava, salvamento e painel | Duplicar a máquina do play |
 | **Listas do editor (intencionais, cenários, versões, links) no estado do editor**, atualizadas pelo que cada ação devolve; sem `revalidatePath` | Revalidar releria o documento inteiro à toa | Revalidar a página a cada ação |
 | **Confirmação no lugar** (o "Não …" primeiro e com o foco; clique duplo não confirma) em revogar, apagar cenário e restaurar | O botão de confirmar aparecia onde estava o primeiro: um clique duplo revogava o link pra sempre | `window.confirm` |
-| **A página de entrar redesenhada** (mesma forma de entrar: link por e-mail com PKCE e Google opcional), com uma prévia animada do quadro em SVG próprio | Pedido do Bruno; a prévia não carrega o editor nem o `@journey/fluxo` | Importar o editor pra prévia |
+| **A página de entrar redesenhada** (mesma forma de entrar: link por e-mail com PKCE e Google opcional), com uma prévia animada do quadro em SVG próprio que pausa fora da tela e para depois de três voltas; o botão só liga depois de hidratar (o e-mail nunca vai pra URL); o limite de envio do Supabase vira mensagem em português com espera de 30 s | Pedido do Bruno; a prévia não carrega o editor nem o `@journey/fluxo` e não gasta a página o tempo todo | Importar o editor pra prévia; animação infinita |
 
 **Gotchas que o ensaio achou:**
 - **Banco local compartilhado:** a migração já aplicada não se reaplica com `migration up`; mudar o arquivo depois exige alinhar o banco local com DDL avulso (nunca `db reset` num banco que outros usam).
@@ -7421,18 +7421,40 @@ git commit -m "link público: o quadro só leitura, o play do cenário inicial e
 ### Tarefa 9: a página de entrar
 
 **Arquivos:**
-- Modificar: `apps/web/e2e/entrar.spec.ts`
+- Modificar: `apps/web/e2e/entrar.spec.ts`, `apps/web/e2e/apoio.ts`
 - Substituir: `apps/web/src/app/entrar/page.tsx`, `apps/web/src/app/entrar/formulario.tsx`
-- Criar: `apps/web/src/app/entrar/previa.tsx`, `apps/web/src/app/entrar/entrar.css`
+- Criar: `apps/web/src/app/entrar/{mensagens.ts,animacao.tsx,previa.tsx,entrar.css}`, `apps/web/test/app/entrar.test.ts`
 
 - [ ] **Passo 1: os testes**
 
+`apps/web/test/app/entrar.test.ts` (o erro do Supabase em português, sem ler o texto em inglês):
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { mensagemDoErro } from '@/app/entrar/mensagens';
+
+describe('entrar: o erro ao pedir o link', () => {
+  it('limite do Supabase (429 ou o código): em português, e o "enviado" continua valendo', () => {
+    const limite = { texto: 'Já mandamos um link há pouco. Espera um minuto e manda de novo.', limite: true };
+    expect(mensagemDoErro({ status: 429, message: 'For security purposes, you can only request this after 58 seconds.' })).toEqual(limite);
+    expect(mensagemDoErro({ code: 'over_email_send_rate_limit', message: 'email rate limit exceeded' })).toEqual(limite);
+  });
+
+  it('e-mail inválido e o resto: em português, sem o texto em inglês', () => {
+    expect(mensagemDoErro({ status: 400, code: 'email_address_invalid', message: 'Email address "x" is invalid' })).toEqual({ texto: 'Confere o e-mail: ele não parece certo.', limite: false });
+    expect(mensagemDoErro({ status: 500, message: 'Error sending magic link email' })).toEqual({ texto: 'Não deu pra mandar o link agora. Tenta de novo em instantes.', limite: false });
+  });
+});
+```
+
+`apps/web/e2e/entrar.spec.ts`:
+
 ```diff
 diff --git a/apps/web/e2e/entrar.spec.ts b/apps/web/e2e/entrar.spec.ts
-index 89b3437..2c6cd25 100644
+index 89b3437..08bce8e 100644
 --- a/apps/web/e2e/entrar.spec.ts
 +++ b/apps/web/e2e/entrar.spec.ts
-@@ -11,3 +11,27 @@ test('quem entra pela primeira vez cai em criar a empresa', async ({ page, reque
+@@ -11,3 +11,52 @@ test('quem entra pela primeira vez cai em criar a empresa', async ({ page, reque
    await expect(page).toHaveURL(/\/empresa\/nova$/);
    await expect(page.getByRole('heading', { name: 'Tua empresa' })).toBeVisible();
  });
@@ -7444,11 +7466,14 @@ index 89b3437..2c6cd25 100644
 +  await expect(page.getByRole('heading', { name: 'Desenha o fluxo e dá play.' })).toBeVisible();
 +  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 +  const email = emailNovo('celular');
++  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
 +  await page.getByLabel('E-mail').fill(email);
 +  await page.getByRole('button', { name: 'Receber o link' }).click();
 +  await expect(page.getByRole('status')).toContainText(`Link enviado para ${email}`);
 +  // O e-mail fica no campo, pra conferir (e mandar de novo, se precisar).
 +  await expect(page.getByLabel('E-mail')).toHaveValue(email);
++  // Logo depois, o botão espera (o Supabase recusa outro pedido em menos de um minuto) e diz quanto falta.
++  await expect(page.getByRole('button', { name: /Mandar de novo em \d+ s/ })).toHaveAttribute('aria-disabled', 'true');
 +  await page.getByRole('button', { name: 'Usar outro e-mail' }).click();
 +  await expect(page.getByLabel('E-mail')).toHaveValue('');
 +  await expect(page.getByLabel('E-mail')).toBeFocused();
@@ -7460,14 +7485,83 @@ index 89b3437..2c6cd25 100644
 +  await expect(page.getByRole('alert').filter({ hasText: 'O link expirou ou já foi usado' })).toBeVisible();
 +  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
 +});
++
++test('antes de a página ficar pronta, o Enter não manda o e-mail pela URL', async ({ browser }) => {
++  // Sem JavaScript é a janela de antes da hidratação, esticada: o botão vem desligado do servidor.
++  const ctx = await browser.newContext({ javaScriptEnabled: false });
++  const page = await ctx.newPage();
++  await page.goto('/entrar?erro=link');
++  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeDisabled();
++  await page.getByLabel('E-mail').fill('alguem@exemplo.com');
++  await page.getByLabel('E-mail').press('Enter');
++  await page.waitForLoadState('load');
++  expect(page.url()).not.toContain('alguem');
++  await ctx.close();
++});
++
++test('movimento reduzido: a prévia é decorativa e fica parada', async ({ browser }) => {
++  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } });
++  const page = await ctx.newPage();
++  await page.goto('/entrar');
++  await expect(page.locator('.previa[aria-hidden="true"]')).toBeVisible();
++  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
++  await ctx.close();
++});
+```
+
+`apps/web/e2e/apoio.ts` (o `entrar()` espera o botão ligar: ele só liga depois de a página hidratar):
+
+```diff
+diff --git a/apps/web/e2e/apoio.ts b/apps/web/e2e/apoio.ts
+index e74451a..108e17b 100644
+--- a/apps/web/e2e/apoio.ts
++++ b/apps/web/e2e/apoio.ts
+@@ -5,6 +5,8 @@ const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:54324';
+ /** Entra pelo link mágico: pede o link na tela e abre o que chegou no Mailpit do Supabase local. */
+ export async function entrar(page: Page, request: APIRequestContext, email: string) {
+   await page.goto('/entrar');
++  // O botão só liga depois que a página fica pronta (antes, o Enter mandaria o formulário pelo navegador).
++  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
+   await page.getByLabel('E-mail').fill(email);
+   await page.getByRole('button', { name: 'Receber o link' }).click();
+   await expect(page.getByRole('status')).toContainText('Link enviado');
 ```
 
 - [ ] **Passo 2: rodar e ver falhar**
 
-Run: `cd apps/web && npx playwright test e2e/entrar.spec.ts --trace=off`
-Expected: FAIL nos casos novos ("Link enviado para …", "Usar outro e-mail", sem rolagem lateral em 390 px).
+Run: `cd apps/web && npx vitest run test/app/entrar.test.ts; npx playwright test e2e/entrar.spec.ts --trace=off`
+Expected: FAIL, `Failed to resolve import "@/app/entrar/mensagens"`; na ponta a ponta, os casos novos ("Link enviado para …", a espera do reenvio, o envio antes da hidratação, a prévia parada com movimento reduzido, sem rolagem lateral em 390 px).
 
-- [ ] **Passo 3: a página**
+- [ ] **Passo 3: as mensagens**
+
+`apps/web/src/app/entrar/mensagens.ts`:
+
+```ts
+/** O erro do Supabase ao pedir o link, como chega no navegador: o status HTTP e o código, quando há. */
+export interface ErroDoLink {
+  status?: number;
+  code?: string;
+  message: string;
+}
+
+/** Quanto o botão espera depois de mandar (o Supabase recusa outro pedido pro mesmo e-mail por 60 s). */
+export const ESPERA_REENVIO_S = 30;
+/** Depois de uma recusa por limite, o tempo inteiro do Supabase. */
+export const ESPERA_LIMITE_S = 60;
+
+/**
+ * O texto pra pessoa, em português, pelo código e pelo status (nunca pelo texto, que é em inglês e muda). `limite`:
+ * o pedido foi recusado por ter vindo cedo demais; o aviso de "enviado" continua valendo.
+ */
+export function mensagemDoErro(e: ErroDoLink): { texto: string; limite: boolean } {
+  if (e.status === 429 || e.code === 'over_email_send_rate_limit' || e.code === 'over_request_rate_limit')
+    return { texto: 'Já mandamos um link há pouco. Espera um minuto e manda de novo.', limite: true };
+  if (e.code === 'email_address_invalid' || e.code === 'validation_failed') return { texto: 'Confere o e-mail: ele não parece certo.', limite: false };
+  return { texto: 'Não deu pra mandar o link agora. Tenta de novo em instantes.', limite: false };
+}
+```
+
+- [ ] **Passo 4: a página**
 
 `apps/web/src/app/entrar/page.tsx`:
 
@@ -7496,12 +7590,8 @@ export default async function Entrar({ searchParams }: { searchParams: Promise<{
             quando o canal muda, para nas decisões e mostra quanto tempo o cliente levou.
           </p>
         </div>
-        {erro === 'link' && (
-          <p className="aviso-caixa erro" role="alert">
-            O link expirou ou já foi usado. Pede outro.
-          </p>
-        )}
-        <FormularioEntrar google={process.env.NEXT_PUBLIC_LOGIN_GOOGLE === 'sim'} />
+        {/* O aviso do link vencido fica no formulário: some quando a pessoa pede outro. */}
+        <FormularioEntrar google={process.env.NEXT_PUBLIC_LOGIN_GOOGLE === 'sim'} linkVencido={erro === 'link'} />
       </div>
       <PreviaFluxo />
     </main>
@@ -7514,80 +7604,122 @@ export default async function Entrar({ searchParams }: { searchParams: Promise<{
 ```tsx
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabaseNavegador } from '@/lib/supabase/navegador';
+import { ESPERA_LIMITE_S, ESPERA_REENVIO_S, mensagemDoErro } from './mensagens';
 
 /**
  * O pedido do link sai do navegador: o código do PKCE fica num cookie deste navegador,
  * e o /auth/callback troca o código pela sessão. Pedido pelo servidor, o cookie não chega aqui.
  */
-export function FormularioEntrar({ google }: { google: boolean }) {
-  const [estado, setEstado] = useState<'livre' | 'enviando' | { enviado: string } | { erro: string }>('livre');
-  // Controlado: o e-mail continua no campo depois de enviar (a ação do formulário limparia um campo solto).
+export function FormularioEntrar({ google, linkVencido }: { google: boolean; linkVencido: boolean }) {
+  // Antes de o React assumir a página, o botão fica desligado: um Enter ali mandaria o formulário pelo navegador
+  // (pra URL). Com o botão de envio desligado, o navegador não manda nem pelo Enter.
+  const [pronto, setPronto] = useState(false);
+  useEffect(() => setPronto(true), []);
+  // Controlado e sem `name`: o e-mail continua no campo depois de enviar, e nunca vai pra URL.
   const [email, setEmail] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [enviadoPara, setEnviadoPara] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(linkVencido ? 'O link expirou ou já foi usado. Pede outro.' : null);
+  // Até quando (relógio daqui) o botão espera pra mandar de novo pro mesmo e-mail.
+  const [esperaAte, setEsperaAte] = useState(0);
+  const [agora, setAgora] = useState(0);
   const campo = useRef<HTMLInputElement>(null);
   const destino = () => `${window.location.origin}/auth/callback`;
 
+  // O relógio da espera anda de segundo em segundo, só enquanto há espera.
+  useEffect(() => {
+    if (!esperaAte) return;
+    setAgora(Date.now());
+    const t = setInterval(() => {
+      const n = Date.now();
+      setAgora(n);
+      if (n >= esperaAte) {
+        setEsperaAte(0);
+        clearInterval(t);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [esperaAte]);
+
+  const para = email.trim();
+  const mesmoEmail = enviadoPara !== null && para.toLowerCase() === enviadoPara.toLowerCase();
+  const faltam = mesmoEmail && esperaAte > agora ? Math.ceil((esperaAte - agora) / 1000) : 0;
+  // aria-disabled, e não disabled: o botão continua com o foco (o leitor de tela não perde onde estava).
+  const ocupado = enviando || faltam > 0;
+
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    const para = email.trim();
-    setEstado('enviando');
+    if (ocupado || !para) return;
+    setEnviando(true);
+    setErro(null);
     const { error } = await supabaseNavegador().auth.signInWithOtp({ email: para, options: { emailRedirectTo: destino() } });
-    setEstado(error ? { erro: error.message } : { enviado: para });
+    setEnviando(false);
+    if (error) {
+      console.error('[entrar: link por e-mail]', error.status, error.code, error.message);
+      const m = mensagemDoErro(error);
+      setErro(m.texto);
+      // Cedo demais: o link de antes ainda vale, e o aviso de "enviado" fica.
+      if (m.limite) setEsperaAte(Date.now() + ESPERA_LIMITE_S * 1000);
+      return;
+    }
+    setEnviadoPara(para);
+    setEsperaAte(Date.now() + ESPERA_REENVIO_S * 1000);
   }
 
   // Dando certo, o navegador sai pro Google; só volta aqui com erro (provedor desligado, rede).
   async function comGoogle() {
-    setEstado('livre');
+    setErro(null);
     const { error } = await supabaseNavegador().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: destino() } });
     if (error) {
       console.error('[entrar com Google]', error.message);
-      setEstado({ erro: 'Não deu pra entrar com o Google agora. Tenta de novo ou recebe o link por e-mail.' });
+      setErro('Não deu pra entrar com o Google agora. Tenta de novo ou recebe o link por e-mail.');
     }
   }
-
-  const enviado = typeof estado === 'object' && 'enviado' in estado ? estado.enviado : null;
 
   return (
     <div className="form-entrar">
       <form onSubmit={enviar} className="form-entrar-email">
         <label className="campo">
           E-mail
-          <input ref={campo} name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input ref={campo} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
-        <button className="botao primario" type="submit" disabled={estado === 'enviando'}>
-          {estado === 'enviando' ? 'Enviando…' : enviado ? 'Mandar de novo' : 'Receber o link'}
+        <button className="botao primario" type="submit" disabled={!pronto} aria-disabled={ocupado || undefined}>
+          {enviando ? 'Enviando…' : !mesmoEmail ? 'Receber o link' : faltam ? `Mandar de novo em ${faltam} s` : 'Mandar de novo'}
         </button>
         <p className="dica-entrar">Sem senha: chega um link no teu e-mail, e é só abrir.</p>
       </form>
       {/* Montadas vazias: o leitor de tela anuncia o que entra numa região que já existia. */}
       <div role="status">
-        {enviado && (
-          <div className="aviso-caixa ok enviado">
-            <span>
-              Link enviado para <b>{enviado}</b>. Abre o e-mail e o link neste navegador.
-            </span>
-            <button
-              className="botao pequeno"
-              type="button"
-              onClick={() => {
-                setEmail('');
-                setEstado('livre');
-                campo.current?.focus();
-              }}
-            >
-              Usar outro e-mail
-            </button>
-          </div>
+        {enviadoPara && (
+          <p className="aviso-caixa ok enviado">
+            Link enviado para <b>{enviadoPara}</b>. Abre o e-mail e o link neste navegador.
+          </p>
         )}
       </div>
-      <div role="alert">{typeof estado === 'object' && 'erro' in estado && <p className="aviso-caixa erro">{estado.erro}</p>}</div>
+      {enviadoPara && (
+        <button
+          className="botao pequeno outro-email"
+          type="button"
+          onClick={() => {
+            setEmail('');
+            setEnviadoPara(null);
+            setErro(null);
+            setEsperaAte(0);
+            campo.current?.focus();
+          }}
+        >
+          Usar outro e-mail
+        </button>
+      )}
+      <div role="alert">{erro && <p className="aviso-caixa erro">{erro}</p>}</div>
       {google && (
         <>
           <div className="ou" aria-hidden="true">
             ou
           </div>
-          <button className="botao" type="button" onClick={comGoogle}>
+          <button className="botao" type="button" disabled={!pronto} onClick={comGoogle}>
             Entrar com Google
           </button>
         </>
@@ -7603,11 +7735,14 @@ export function FormularioEntrar({ google }: { google: boolean }) {
 /**
  * A prévia do quadro na página de entrar: um fluxo pequeno do protótipo (WhatsApp → decisão → e-mail), com a água
  * correndo pelos canos, parando na decisão e trocando de cor quando o fluxo troca de canal. Só SVG e CSS (entrar.css):
- * a página de entrar não carrega o editor nem o pacote do fluxo. Decorativa: fora do leitor de tela e do Tab. Com
- * movimento reduzido, a água fica parada, já no fim do caminho.
+ * a página de entrar não carrega o editor nem o pacote do fluxo (o único JavaScript é o `ControleDaAnimacao`, que pausa
+ * fora da tela e para depois de algumas voltas). Decorativa: fora do leitor de tela e do Tab. Com movimento reduzido, a
+ * água fica parada, já no fim do caminho.
  */
 
 // Os ícones das peças, os mesmos do protótipo (Icone.tsx), desenhados em 24×24.
+import { ControleDaAnimacao } from './animacao';
+
 const ICONES = {
   inicio: 'M8 5.2v13.6L19 12z',
   mensagem: 'M4 5h16v11H9.5L5 19.5V16H4z M8 9.5h8 M8 12.5h5',
@@ -7697,8 +7832,52 @@ export function PreviaFluxo() {
           </text>
         </g>
       </svg>
+      <ControleDaAnimacao />
     </div>
   );
+}
+```
+
+`apps/web/src/app/entrar/animacao.tsx` (pausa a prévia fora da tela ou com a aba escondida; para no quadro final depois de três voltas):
+
+```tsx
+'use client';
+
+import { useEffect, useRef } from 'react';
+
+/**
+ * Quem manda na animação da prévia (que é só CSS): pausa quando a aba some ou a prévia sai da tela (no celular ela
+ * fica embaixo do formulário, e a água não precisa correr enquanto a pessoa digita) e, quando as voltas acabam
+ * (`animation-iteration-count` no CSS), deixa o quadro final parado. Não desenha nada.
+ */
+export function ControleDaAnimacao() {
+  const marca = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const previa = marca.current?.parentElement;
+    if (!previa) return;
+    let visivel = document.visibilityState === 'visible';
+    let naTela = true;
+    const aplicar = () => previa.classList.toggle('pausada', !(visivel && naTela));
+    const io = new IntersectionObserver(([e]) => {
+      naTela = !!e?.isIntersecting;
+      aplicar();
+    });
+    io.observe(previa);
+    const mudouAba = () => {
+      visivel = document.visibilityState === 'visible';
+      aplicar();
+    };
+    // As animações têm todas a mesma duração e acabam juntas: a do primeiro cano avisa. Dali em diante, o quadro final.
+    const acabou = (e: AnimationEvent) => e.animationName === 'agua-a' && previa.classList.add('terminou');
+    document.addEventListener('visibilitychange', mudouAba);
+    previa.addEventListener('animationend', acabou);
+    return () => {
+      io.disconnect();
+      document.removeEventListener('visibilitychange', mudouAba);
+      previa.removeEventListener('animationend', acabou);
+    };
+  }, []);
+  return <span ref={marca} hidden />;
 }
 ```
 
@@ -7712,6 +7891,8 @@ export function PreviaFluxo() {
   --mail: #c98410;
   /* O texto em cima da água (a opção escolhida): claro no tema claro, escuro no escuro, onde a água é mais clara. */
   --na-agua: #ffffff;
+  /* O verde das formas cheias (o Início, a opção escolhida): mais escuro no claro, pro texto branco ter contraste. */
+  --wa-forte: #11804a;
   min-height: 100%;
   max-width: 1240px;
   margin: 0 auto;
@@ -7722,9 +7903,9 @@ export function PreviaFluxo() {
   align-items: center;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; }
+  :root:not([data-theme='light']) .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; --wa-forte: #2cc274; }
 }
-:root[data-theme='dark'] .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; }
+:root[data-theme='dark'] .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; --wa-forte: #2cc274; }
 
 .entrada .lado-form { display: grid; gap: 28px; align-content: center; }
 .entrada .chamada { display: grid; gap: 14px; }
@@ -7737,10 +7918,11 @@ export function PreviaFluxo() {
 .entrada .form-entrar > :not(:first-child):not(:empty) { margin-top: 12px; }
 .entrada .form-entrar .campo input { font-size: 15px; padding: 10px 12px; }
 .entrada .form-entrar .botao { padding: 10px 14px; font-size: 14px; }
-.entrada .dica-entrar { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+.entrada .dica-entrar { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.entrada .outro-email { align-self: flex-start; }
 .entrada .enviado { display: grid; gap: 10px; justify-items: start; line-height: 1.45; }
 .entrada .enviado b { word-break: break-all; }
-.entrada .ou { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
+.entrada .ou { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-2); }
 .entrada .ou::before, .entrada .ou::after { content: ''; height: 1px; background: var(--line); }
 
 /* A prévia: o palco do editor (pontos sobre o canvas) com um fluxo pequeno dentro. */
@@ -7754,7 +7936,7 @@ export function PreviaFluxo() {
 .previa .pv-placa { fill: var(--plate); }
 .previa .pv-corpo { fill: var(--node); stroke: var(--node-line); stroke-width: 1.4; }
 .previa .pv-tile { fill: var(--tile); }
-.previa .pv-tile.c-wa-cheio { fill: var(--wa); }
+.previa .pv-tile.c-wa-cheio { fill: var(--wa-forte); }
 .previa .pv-icone { fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .previa .pv-icone.cheio { fill: #fff; stroke: none; }
 .previa .pv-nivel { opacity: 0; }
@@ -7774,18 +7956,18 @@ export function PreviaFluxo() {
 
 /* O play, uma volta de 9 s: a água enche cano por cano, espera na decisão, escolhe "Protocolo", vira e-mail no
    protocolo (a cor muda), chega no fim e mostra o tempo; depois esvazia e recomeça. */
-.previa .agua-a { animation: agua-a 9s linear infinite; }
-.previa .agua-b { animation: agua-b 9s linear infinite; }
-.previa .agua-c { animation: agua-c 9s linear infinite; }
-.previa .agua-d { animation: agua-d 9s linear infinite; }
-.previa .molha-1 .pv-nivel { animation: molha-1 9s linear infinite; }
-.previa .molha-2 .pv-nivel { animation: molha-2 9s linear infinite; }
-.previa .molha-4 .pv-nivel { animation: molha-4 9s linear infinite; }
-.previa .molha-5 .pv-nivel { animation: molha-5 9s linear infinite; }
-.previa .pv-pulso { animation: pulso-pv 9s ease-out infinite; }
-.previa .pv-escolhida rect { animation: escolha-rect 9s linear infinite; }
-.previa .pv-escolhida text { animation: escolha-texto 9s linear infinite; }
-.previa .pv-tempo text { animation: tempo-pv 9s linear infinite; }
+.previa .agua-a { animation: agua-a 9s linear 3; }
+.previa .agua-b { animation: agua-b 9s linear 3; }
+.previa .agua-c { animation: agua-c 9s linear 3; }
+.previa .agua-d { animation: agua-d 9s linear 3; }
+.previa .molha-1 .pv-nivel { animation: molha-1 9s linear 3; }
+.previa .molha-2 .pv-nivel { animation: molha-2 9s linear 3; }
+.previa .molha-4 .pv-nivel { animation: molha-4 9s linear 3; }
+.previa .molha-5 .pv-nivel { animation: molha-5 9s linear 3; }
+.previa .pv-pulso { animation: pulso-pv 9s ease-out 3; }
+.previa .pv-escolhida rect { animation: escolha-rect 9s linear 3; }
+.previa .pv-escolhida text { animation: escolha-texto 9s linear 3; }
+.previa .pv-tempo text { animation: tempo-pv 9s linear 3; }
 
 @keyframes agua-a { 0% { stroke-dashoffset: 1; opacity: 1; } 11% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
 @keyframes agua-b { 0%, 13% { stroke-dashoffset: 1; opacity: 1; } 19% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
@@ -7796,16 +7978,25 @@ export function PreviaFluxo() {
 @keyframes molha-4 { 0%, 43% { opacity: 0; } 45%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
 @keyframes molha-5 { 0%, 57% { opacity: 0; } 59%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
 @keyframes pulso-pv { 0%, 19% { opacity: 0; transform: rotate(45deg) scale(1); } 23% { opacity: .75; } 27% { opacity: 0; transform: rotate(45deg) scale(1.12); } 28% { opacity: 0; transform: rotate(45deg) scale(1); } 31% { opacity: .75; } 35%, 100% { opacity: 0; transform: rotate(45deg) scale(1.12); } }
-@keyframes escolha-rect { 0%, 33% { fill: var(--node); stroke: var(--node-line); } 35%, 88% { fill: var(--wa); stroke: var(--wa); } 96%, 100% { fill: var(--node); stroke: var(--node-line); } }
+@keyframes escolha-rect { 0%, 33% { fill: var(--node); stroke: var(--node-line); } 35%, 88% { fill: var(--wa-forte); stroke: var(--wa-forte); } 96%, 100% { fill: var(--node); stroke: var(--node-line); } }
 @keyframes escolha-texto { 0%, 33% { fill: var(--ink-2); } 35%, 88% { fill: var(--na-agua); } 96%, 100% { fill: var(--ink-2); } }
 @keyframes tempo-pv { 0%, 58% { opacity: 0; } 62%, 88% { opacity: 1; } 96%, 100% { opacity: 0; } }
 
-/* Movimento reduzido: a água parada, já no fim do caminho. */
+/* Fora da tela ou com a aba escondida, a água para onde está (ControleDaAnimacao). */
+.previa.pausada * { animation-play-state: paused !important; }
+
+/* Movimento reduzido, ou depois das três voltas: a água parada, já no fim do caminho. */
+.previa.terminou .pv-agua { stroke-dashoffset: 0; animation: none !important; }
+.previa.terminou .pv-nivel, .previa.terminou .pv-pulso, .previa.terminou .pv-tempo text, .previa.terminou .pv-escolhida rect, .previa.terminou .pv-escolhida text { animation: none !important; }
+.previa.terminou .molha-1 .pv-nivel, .previa.terminou .molha-2 .pv-nivel, .previa.terminou .molha-4 .pv-nivel, .previa.terminou .molha-5 .pv-nivel { opacity: .2; }
+.previa.terminou .pv-escolhida rect { fill: var(--wa-forte); stroke: var(--wa-forte); }
+.previa.terminou .pv-escolhida text { fill: var(--na-agua); }
+.previa.terminou .pv-tempo text { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .previa .pv-agua { stroke-dashoffset: 0; animation: none !important; }
   .previa .pv-nivel, .previa .pv-pulso, .previa .pv-tempo text, .previa .pv-escolhida rect, .previa .pv-escolhida text { animation: none !important; }
   .previa .molha-1 .pv-nivel, .previa .molha-2 .pv-nivel, .previa .molha-4 .pv-nivel, .previa .molha-5 .pv-nivel { opacity: .2; }
-  .previa .pv-escolhida rect { fill: var(--wa); stroke: var(--wa); }
+  .previa .pv-escolhida rect { fill: var(--wa-forte); stroke: var(--wa-forte); }
   .previa .pv-escolhida text { fill: var(--na-agua); }
   .previa .pv-tempo text { opacity: 1; }
 }
@@ -7816,14 +8007,18 @@ export function PreviaFluxo() {
   .entrada .lado-form { gap: 22px; }
   .previa { max-width: 560px; width: 100%; justify-self: center; box-shadow: none; }
 }
+/* Bem estreito, a prévia (decorativa) teria letra de 6 px: sai. */
+@media (max-width: 419px) {
+  .previa { display: none; }
+}
 ```
 
-- [ ] **Passo 4: rodar e ver passar**
+- [ ] **Passo 5: rodar e ver passar**
 
-Run: `npm run typecheck && cd apps/web && npx playwright test e2e/entrar.spec.ts --trace=off`
-Expected: `tsc` limpo; `4 passed`.
+Run: `npm run typecheck && cd apps/web && npx vitest run test/app/entrar.test.ts && npx playwright test e2e/entrar.spec.ts --trace=off`
+Expected: `tsc` limpo; `Tests  2 passed (2)`; `6 passed`.
 
-- [ ] **Passo 5: commit**
+- [ ] **Passo 6: commit**
 
 ```bash
 git add apps/web
@@ -7843,7 +8038,7 @@ git commit -m "entrar: a página redesenhada (formulário e prévia do quadro), 
 
 ````diff
 diff --git a/README.md b/README.md
-index 67608f1..7809af0 100644
+index 67608f1..8cb9525 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,11 +2,13 @@
@@ -7868,7 +8063,7 @@ index 67608f1..7809af0 100644
  ```
  
 -Testes: `npm test`, `npm run banco:testes`, `npm run e2e`, `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
-+Testes: `npm test` (523: fluxo 84, núcleo 253, app 186), `npm run banco:testes` (168), `npm run e2e` (15), `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
++Testes: `npm test` (525: fluxo 84, núcleo 253, app 188), `npm run banco:testes` (168), `npm run e2e` (17), `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
  
  ## Publicar
  
@@ -7891,7 +8086,7 @@ index 67608f1..7809af0 100644
 
 ````diff
 diff --git a/apps/web/README.md b/apps/web/README.md
-index beaddec..c9aa096 100644
+index beaddec..c122b78 100644
 --- a/apps/web/README.md
 +++ b/apps/web/README.md
 @@ -1,8 +1,6 @@
@@ -7904,7 +8099,7 @@ index beaddec..c9aa096 100644
  
  ## Rodar
  
-@@ -21,99 +19,93 @@ O link mágico chega no Mailpit local: http://127.0.0.1:54324. Abre o app em `12
+@@ -21,99 +19,95 @@ O link mágico chega no Mailpit local: http://127.0.0.1:54324. Abre o app em `12
  ## Testes
  
  ```bash
@@ -7917,7 +8112,7 @@ index beaddec..c9aa096 100644
  ```
  
 -`CAPTURAS=<pasta> npm run e2e -- e2e/capturas.spec.ts` tira capturas das telas principais (revisão, mapa, decisão, diagnóstico, celular, escuro, o "Compartilhar" e o link público). Sem `CAPTURAS`, o teste fica pulado.
-+Hoje: app 186 testes de unidade (28 arquivos), pgTAP 168 (`compartilhar`, `empresas`, `fluxos`), ponta a ponta 15 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
++Hoje: app 188 testes de unidade (29 arquivos), pgTAP 168 (`compartilhar`, `empresas`, `fluxos`), ponta a ponta 17 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
  
  ## Partes
  
@@ -8018,8 +8213,10 @@ index beaddec..c9aa096 100644
 +
 +### Entrar
 +
-+- **A página de entrar mostra o produto:** o formulário de um lado (link por e-mail; Google se `NEXT_PUBLIC_LOGIN_GOOGLE=sim`) e, do outro, uma prévia do quadro com a água andando, trocando de cor do WhatsApp pro e-mail e parando na decisão. A prévia é SVG e CSS próprios (`app/entrar/previa.tsx` e `entrar.css`), decorativa e parada com movimento reduzido: a página não carrega o editor nem o `@journey/fluxo` (só o React, o Next e o cliente do Supabase, pro PKCE).
++- **A página de entrar mostra o produto:** o formulário de um lado (link por e-mail; Google se `NEXT_PUBLIC_LOGIN_GOOGLE=sim`) e, do outro, uma prévia do quadro com a água andando, trocando de cor do WhatsApp pro e-mail e parando na decisão. A prévia é SVG e CSS próprios (`app/entrar/previa.tsx` e `entrar.css`), decorativa e parada com movimento reduzido: a página não carrega o editor nem o `@journey/fluxo` (só o React, o Next e o cliente do Supabase, pro PKCE, e um componente pequeno que pausa a animação com a aba escondida ou a prévia fora da tela e para depois de três voltas, no quadro final). Abaixo de 420 px a prévia sai: a letra ficaria pequena demais.
 +- **Depois de pedir o link,** o e-mail continua no campo, o aviso diz pra qual e-mail foi, e "Usar outro e-mail" limpa e volta o foco pro campo. As regiões de aviso (`role=status`, `role=alert`) ficam montadas vazias.
++- **O botão só liga depois da hidratação:** antes, um Enter mandaria o formulário pelo navegador. O campo não tem `name`, então o e-mail nunca vai pra URL.
++- **Mandar de novo espera 30 s** pro mesmo e-mail (o Supabase recusa outro pedido em menos de 60 s); se mesmo assim vier o limite (429 ou `over_email_send_rate_limit`), a mensagem é em português, a espera vira 60 s e o aviso de "enviado" fica. Os erros viram texto pelo código e pelo status (`app/entrar/mensagens.ts`), nunca pelo texto em inglês, que vai só pro `console.error`. Ocupado, o botão fica com `aria-disabled` (e não `disabled`), pra não perder o foco.
 +
 +### Banco e acesso
 +
@@ -8077,7 +8274,7 @@ index 04d43b3..1ec50a5 100644
 - [ ] **Passo 2: tudo de novo**
 
 Run (da raiz): `npx supabase test db && npm test && npm run typecheck && npm run build && cd apps/web && npx playwright test --trace=off`
-Expected: pgTAP `Tests=168`, `Result: PASS`; fluxo 84, núcleo 253, app 186; `tsc` limpo; build com `/l/[token]` e sem as rotas da v1; ponta a ponta `15 passed`. O pgTAP vem antes da ponta a ponta (a ponta a ponta deixa fluxos e links de teste no banco local; o pgTAP não depende deles, mas começar limpo ajuda a ler uma falha).
+Expected: pgTAP `Tests=168`, `Result: PASS`; fluxo 84, núcleo 253, app 188; `tsc` limpo; build com `/l/[token]` e sem as rotas da v1; ponta a ponta `17 passed`. O pgTAP vem antes da ponta a ponta (a ponta a ponta deixa fluxos e links de teste no banco local; o pgTAP não depende deles, mas começar limpo ajuda a ler uma falha).
 
 - [ ] **Passo 3: commit e push**
 
