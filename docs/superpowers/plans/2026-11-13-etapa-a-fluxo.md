@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 56 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 60 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -29,6 +29,8 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | Decisão | Por quê | Alternativa recusada |
 |---|---|---|
 | **Pacote novo `@journey/fluxo`**, sem tocar no `@journey/nucleo` | O núcleo é todo de telefonia (ramal, URA, discagem); misturar repetiria o erro da v1. Ele fica pro importador de central (etapa E) | Generalizar o núcleo: cada tipo e regra carregaria o legado de telefonia |
+| **Limites no documento** (`LIMITES`: 2.000 peças, 6.000 conexões, textos de até 5.000 caracteres, tempos de até um ano) e **um id só por documento**, entre peças, conexões, grupos e notas | O spec mira 500 peças; o limite deixa folga e impede que um documento aceito trave o motor (tempo que passa do calendário) ou o diagnóstico. O editor aponta pra qualquer coisa do quadro pelo id | Sem limite: um documento válido quebraria a simulação |
+| **Motor e caminho mais longo em laço, sem recursão** | Um fluxo comprido estourava a pilha antes da trava de passos; em laço, a trava (`PASSOS_MAXIMOS`) é que para | Recursão: quebra perto de 4.400 peças em fila |
 | **Oito tipos de peça e seis regras de conexão**, fixos no código (`TIPOS_PECA`, `REGRAS`) | São o vocabulário do protótipo aprovado (spec 5 e 7). O que muda de empresa pra empresa (canais, tipos de cadastro) fica no banco | Tipos de peça configuráveis: mais tela e mais validação sem pedido; o spec 16 deixa pra depois |
 | **Cadastros fora do documento**; a peça guarda só o id em `responsavel` | O mesmo cadastro (fila, pessoa, horário) serve a vários fluxos e mostra "onde é usado"; renomear o cadastro não mexe nos fluxos | Copiar o cadastro pra dentro do documento: renomear exigiria varrer todos os fluxos |
 | **`lerDocumento` devolve uma cópia só com os campos conhecidos**, com erro (recusa) e aviso (canal ou cadastro que a empresa não tem) | O documento vem do navegador e do banco; o que passa daqui é o que o motor e o diagnóstico entendem. Aviso não recusa: um cadastro apagado não pode travar o editor | Validar com uma biblioteca de esquema: dependência nova pra 130 linhas |
@@ -521,9 +523,40 @@ describe('lerDocumento', () => {
     expect(lerDocumento(null).documento).toBeNull();
   });
 
-  it('ids: faltando e repetidos', () => {
+  it('ids: faltando e repetidos, inclusive entre listas', () => {
     expect(codigos(doc([peca('a', 'inicio'), peca('a', 'fim')]))).toContain('id_repetido');
     expect(codigos(doc([{ tipo: 'fim', nome: 'x', x: 0, y: 0 } as never]))).toContain('id');
+    expect(codigos(doc([peca('a', 'inicio'), peca('b', 'fim')], [liga('a', 'b', { id: 'a' })]))).toEqual(['id_repetido']);
+    expect(codigos({ ...doc([peca('a', 'inicio')]), notas: [{ id: 'a', texto: '', x: 0, y: 0, w: 1, h: 1 }] })).toEqual(['id_repetido']);
+  });
+
+  it('limites: tamanho das listas, dos textos e do tempo', () => {
+    const muitas = Array.from({ length: 2001 }, (_, k) => peca(`p${k}`, 'etapa'));
+    expect(codigos(doc(muitas))).toEqual(['tamanho']);
+    expect(codigos(doc([peca('a', 'etapa', { nome: 'x'.repeat(5001) })]))).toEqual(['tamanho']);
+    expect(codigos(doc([peca('a', 'etapa', { tempo_s: 366 * 86400 })]))).toEqual(['tempo']);
+    expect(codigos(doc([peca('a', 'etapa', { tempo_s: Infinity })]))).toEqual(['tempo']);
+    expect(codigos(doc([peca('a', 'inicio'), peca('b', 'fim')], [liga('a', 'b', { regra: 'tempo', tempo_s: 8.7e12 })]))).toEqual(['tempo']);
+  });
+
+  it('a cópia guarda os campos de cada coisa e não depende da entrada', () => {
+    const entrada = {
+      ...doc(
+        [peca('a', 'decisao', { descricao: ' d ', cor: '#fff', responsavel: 'k1', tempo_s: 30 }), peca('b', 'fim')],
+        [liga('a', 'b', { regra: 'opcao', valor: 1 as never, rotulo: 'Um' }), liga('b', 'a', { id: 'h', regra: 'horario', horario: 'dentro' })],
+      ),
+      grupos: [{ id: 'g', nome: 'G', x: 1, y: 2, w: 3, h: 4, cor: '#000' }],
+      notas: [{ id: 'n', texto: 'oi', x: 1, y: 2, w: 3, h: 4 }],
+    };
+    const r = lerDocumento(entrada).documento!;
+    expect(r.pecas[0]).toEqual({ id: 'a', tipo: 'decisao', nome: 'a', x: 0, y: 0, descricao: 'd', cor: '#fff', responsavel: 'k1', tempo_s: 30 });
+    expect(r.conexoes).toEqual([{ id: 'a>b', de: 'a', para: 'b', regra: 'opcao', valor: '1', rotulo: 'Um' }, { id: 'h', de: 'b', para: 'a', regra: 'horario', horario: 'dentro' }]);
+    expect(r.grupos).toEqual(entrada.grupos);
+    expect(r.notas).toEqual(entrada.notas);
+    entrada.pecas[0]!.nome = 'mudou';
+    entrada.grupos[0]!.w = 99;
+    expect(r.pecas[0]!.nome).toBe('a');
+    expect(r.grupos[0]!.w).toBe(3);
   });
 
   it('peça: tipo, nome, posição e tempo', () => {
@@ -592,9 +625,18 @@ export interface Conhecidos {
 }
 
 const LISTAS = ['pecas', 'conexoes', 'grupos', 'notas'] as const;
+/**
+ * Limites do documento. O spec mira 500 peças; os limites deixam folga e protegem o motor e o diagnóstico
+ * (e o banco) de um documento que só serve pra travar.
+ */
+export const LIMITES = { pecas: 2000, conexoes: 6000, grupos: 500, notas: 500, texto: 5000, tempo_s: 365 * 86400 } as const;
 const ehNumero = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const ehTexto = (v: unknown): v is string => typeof v === 'string';
-const opcional = (v: unknown): string | undefined => (ehTexto(v) && v.trim() !== '' ? v.trim() : undefined);
+/** Texto opcional: aparado, e número vira texto (um importador pode escrever a opção 1 como número). */
+const opcional = (v: unknown): string | undefined => {
+  const t = ehNumero(v) ? String(v) : ehTexto(v) ? v.trim() : '';
+  return t === '' ? undefined : t;
+};
 
 /**
  * Lê um documento journey/2 vindo de fora (editor, banco, arquivo) sem confiar nele: confere a forma, os ids,
@@ -612,23 +654,35 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
   }
   const bruto = entrada as Record<string, unknown>;
   if (bruto.formato !== FORMATO) erro('formato', `O formato tem que ser "${FORMATO}".`);
-  for (const lista of LISTAS) if (!Array.isArray(bruto[lista])) erro('forma', `Falta a lista "${lista}".`);
+  for (const lista of LISTAS) {
+    const v = bruto[lista];
+    if (!Array.isArray(v)) erro('forma', `Falta a lista "${lista}".`);
+    else if (v.length > LIMITES[lista]) erro('tamanho', `"${lista}" passa do limite de ${LIMITES[lista]}.`);
+  }
   if (problemas.length) return { documento: null, problemas };
 
+  // Um id só aparece uma vez no documento inteiro: o editor aponta pra peça, conexão, grupo ou nota pelo id.
+  const todos = new Set<string>();
   const ids = (lista: (typeof LISTAS)[number]) => {
-    const vistos = new Set<string>();
-    for (const item of bruto[lista] as unknown[]) {
+    const daLista = new Set<string>();
+    (bruto[lista] as unknown[]).forEach((item, i) => {
       const id = (item as Record<string, unknown> | null)?.id;
-      if (!ehTexto(id) || id.trim() === '') { erro('id', `Item sem id em "${lista}".`); continue; }
-      if (vistos.has(id)) erro('id_repetido', `O id "${id}" aparece duas vezes em "${lista}".`, id);
-      vistos.add(id);
-    }
-    return vistos;
+      if (!ehTexto(id) || id.trim() === '') { erro('id', `O item ${i + 1} de "${lista}" não tem id.`); return; }
+      if (todos.has(id)) erro('id_repetido', `O id "${id}" aparece duas vezes no documento.`, id);
+      todos.add(id);
+      daLista.add(id);
+    });
+    return daLista;
   };
   const idsPecas = ids('pecas');
   ids('conexoes');
   ids('grupos');
   ids('notas');
+  const longo = (v: unknown, ref: string) => {
+    if (ehTexto(v) && v.length > LIMITES.texto) { erro('tamanho', `Um texto de "${ref}" passa de ${LIMITES.texto} caracteres.`, ref); return true; }
+    return false;
+  };
+  const tempo = (v: unknown) => ehNumero(v) && v >= 0 && v <= LIMITES.tempo_s;
 
   const canais = conhecidos.canais && new Set(conhecidos.canais);
   const cadastros = conhecidos.cadastros && new Set(conhecidos.cadastros);
@@ -639,15 +693,17 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
     const id = item.id;
     if (!(TIPOS_PECA as readonly unknown[]).includes(item.tipo)) { erro('tipo', `A peça "${id}" tem um tipo que não existe.`, id); continue; }
     if (!ehNumero(item.x) || !ehNumero(item.y)) erro('posicao', `A peça "${id}" não tem posição.`, id);
+    for (const v of [item.nome, item.descricao, item.canal, item.responsavel, item.cor]) if (longo(v, id)) break;
     const p: Peca = { id, tipo: item.tipo as TipoPeca, nome: ehTexto(item.nome) && item.nome.trim() ? item.nome.trim() : '', x: ehNumero(item.x) ? item.x : 0, y: ehNumero(item.y) ? item.y : 0 };
     if (!p.nome) erro('nome', `A peça "${id}" não tem nome.`, id);
+    const nome = p.nome || id;
     const canal = opcional(item.canal);
-    if (canal) { p.canal = canal; if (canais && !canais.has(canal)) aviso('canal', `A peça "${p.nome}" usa o canal "${canal}", que a empresa não tem.`, id); }
+    if (canal) { p.canal = canal; if (canais && !canais.has(canal)) aviso('canal', `A peça "${nome}" usa o canal "${canal}", que a empresa não tem.`, id); }
     const resp = opcional(item.responsavel);
-    if (resp) { p.responsavel = resp; if (cadastros && !cadastros.has(resp)) aviso('responsavel', `A peça "${p.nome}" aponta pra um cadastro que não existe.`, id); }
+    if (resp) { p.responsavel = resp; if (cadastros && !cadastros.has(resp)) aviso('responsavel', `A peça "${nome}" aponta pra um cadastro que não existe.`, id); }
     if (item.tempo_s !== undefined && item.tempo_s !== null) {
-      if (!ehNumero(item.tempo_s) || item.tempo_s < 0) erro('tempo', `O tempo da peça "${p.nome}" tem que ser um número de segundos, zero ou mais.`, id);
-      else if (item.tempo_s > 0) p.tempo_s = Math.round(item.tempo_s);
+      if (!tempo(item.tempo_s)) erro('tempo', `O tempo da peça "${nome}" tem que ser um número de segundos, de zero a um ano.`, id);
+      else if (Math.round(item.tempo_s as number) > 0) p.tempo_s = Math.round(item.tempo_s as number);
     }
     const descricao = opcional(item.descricao);
     if (descricao) p.descricao = descricao;
@@ -664,14 +720,15 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
     if (!ehTexto(item.para) || !idsPecas.has(item.para)) { erro('para', `A conexão "${id}" chega numa peça que não existe.`, id); continue; }
     const regra = item.regra === undefined ? 'sempre' : item.regra;
     if (!(REGRAS as readonly unknown[]).includes(regra)) { erro('regra', `A conexão "${id}" tem uma regra que não existe.`, id); continue; }
+    for (const v of [item.valor, item.rotulo]) if (longo(v, id)) break;
     const c: Conexao = { id, de: item.de, para: item.para, regra: regra as Regra };
     const valor = opcional(item.valor);
     if (valor) c.valor = valor;
     const rotulo = opcional(item.rotulo);
     if (rotulo) c.rotulo = rotulo;
     if (c.regra === 'tempo') {
-      if (!ehNumero(item.tempo_s) || item.tempo_s < 0) erro('tempo', `A conexão "${id}" é "depois de um tempo" e não diz quanto.`, id);
-      else c.tempo_s = Math.round(item.tempo_s);
+      if (!tempo(item.tempo_s)) erro('tempo', `A conexão "${id}" é "depois de um tempo" e não diz quanto (de zero a um ano).`, id);
+      else c.tempo_s = Math.round(item.tempo_s as number);
     }
     if (c.regra === 'horario') {
       if (item.horario !== 'dentro' && item.horario !== 'fora') erro('horario', `A conexão "${id}" é de horário e não diz se é dentro ou fora.`, id);
@@ -688,6 +745,7 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
   const grupos: Grupo[] = [];
   for (const item of bruto.grupos as Record<string, unknown>[]) {
     if (!ehTexto(item?.id)) continue;
+    longo(item.nome, item.id);
     const g: Grupo = { id: item.id, nome: ehTexto(item.nome) ? item.nome.trim() : '', ...caixa(item, 'O grupo') };
     const cor = opcional(item.cor);
     if (cor) g.cor = cor;
@@ -696,6 +754,7 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
   const notas: Nota[] = [];
   for (const item of bruto.notas as Record<string, unknown>[]) {
     if (!ehTexto(item?.id)) continue;
+    longo(item.texto, item.id);
     const n: Nota = { id: item.id, texto: ehTexto(item.texto) ? item.texto : '', ...caixa(item, 'A nota') };
     const cor = opcional(item.cor);
     if (cor) n.cor = cor;
@@ -710,7 +769,7 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  13 passed (13)` e o `tsc` sem saída.
+Expected: `Tests  15 passed (15)` e o `tsc` sem saída.
 
 - [ ] **Passo 5: commit**
 
@@ -837,6 +896,12 @@ describe('motor', () => {
     const d = doc([peca('i', 'inicio'), peca('m', 'decisao'), peca('f', 'fim')], [liga('i', 'm'), liga('m', 'm', { id: 'repete', regra: 'opcao', valor: '9' }), liga('m', 'f', { id: 'sai', regra: 'opcao', valor: '1' })]);
     const x = simular(d, {}, { inicio: 'i', escolhas: ['repete', 'repete', 'repete', 'repete', 'sai'] });
     expect(ultimo(x.eventos)).toMatchObject({ motivo: 'fim', peca: 'f' });
+  });
+
+  it('fluxo comprido não estoura a pilha', () => {
+    const n = 20_000;
+    const d = doc([peca('i', 'inicio'), ...Array.from({ length: n }, (_, k) => peca(`p${k}`, 'etapa')), peca('f', 'fim')], [liga('i', 'p0'), ...Array.from({ length: n - 1 }, (_, k) => liga(`p${k}`, `p${k + 1}`)), liga(`p${n - 1}`, 'f')]);
+    expect(ultimo(executar(d, {}, { inicio: 'i' }).eventos)).toMatchObject({ tipo: 'terminou', motivo: 'ciclo' }); // a trava de passos
   });
 
   it('início que não existe termina na hora', () => {
@@ -990,7 +1055,7 @@ export class Execucao {
     this.modo = opcoes.modo ?? 'relogio';
     this.canal = contexto.canal ?? null;
     if (!this.idx.pecas.has(opcoes.inicio)) this.terminar('inexistente', null);
-    else this.chegar(opcoes.inicio);
+    else this.andar(opcoes.inicio);
   }
 
   /** Responde a escolha pendente com o id de uma conexão. Resposta que não serve vira `escolha_ignorada`. Devolve os eventos novos. */
@@ -1005,17 +1070,25 @@ export class Execucao {
     // Depois de uma escolha, a contagem de voltas recomeça: só caminho que anda sozinho vira ciclo.
     this.visitas.clear();
     this.eventos.push({ tipo: 'escolheu', peca: pend.peca, conexao, quem: 'pessoa' });
-    this.correr(this.idx.doc.conexoes.find((c) => c.id === conexao)!);
+    this.andar(this.correr(this.idx.doc.conexoes.find((c) => c.id === conexao)!));
     return this.eventos.slice(antes);
   }
 
-  private terminar(motivo: MotivoFim, peca: string | null) {
+  private terminar(motivo: MotivoFim, peca: string | null): null {
     this.terminou = true;
     this.pendente = null;
     this.eventos.push({ tipo: 'terminou', motivo, peca, relogio_s: this.relogio_s });
+    return null;
   }
 
-  private chegar(id: string) {
+  /** Anda de peça em peça enquanto não precisa de escolha. Em laço, não em recursão: fluxo comprido não estoura a pilha. */
+  private andar(primeira: string) {
+    let id: string | null = primeira;
+    while (id !== null) id = this.chegar(id);
+  }
+
+  /** Chega numa peça. Devolve a próxima peça, se segue sozinho; null se terminou ou se pede escolha. */
+  private chegar(id: string): string | null {
     const p = this.idx.pecas.get(id)!;
     const voltas = (this.visitas.get(id) ?? 0) + 1;
     this.visitas.set(id, voltas);
@@ -1045,6 +1118,7 @@ export class Execucao {
     }));
     this.pendente = { peca: id, opcoes };
     this.eventos.push({ tipo: 'pede_escolha', peca: id, opcoes });
+    return null;
   }
 
   /** A saída que o relógio escolhe: a de horário que bate com a hora simulada (com o horário do responsável da peça). */
@@ -1056,10 +1130,11 @@ export class Execucao {
     return saidas.find((c) => c.regra === 'horario' && c.horario === lado) ?? saidas.find((c) => c.regra === 'senao') ?? null;
   }
 
-  private correr(c: Conexao) {
+  /** Passa por uma conexão e devolve a peça onde ela chega. */
+  private correr(c: Conexao): string {
     if (c.regra === 'tempo') this.relogio_s += c.tempo_s ?? 0;
     this.eventos.push({ tipo: 'correu', conexao: c.id, de: c.de, para: c.para, relogio_s: this.relogio_s });
-    this.chegar(c.para);
+    return c.para;
   }
 }
 
@@ -1078,7 +1153,7 @@ export function simular(doc: Documento, contexto: Contexto, opcoes: OpcoesExecuc
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  29 passed (29)` e o `tsc` sem saída.
+Expected: `Tests  32 passed (32)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -1187,6 +1262,12 @@ describe('diagnóstico', () => {
     expect(chaves(renomeado)).toEqual(chaves(d));
   });
 
+  it('caminho comprido não estoura a pilha', () => {
+    const n = 20_000;
+    const d = doc([peca('i', 'inicio'), ...Array.from({ length: n }, (_, k) => peca(`p${k}`, 'etapa', { tempo_s: 1 })), peca('f', 'fim')], [liga('i', 'p0'), ...Array.from({ length: n - 1 }, (_, k) => liga(`p${k}`, `p${k + 1}`)), liga(`p${n - 1}`, 'f')]);
+    expect(chaves(d, { meta_s: 60 })).toEqual(['passou_do_prazo:fluxo']);
+  });
+
   it('500 peças em menos de 100 ms', () => {
     const pecas = [peca('i', 'inicio'), ...Array.from({ length: 498 }, (_, k) => peca(`p${k}`, k % 7 === 0 ? 'decisao' : 'etapa')), peca('f', 'fim')];
     const conexoes = [liga('i', 'p0'), ...Array.from({ length: 497 }, (_, k) => liga(`p${k}`, `p${k + 1}`)), ...Array.from({ length: 70 }, (_, k) => liga(`p${k * 7}`, 'f', { regra: 'opcao', valor: '9' })), liga('p497', 'f')];
@@ -1284,19 +1365,32 @@ function ciclos(idx: Indice): string[][] {
 function caminhoMaisLongo(idx: Indice, inicios: readonly string[]): { tempo_s: number; pecas: string[] } | null {
   let melhor: { tempo_s: number; pecas: string[] } | null = null;
   let buscas = 0;
-  const visitar = (id: string, tempo: number, caminho: string[], vistos: Set<string>) => {
-    if (++buscas > 50_000) return;
+  // Busca em profundidade sem recursão (fluxo comprido não estoura a pilha): cada nível é uma peça do caminho,
+  // o tempo depois dela e a próxima saída a tentar.
+  const caminho: { id: string; tempo: number; saida: number }[] = [];
+  const noCaminho = new Set<string>();
+  const entrar = (id: string, tempo: number) => {
+    buscas++;
     const p = idx.pecas.get(id)!;
     const agora = tempo + (p.tempo_s ?? 0);
-    if (p.tipo === 'fim') { if (!melhor || agora > melhor.tempo_s) melhor = { tempo_s: agora, pecas: [...caminho] }; return; }
-    for (const c of idx.saidas.get(id)!) {
-      if (vistos.has(c.para)) continue;
-      vistos.add(c.para); caminho.push(c.para);
-      visitar(c.para, agora + (c.regra === 'tempo' ? (c.tempo_s ?? 0) : 0), caminho, vistos);
-      caminho.pop(); vistos.delete(c.para);
+    if (p.tipo === 'fim') {
+      if (!melhor || agora > melhor.tempo_s) melhor = { tempo_s: agora, pecas: [...caminho.map((n) => n.id), id] };
+      return;
     }
+    noCaminho.add(id);
+    caminho.push({ id, tempo: agora, saida: 0 });
   };
-  for (const i of inicios) visitar(i, 0, [i], new Set([i]));
+  for (const i of inicios) {
+    entrar(i, 0);
+    while (caminho.length && buscas <= 50_000) {
+      const topo = caminho[caminho.length - 1]!;
+      const c = idx.saidas.get(topo.id)![topo.saida++];
+      if (!c) { caminho.pop(); noCaminho.delete(topo.id); continue; }
+      if (!noCaminho.has(c.para)) entrar(c.para, topo.tempo + (c.regra === 'tempo' ? (c.tempo_s ?? 0) : 0));
+    }
+    caminho.length = 0;
+    noCaminho.clear();
+  }
   return melhor;
 }
 
@@ -1364,7 +1458,7 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  43 passed (43)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
+Expected: `Tests  47 passed (47)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
 
 - [ ] **Passo 5: commit**
 
@@ -1621,7 +1715,7 @@ export const MODELOS: readonly Modelo[] = [
 ```ts
 export { FORMATO, TIPOS_PECA, NOMES_TIPOS, REGRAS, documentoVazio, type TipoPeca, type Regra, type Peca, type Conexao, type Grupo, type Nota, type Documento } from './documento';
 export { DIAS, CANAIS_PADRAO, TIPOS_CADASTRO_PADRAO, camposHorario, type Cadastro, type Canal, type Dia, type JanelaHorario, type Feriado, type CamposHorario } from './cadastros';
-export { lerDocumento, type Problema, type Leitura, type Conhecidos } from './validar';
+export { lerDocumento, LIMITES, type Problema, type Leitura, type Conhecidos } from './validar';
 export { indexar, textoRegra, type Indice } from './indice';
 export { lerQuando, dentroDoHorario, ehFeriado, formatarTempo } from './relogio';
 export { Execucao, executar, simular, type Contexto, type Modo, type OpcoesExecucao, type Opcao, type QuemEscolheu, type MotivoFim, type Evento } from './motor';
@@ -1632,7 +1726,7 @@ export { MODELOS, type Modelo } from './modelos';
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  56 passed (56)` e o `tsc` sem saída.
+Expected: `Tests  60 passed (60)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2064,7 +2158,7 @@ Expected: `Files=3, Tests=126` e `Result: PASS`.
 - [ ] **Passo 5: a v1 continua de pé**
 
 Run: `npm test && npm run typecheck`
-Expected: `@journey/fluxo` 56, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
+Expected: `@journey/fluxo` 60, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
 
 - [ ] **Passo 6: commit**
 
@@ -2155,7 +2249,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 56, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
+Expected: fluxo 60, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
