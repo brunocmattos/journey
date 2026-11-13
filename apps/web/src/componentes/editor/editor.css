@@ -237,3 +237,71 @@
 .editor .cabeca-editor > .vivo { display: grid; gap: 8px; }
 .editor .cabeca-editor > .vivo:empty { margin-bottom: -8px; }
 .editor .grupo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* O quadro e, por cima dele, a gaveta do diagnóstico (fora do palco: os gestos do quadro não pegam nela). */
+.editor .quadro-e-gaveta { position: relative; display: grid; min-width: 0; min-height: 0; }
+.editor .gaveta { position: absolute; left: 12px; top: 52px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 116px); overflow: auto; z-index: 30; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px; display: grid; gap: 10px; align-content: start; }
+/* Com o play, a gaveta para antes do cartão de baixo. */
+.editor.com-play .gaveta { max-height: calc(100% - 360px); min-height: 140px; }
+.editor .achados { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.editor .achado { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--node); }
+.editor .achado.g-grave { border-left: 4px solid var(--bad); }
+.editor .achado.g-alerta { border-left: 4px solid var(--warn); }
+.editor .achado.g-observacao { border-left: 4px solid var(--info); }
+.editor .achado-titulo { font-weight: 600; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.editor .achado-texto { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.editor .acoes-achado { display: flex; gap: 6px; flex-wrap: wrap; }
+.editor .selo-g { display: inline-flex; align-items: center; gap: 4px; font: 600 10.5px var(--f-mono); letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; border-radius: 6px; }
+.editor .selo-g .icone { width: 12px; height: 12px; }
+.editor .selo-g.grave { background: var(--bad-soft); color: var(--bad); }
+.editor .selo-g.alerta { background: var(--warn-soft); color: var(--warn); }
+.editor .selo-g.observacao { background: var(--info-soft); color: var(--info); }
+.editor .marcar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.editor .marcar .entrada-texto { flex: 1 1 160px; padding: 6px 9px; }
+.editor .nota-intencional { margin: 0; font-size: 12.5px; color: var(--ink-2); font-style: italic; }
+.editor .achado.antigo code { font: 500 11px var(--f-mono); color: var(--ink-3); word-break: break-all; }
+/* "Ver no quadro": o resto do quadro apaga, o achado fica no holofote. */
+.editor.destacando .no:not(.foco), .editor.destacando .grupo, .editor.destacando .rotulo-cano:not(.foco) { opacity: .22; }
+.editor.destacando svg.canos .cano:not(.foco) { opacity: .22; }
+
+/* Pops do topo (Cenários, Versões): embaixo dos botões, por cima do quadro. */
+.editor .cabeca-editor { position: relative; }
+.editor .pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 45; width: min(440px, 100%); max-height: min(70vh, 560px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px; display: grid; gap: 10px; align-content: start; }
+.editor .pop-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.editor .pop-cab h2 { font-size: 15px; }
+.editor .lista-pop { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.editor .item-pop { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--node); }
+.editor .linha-pop { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.editor .linha-pop .entrada-texto { flex: 1 1 160px; padding: 6px 9px; }
+.editor .selo-s { font: 600 10.5px var(--f-mono); letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; }
+.editor .selo-s.igual { background: var(--ok-soft); color: var(--ok); }
+.editor .selo-s.mudou { background: var(--warn-soft); color: var(--warn); }
+.editor .cartao-sim form.controles .entrada-texto { flex: 1 1 180px; padding: 6px 9px; }
+
+/* O "Compartilhar": diálogo modal. */
+.editor dialog.dialogo { width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); padding: 16px; box-shadow: var(--shadow); }
+.editor dialog.dialogo[open] { display: grid; gap: 12px; align-content: start; }
+.editor dialog.dialogo::backdrop { background: rgba(10, 16, 20, .45); }
+.editor .form-link { display: grid; gap: 10px; }
+.editor .form-link select { width: 100%; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--node); font-size: 13.5px; }
+.editor .link-novo { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.editor .link-novo .campo { flex: 1 1 260px; }
+.editor .link-novo .entrada-texto { font: 500 12.5px var(--f-mono); }
+
+/* O link público: o quadro inteiro, com a marca, o nome do fluxo e as condições do link em cima. */
+.editor.visualizador { height: 100dvh; padding: 12px 16px; grid-template-rows: auto minmax(0, 1fr) auto; }
+.editor .topo-link { gap: 8px 16px; }
+.editor .titulo-link { display: grid; min-width: 0; }
+.editor .titulo-link .mudo { font-size: 12px; }
+.editor .titulo-link h1 { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor .selos-link { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: 12.5px; }
+.editor .rodape-link { text-align: center; font: 500 11px var(--f-mono); color: var(--ink-3); letter-spacing: .04em; }
+@media (max-width: 820px) {
+  .editor.visualizador { padding: 8px; }
+  .editor .topo-link .empurra { margin-left: 0; width: 100%; }
+}
+/* Tela baixa (celular deitado): a gaveta à esquerda e o cartão do play à direita, lado a lado, sem um cobrir o outro. */
+@media (max-height: 600px) and (min-width: 600px) {
+  .editor.com-gaveta .gaveta { width: calc(50% - 18px); max-height: calc(100% - 24px); top: 12px; min-height: 0; }
+  .editor.com-gaveta .cartao-sim { left: auto; right: 12px; transform: none; width: min(440px, calc(50% - 18px)); max-height: calc(100% - 26px); overflow: auto; }
+}

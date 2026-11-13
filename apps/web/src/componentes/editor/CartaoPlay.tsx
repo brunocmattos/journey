@@ -1,9 +1,11 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import { formatarTempo, type Documento } from '@journey/fluxo';
 import { Icone } from '@/componentes/Icone';
 import { VELOCIDADES, type CanalEditor } from '@/editor/estilo';
 import { quandoValido, tituloDoFim, type Play, type Visual } from '@/editor/play';
+import { focarDepois } from './Confirmacao';
 
 export interface AcoesPlay {
   escolher(conexao: string): void;
@@ -28,6 +30,7 @@ export function CartaoPlay({
   corAgua,
   canais,
   inicios,
+  salvarCenario,
   acoes,
 }: {
   doc: Documento;
@@ -40,8 +43,17 @@ export function CartaoPlay({
   canais: readonly CanalEditor[];
   /** Quando há mais de um Início e nenhum selecionado: a pergunta "por onde começa?". */
   inicios: string[] | null;
+  /** No fim, guarda o caminho como cenário (só com a trava). Devolve se salvou. */
+  salvarCenario?: (nome: string) => Promise<boolean>;
   acoes: AcoesPlay;
 }) {
+  const [salvando, setSalvando] = useState<'nome' | 'enviando' | null>(null);
+  const cartao = useRef<HTMLDivElement>(null);
+  // Depois de salvar ou desistir, o foco volta pro "Salvar cenário" (e não pro body).
+  const fecharForm = () => {
+    setSalvando(null);
+    focarDepois(() => cartao.current?.querySelector<HTMLElement>('[data-salvar-cenario]'));
+  };
   const nome = (id: string | null | undefined) => doc.pecas.find((p) => p.id === id)?.nome ?? '';
   const nomeCanal = (k: string | null) => canais.find((c) => c.chave === k)?.nome ?? 'sem canal';
 
@@ -122,7 +134,33 @@ export function CartaoPlay({
           <button className="botao" type="button" onClick={acoes.parar}>
             Fechar
           </button>
+          {salvarCenario && !salvando && (
+            <button className="botao" type="button" data-salvar-cenario onClick={() => setSalvando('nome')}>
+              Salvar cenário
+            </button>
+          )}
         </div>
+        {salvarCenario && salvando && (
+          <form
+            className="controles"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const nome = (new FormData(e.currentTarget).get('nome') as string).trim();
+              if (!nome) return;
+              setSalvando('enviando');
+              if (await salvarCenario(nome)) fecharForm();
+              else setSalvando('nome');
+            }}
+          >
+            <input className="entrada-texto" name="nome" aria-label="Nome do cenário" placeholder="Ex.: pede a 2ª via fora do horário" maxLength={200} required autoFocus />
+            <button className="botao primario" type="submit" disabled={salvando === 'enviando'}>
+              Salvar
+            </button>
+            <button className="botao" type="button" onClick={fecharForm}>
+              Cancelar
+            </button>
+          </form>
+        )}
       </div>
     );
   } else if (visual.pergunta) {
@@ -161,7 +199,7 @@ export function CartaoPlay({
   }
 
   return (
-    <div className="cartao-sim" role="region" aria-label="Simulação" style={{ ['--agua' as string]: corAgua(canal) }}>
+    <div ref={cartao} className="cartao-sim" role="region" aria-label="Simulação" style={{ ['--agua' as string]: corAgua(canal) }}>
       <div className="cab">
         <span className="pilula" style={{ ['--c' as string]: corAgua(canal) }}>
           <span className="ponto-cor" />

@@ -1,24 +1,38 @@
 'use client';
 
 import './editor.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { lerDocumento, type Cadastro, type Documento, type TipoPeca } from '@journey/fluxo';
+import { diagnosticar, lerDocumento, type Achado, type Cadastro, type Documento, type TipoPeca } from '@journey/fluxo';
 import { criarCadastro, renomearCadastro } from '@/acoes/cadastros';
 import { apagarFluxo, mudarFluxo, type DadosDoFluxo } from '@/acoes/fluxos';
+import { apagarCenario, aprovarCenario, renomearCenario, salvarCenario } from '@/acoes/cenarios';
+import { desmarcarIntencional, marcarIntencional } from '@/acoes/intencionais';
+import { marcarVersao } from '@/acoes/versoes';
+import type { LinkResumo } from '@/compartilhar/opcoes';
 import { Icone } from '@/componentes/Icone';
 import type { TipoCadastro } from '@/editor/cadastros';
+import { cenarioDoPlay, paraAprovar, playDoCenario, situacao as situacaoDoCenario, type Cenario, type Situacao as SituacaoCenario } from '@/editor/cenarios';
+import { antigos, caminhoAte, focoDoAchado, gavetaAberta, lembrarGaveta, pecaDoAchado, rotuloAchados, separar, simulaveis, type Intencional } from '@/editor/diagnostico';
 import * as D from '@/editor/documento';
 import { corDoCanal, lerEstilo, type CanalEditor, type Estilo } from '@/editor/estilo';
 import { comecar, desfazer, refazer, registrar, substituir, type Historico } from '@/editor/historico';
 import { FORMAS, ORDEM_FORMAS } from '@/editor/pecas';
-import { agora, espera, opcaoDaTecla, rodar, visual as verVisual, voltar as voltarPlay, type Play } from '@/editor/play';
-import { Salvamento, copiaValida, motivoDoErro, type Situacao } from '@/editor/salvamento';
+import { agora } from '@/editor/play';
+import { Salvamento, copiaValida, mesmoJson, motivoDoErro, type Situacao } from '@/editor/salvamento';
+import type { VersaoResumo } from '@/lib/dados';
 import { FUSO } from '@/lib/fuso';
 import { supabaseNavegador } from '@/lib/supabase/navegador';
 import { CartaoPlay } from './CartaoPlay';
+import { Cenarios } from './Cenarios';
+import { Compartilhar } from './Compartilhar';
+import { Gaveta } from './Gaveta';
+import { Pop } from './Pop';
+import { Versoes } from './Versoes';
 import { Painel, type Aba, type DadosFluxo } from './Painel';
 import { Quadro, criaAlgo, type Ferramenta, type QuadroApi } from './Quadro';
+import { useAnuncioAdiado } from './useAnuncioAdiado';
+import { usePlay } from './usePlay';
 
 export interface PropsEditor {
   empresaId: string;
@@ -26,6 +40,12 @@ export interface PropsEditor {
   canais: readonly CanalEditor[];
   cadastros: readonly Cadastro[];
   tipos: readonly TipoCadastro[];
+  intencionais: readonly Intencional[];
+  cenarios: readonly Cenario[];
+  versoes: readonly VersaoResumo[];
+  links: readonly LinkResumo[];
+  /** Se o servidor tem a chave secreta: sem ela, o link público não abre e o "Compartilhar" explica. */
+  linkConfigurado: boolean;
 }
 
 /** Ids curtos e únicos o bastante dentro de um fluxo. */
@@ -52,7 +72,7 @@ type Trava =
   | { estado: 'incerta' }
   | { estado: 'liberou' };
 
-export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais, tipos }: PropsEditor) {
+export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais, tipos, intencionais: intencionaisIniciais, cenarios: cenariosIniciais, versoes: versoesIniciais, links: linksIniciais, linkConfigurado }: PropsEditor) {
   const router = useRouter();
   const supabase = useMemo(() => supabaseNavegador(), []);
   const quadro = useRef<QuadroApi>(null);
@@ -89,6 +109,8 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const [painelAberto, setPainelAberto] = useState(false);
   const [renomeando, setRenomeando] = useState<string | null>(null);
   const [situacao, setSituacao] = useState<{ s: Situacao; mensagem?: string }>({ s: 'salvo' });
+  // A de agora, pra uma mensagem montada depois de um await (o `situacao` do desenho em que a ação nasceu é velho).
+  const situacaoRef = useRef(situacao);
   const [aviso, setAviso] = useState<string | null>(null);
   const [trava, setTrava] = useState<Trava>({ estado: 'pegando' });
   const [fantasma, setFantasma] = useState<{ t: Ferramenta; x: number; y: number } | null>(null);
@@ -123,7 +145,10 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       const r = await supabase.from('fluxos').select('revisao, documento, estilo').eq('id', fluxo.id).maybeSingle();
       return r.data;
     },
-    aoMudar: (s, mensagem) => setSituacao({ s, ...(mensagem && { mensagem }) }),
+    aoMudar: (s, mensagem) => {
+      situacaoRef.current = { s, ...(mensagem && { mensagem }) };
+      setSituacao(situacaoRef.current);
+    },
     guardar: (copia) => {
       try {
         if (copia) localStorage.setItem(chaveLocal(fluxo.id), JSON.stringify(copia));
@@ -261,32 +286,24 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       return;
     }
     if (!copia) return;
-    const existem = new Set(cadastrosIniciais.map((k) => k.id));
-    let documento = copia.documento;
-    const orfas = documento.pecas.filter((p) => p.responsavel && !existem.has(p.responsavel));
-    for (const p of orfas) documento = D.mudarPeca(documento, p.id, { responsavel: undefined });
+    const { documento, orfas } = D.semResponsaveisQueSumiram(copia.documento, new Set(cadastrosIniciais.map((k) => k.id)));
     mudarHist(comecar(documento));
     trocarEstilo(lerEstilo(copia.estilo));
     salv.current!.mudou(documento, lerEstilo(copia.estilo));
-    avisar(
-      orfas.length
-        ? `Voltaram as mudanças que não tinham chegado ao banco (sem o responsável apagado em ${orfas.length === 1 ? '1 peça' : `${orfas.length} peças`}).`
-        : 'Voltaram as mudanças que não tinham chegado ao banco.',
-    );
+    avisar(orfas ? `Voltaram as mudanças que não tinham chegado ao banco (sem o responsável apagado em ${pecas(orfas)}).` : 'Voltaram as mudanças que não tinham chegado ao banco.');
   }
 
+  const pecas = (n: number) => (n === 1 ? '1 peça' : `${n} peças`);
+
   // ---------- Mudanças no documento ----------
-  const parar = () => {
-    setPlay(null);
-    setMostrados(0);
-    setEscolhendoInicio(null);
-  };
+  const parar = () => pl.parar();
 
   /** Toda mudança no documento parte do mais recente (`docAtual()`), nunca do `doc` deste desenho. */
   const editar = (novo: Documento, selecao?: D.Selecao) => {
     const v = vivo.current;
     if (v.soLeitura || novo === docAtual()) return;
     if (v.play) parar();
+    setDestaque(null);
     mudarHist(registrar(histRef.current, novo));
     salv.current!.mudou(novo, estiloRef.current);
     if (selecao !== undefined) setSel(selecao);
@@ -357,6 +374,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
 
   const selecionar = (s: D.Selecao) => {
     setSel(s);
+    setDestaque(null);
     if (s) setAba('prop');
     if (s && innerWidth <= 820) setPainelAberto(true);
   };
@@ -406,97 +424,226 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const nomesCadastros = useMemo(() => new Map(cadastros.map((k) => [k.id, k.nome])), [cadastros]);
 
   // ---------- Play ----------
-  const [play, setPlay] = useState<Play | null>(null);
-  const [docPlay, setDocPlay] = useState<Documento>(doc);
-  const [mostrados, setMostrados] = useState(0);
-  const [pausado, setPausado] = useState(false);
-  const [escolhendoInicio, setEscolhendoInicio] = useState<string[] | null>(null);
   const ctx = useMemo(() => ({ cadastros, canal: dados.canal }), [cadastros, dados.canal]);
+  const pl = usePlay({
+    doc,
+    ctx,
+    velocidade: estiloVisto.velocidade,
+    autoEscolha: estilo.autoEscolha,
+    camera: estilo.camera,
+    quadro,
+    avisar,
+    aoComecar: () => {
+      setRenomeando(null);
+      setDestaque(null);
+    },
+  });
+  const { play, docPlay, vis, escolhendoInicio, escolher } = pl;
   // Pro `editar` chamado depois de um await: a trava e o play de agora, não os de quando a ação nasceu.
   const vivo = useRef({ soLeitura, play });
   vivo.current = { soLeitura, play };
-  const exec = useMemo(() => (play ? rodar(docPlay, ctx, play) : null), [play, docPlay, ctx]);
-  const vis = useMemo(() => (exec ? verVisual(exec.eventos, mostrados) : null), [exec, mostrados]);
 
-  const comecarEm = (inicio: string) => {
-    setDocPlay(doc);
-    setPlay({ inicio, quando: play?.quando ?? agora(), modo: play?.modo ?? 'relogio', escolhas: [] });
-    setMostrados(0);
-    setPausado(false);
-    setEscolhendoInicio(null);
-    setRenomeando(null);
+  const darPlay = () => pl.darPlay(sel?.tipo === 'peca' ? sel.id : null);
+
+  // ---------- Diagnóstico ----------
+  // Adiado: digitar um nome não espera o diagnóstico (500 peças levam poucos milissegundos, mas a cada tecla).
+  const docDiag = useDeferredValue(doc);
+  const achados = useMemo(() => diagnosticar(docDiag, { cadastros, ...(dados.meta_s && { meta_s: dados.meta_s }) }), [docDiag, cadastros, dados.meta_s]);
+  const [marcados, setMarcados] = useState<readonly Intencional[]>(intencionaisIniciais);
+  const separados = useMemo(() => separar(achados, marcados), [achados, marcados]);
+  const marcasAntigas = useMemo(() => antigos(achados, marcados), [achados, marcados]);
+  const marcas = useMemo(() => new Map(marcados.map((i) => [i.chave, i])), [marcados]);
+  const [gaveta, setGaveta] = useState(false);
+  // Depois de montar: o servidor não sabe o que este navegador lembra (e o primeiro desenho tem que ser igual ao dele).
+  useEffect(() => setGaveta(gavetaAberta(fluxo.id)), [fluxo.id]);
+  const botaoDiagnostico = useRef<HTMLButtonElement>(null);
+  /** Fechar a gaveta tira o holofote do achado junto. */
+  const mudarGaveta = (aberta: boolean) => {
+    lembrarGaveta(fluxo.id, aberta);
+    setGaveta(aberta);
+    if (!aberta) setDestaque(null);
   };
-
-  const darPlay = () => {
-    const inicios = doc.pecas.filter((p) => p.tipo === 'inicio').map((p) => p.id);
-    const escolhido = sel?.tipo === 'peca' && inicios.includes(sel.id) ? sel.id : null;
-    if (escolhido) return comecarEm(escolhido);
-    if (!inicios.length) return avisar('Cria uma peça Início pra dar play.');
-    if (inicios.length === 1) return comecarEm(inicios[0]!);
-    setPlay(null);
-    setEscolhendoInicio(inicios);
-  };
-
-  // A água anda: cada evento aparece depois do tempo do anterior (o cano espera a água chegar).
+  const [destaque, setDestaque] = useState<ReadonlySet<string> | null>(null);
+  // "Simular até aqui" só pra peça que um Início alcança: uma busca pro documento; o caminho é feito no clique.
+  const comCaminho = useMemo(() => (gaveta ? simulaveis(docDiag, achados) : new Set<string>()), [gaveta, docDiag, achados]);
+  // A contagem muda a cada tecla: o leitor de tela ouve a de quando parou de mudar.
+  const anuncio = useAnuncioAdiado(`Diagnóstico: ${rotuloAchados(separados.abertos.length)}`);
+  // Tela pequena nos dois sentidos: com o play, a gaveta fecha pra não cobrir o cartão (sem lembrar). Deitado e mais
+  // largo, as duas cabem lado a lado (editor.css).
   useEffect(() => {
-    if (!exec || pausado) return;
-    const ev = exec.eventos;
-    if (mostrados >= ev.length) return;
-    if (mostrados === 0) return setMostrados(1);
-    const e = espera(ev[mostrados - 1]!);
-    if (e === 'cano') return;
-    const t = setTimeout(() => setMostrados((m) => m + 1), e / estiloVisto.velocidade);
-    return () => clearTimeout(t);
-  }, [exec, mostrados, pausado, estiloVisto.velocidade]);
-
-  // A água que chegou é a do evento `i`: um aviso repetido (ou atrasado, de um cano que já passou) não pula evento.
-  const aguaChegou = (i: number) => setMostrados((m) => (m === i ? m + 1 : m));
-
-  const escolher = (conexao: string) => {
-    if (!play || !exec?.pendente?.opcoes.some((o) => o.conexao === conexao)) return;
-    setPlay({ ...play, escolhas: [...play.escolhas, conexao] });
-  };
-
-  const voltar = () => {
-    if (!play) return;
-    if (!(exec?.escolhas ?? play.escolhas).length) {
-      setPlay({ ...play });
-      return setMostrados(0);
+    if (pl.ativo && matchMedia('(max-height: 600px) and (max-width: 599px)').matches) {
+      setGaveta(false);
+      setDestaque(null);
     }
-    const p = voltarPlay(play, exec?.escolhas);
-    setPlay(p);
-    setMostrados(rodar(docPlay, ctx, p).eventos.length);
-    setPausado(false);
+  }, [pl.ativo]);
+
+  const verNoQuadro = (a: Achado) => {
+    const f = focoDoAchado(docAtual(), a);
+    if (!f) return;
+    if (play) parar();
+    setSel(f.sel);
+    setDestaque(f.destaque);
+    quadro.current?.enquadrar(f.enquadrar);
   };
 
-  const recomecar = () => {
-    if (!play) return;
-    setPlay({ ...play, escolhas: [] });
-    setMostrados(0);
-    setPausado(false);
+  const simularAte = (a: Achado) => {
+    const d = docAtual();
+    const alvo = pecaDoAchado(d, a);
+    const p = alvo && caminhoAte(d, ctx, alvo, play?.quando ?? agora());
+    if (!alvo || !p) return avisar('Nenhum Início chega nesta peça.');
+    pl.tocar(p, alvo);
   };
 
-  // Escolha automática (pra apresentar) e câmera seguindo a água.
-  useEffect(() => {
-    if (!vis?.pergunta || pausado || !estilo.autoEscolha) return;
-    const primeira = vis.pergunta.opcoes[0]!.conexao;
-    const t = setTimeout(() => escolher(primeira), estilo.autoEscolha * 1000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vis?.pergunta, pausado, estilo.autoEscolha]);
+  const marcar = async (chave: string, nota: string) => {
+    if (vivo.current.soLeitura) return false;
+    const r = await marcarIntencional(empresaId, fluxo.id, chave, nota);
+    if (!r.intencional) {
+      avisar(r.erro ?? 'Não deu pra marcar.');
+      return false;
+    }
+    const i = r.intencional;
+    setMarcados((ms) => [...ms.filter((m) => m.chave !== chave), i]);
+    return true;
+  };
 
-  useEffect(() => {
-    if (!vis?.atual || !estilo.camera) return;
-    const destinos = docPlay.conexoes.filter((c) => c.de === vis.atual).map((c) => c.para);
-    quadro.current?.enquadrar([vis.atual, ...destinos]);
-  }, [vis?.atual, estilo.camera, docPlay]);
+  // ---------- Cenários ----------
+  const [cens, setCens] = useState<readonly Cenario[]>(cenariosIniciais);
+  // Contra o documento de agora (adiado como o diagnóstico): igual ou mudou.
+  const situacoes = useMemo(() => new Map<string, SituacaoCenario>(cens.map((c) => [c.id, situacaoDoCenario(c, docDiag, ctx)])), [cens, docDiag, ctx]);
+  const [aberto, setAberto] = useState<'cenarios' | 'versoes' | null>(null);
+  const botaoCenarios = useRef<HTMLButtonElement>(null);
+  const porNome = (a: Cenario, b: Cenario) => a.nome.localeCompare(b.nome, 'pt-BR');
+
+  /** Manda o que falta e diz se o banco está com o documento de agora (pra revisão de um cenário ou de uma versão). */
+  const salvarAntes = async (oQue: string) => {
+    await salv.current!.agora();
+    if (!salv.current!.sujo && !salv.current!.parado) return true;
+    avisar(`O fluxo ainda não chegou no banco (${textoSituacao[situacaoRef.current.s]}): ${oQue} fica pra quando salvar.`);
+    return false;
+  };
+
+  const salvarUmCenario = async (nome: string) => {
+    if (vivo.current.soLeitura) return false;
+    const novo = play && pl.exec ? cenarioDoPlay(play, pl.exec) : null;
+    if (!novo) {
+      avisar('Dá play até o fim pra salvar o cenário.');
+      return false;
+    }
+    if (!(await salvarAntes('o cenário'))) return false;
+    const r = await salvarCenario(empresaId, fluxo.id, nome, novo, salv.current!.revisao);
+    if (!r.cenario) {
+      avisar(r.erro ?? 'Não deu pra salvar o cenário.');
+      return false;
+    }
+    const c = r.cenario;
+    setCens((cs) => [...cs, c].sort(porNome));
+    avisar(`Cenário “${c.nome}” salvo. Ele fica em Cenários.`);
+    return true;
+  };
+
+  const acoesCenarios = {
+    tocar: (c: Cenario) => {
+      setAberto(null);
+      pl.tocar(playDoCenario(c));
+    },
+    aprovar: async (c: Cenario, s: SituacaoCenario) => {
+      const novo = paraAprovar(s);
+      if (vivo.current.soLeitura || !novo || !(await salvarAntes('a aprovação'))) return;
+      // A que vai pro banco: um salvamento no meio da ida mudaria `salv.revisao` antes da volta.
+      const revisao = salv.current!.revisao;
+      const r = await aprovarCenario(empresaId, fluxo.id, c.id, novo, revisao);
+      if (r.erro) return avisar(r.erro);
+      setCens((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...novo, revisao_aprovada: revisao } : x)));
+    },
+    renomear: async (c: Cenario, nome: string) => {
+      if (vivo.current.soLeitura) return false;
+      const r = await renomearCenario(empresaId, fluxo.id, c.id, nome);
+      if (r.erro) {
+        avisar(r.erro);
+        return false;
+      }
+      setCens((cs) => cs.map((x) => (x.id === c.id ? { ...x, nome: nome.trim() } : x)).sort(porNome));
+      return true;
+    },
+    apagar: async (c: Cenario) => {
+      if (vivo.current.soLeitura) return;
+      const r = await apagarCenario(empresaId, fluxo.id, c.id);
+      if (r.erro) return avisar(r.erro);
+      setCens((cs) => cs.filter((x) => x.id !== c.id));
+    },
+  };
+
+  // ---------- Versões ----------
+  const [vers, setVers] = useState<readonly VersaoResumo[]>(versoesIniciais);
+  const botaoVersoes = useRef<HTMLButtonElement>(null);
+
+  /** A versão é a foto do que está no banco: só marca depois que o que falta chegou. */
+  const marcarUmaVersao = async (nome: string) => {
+    if (vivo.current.soLeitura || !(await salvarAntes('a versão'))) return false;
+    const r = await marcarVersao(empresaId, fluxo.id, nome);
+    if (!r.versao) {
+      avisar(r.erro ?? 'Não deu pra marcar a versão.');
+      return false;
+    }
+    const v = r.versao;
+    setVers((vs) => [v, ...vs]);
+    avisar(`Versão ${v.numero} marcada.`);
+    return true;
+  };
+
+  /**
+   * Restaurar é uma edição como outra qualquer (Ctrl+Z desfaz): o documento da versão, lido pelo navegador (a regra
+   * de acesso vale), entra no histórico, e o estilo dela também (o estilo não entra no desfazer). Responsável que não
+   * é mais cadastro sai, como na cópia local: senão o banco recusaria o salvamento.
+   */
+  const restaurar = async (v: VersaoResumo) => {
+    const r = await supabase.from('fluxo_versoes').select('documento, estilo').eq('fluxo_id', fluxo.id).eq('numero', v.numero).maybeSingle();
+    if (r.error || !r.data) return avisar('Não deu pra ler essa versão. Tenta de novo.');
+    const lido = lerDocumento(r.data.documento);
+    if (!lido.documento) return avisar(`A versão ${v.numero} não abre: o documento dela não é válido.`);
+    const { documento, orfas } = D.semResponsaveisQueSumiram(lido.documento, new Set(cadastros.map((k) => k.id)));
+    if (vivo.current.soLeitura) return;
+    const est = lerEstilo(r.data.estilo);
+    // Igual ao de agora: nada a restaurar (e nenhum passo vazio no desfazer).
+    if (mesmoJson(documento, docAtual()) && mesmoJson(est, estiloRef.current)) return avisar(`A versão ${v.numero} é igual ao fluxo de agora: nada mudou.`);
+    setAberto(null);
+    botaoVersoes.current?.focus();
+    if (!mesmoJson(documento, docAtual())) editar(documento, null);
+    mudarEstilo(est);
+    avisar(`Voltou a versão ${v.numero} (“${v.nome}”)${orfas ? `, sem o responsável apagado em ${pecas(orfas)}` : ''}. Ctrl+Z desfaz.`);
+  };
+
+  // ---------- Compartilhar ----------
+  const [lnks, setLinks] = useState<readonly LinkResumo[]>(linksIniciais);
+  const [compartilhando, setCompartilhando] = useState(false);
+  const botaoCompartilhar = useRef<HTMLButtonElement>(null);
+
+  const desmarcar = async (chave: string) => {
+    if (vivo.current.soLeitura) return;
+    const r = await desmarcarIntencional(empresaId, fluxo.id, chave);
+    if (r.erro) return avisar(r.erro);
+    setMarcados((ms) => ms.filter((m) => m.chave !== chave));
+  };
 
   // ---------- Teclado ----------
   const teclas = useRef<(e: KeyboardEvent) => void>(() => {});
   teclas.current = (e: KeyboardEvent) => {
-    if ((e.target as Element | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    // Dentro de um campo, de um pop (Cenários, Versões) ou do diálogo, a tecla é deles: Delete num botão do pop não
+    // pode apagar a peça selecionada no quadro.
+    const alvo = e.target as Element | null;
+    if (alvo?.closest?.('input, textarea, select, [contenteditable="true"], .pop, dialog')) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    // Na gaveta: Esc tira o holofote (ou fecha a gaveta) e desfazer/refazer seguem valendo; Delete, Enter e as teclas
+    // das opções do play ficam com os botões dela.
+    if (alvo?.closest?.('.gaveta')) {
+      if (e.key === 'Escape') {
+        if (destaque) return setDestaque(null);
+        mudarGaveta(false);
+        return botaoDiagnostico.current?.focus();
+      }
+      if (!(mod && (k === 'z' || k === 'y'))) return;
+    }
     // Desfazer, refazer e apagar no meio de um arrasto encerram o arrasto (a peça fica onde está): senão o quadro
     // seguinte reaplicaria a posição em cima do que acabou de ser desfeito ou apagado.
     if (mod && k === 'z') {
@@ -513,20 +660,14 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       e.preventDefault();
       return duplicar(sel.id);
     }
-    if (vis?.pergunta && !mod) {
-      const valores = new Map(docPlay.conexoes.map((c) => [c.id, c.valor]));
-      const o = opcaoDaTecla(vis.pergunta.opcoes, e.key, valores);
-      if (o) {
-        e.preventDefault();
-        return escolher(o.conexao);
-      }
-    }
+    if (pl.tecla(e)) return;
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !play) {
       e.preventDefault();
       quadro.current?.encerrarGesto();
       return apagarSelecao();
     }
     if (e.key === 'Escape') {
+      if (destaque) return setDestaque(null);
       if (ferramenta !== 'selecionar') return setFerramenta('selecionar');
       if (sel) return setSel(null);
       return;
@@ -635,7 +776,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const corAgua = (canal: string | null) => corDoCanal(estilo, canais, canal ?? dados.canal);
 
   return (
-    <div className={`editor${estilo.ondas ? ' ondas' : ''}${estilo.holofote ? ' holofote-on' : ''}${vis?.pergunta ? ' escolhendo' : ''}`}>
+    <div className={`editor${estilo.ondas ? ' ondas' : ''}${estilo.holofote ? ' holofote-on' : ''}${vis?.pergunta ? ' escolhendo' : destaque ? ' destacando' : ''}${pl.ativo ? ' com-play' : ''}${gaveta ? ' com-gaveta' : ''}`}>
       {/* O nome do fluxo como título da página pro leitor de tela (na tela ele é o campo editável). */}
       <h1 className="so-leitor">{dados.nome}</h1>
       <div className="cabeca-editor">
@@ -691,6 +832,28 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             {trava.estado === 'pegando' ? 'abrindo…' : trava.estado === 'incerta' && !parado ? 'não deu pra confirmar a edição' : soLeitura && !parado ? 'só leitura' : textoSituacao[situacao.s]}
           </span>
           <div className="empurra">
+            <button
+              ref={botaoDiagnostico}
+              className="botao"
+              type="button"
+              aria-expanded={gaveta}
+              aria-controls={gaveta ? 'gaveta-diagnostico' : undefined}
+              onClick={() => mudarGaveta(!gaveta)}
+              data-testid="botao-diagnostico"
+            >
+              <Icone nome="alerta" />
+              {rotuloAchados(separados.abertos.length)}
+            </button>
+            <button ref={botaoCenarios} className="botao" type="button" aria-expanded={aberto === 'cenarios'} onClick={() => setAberto(aberto === 'cenarios' ? null : 'cenarios')}>
+              Cenários ({cens.length})
+            </button>
+            <button ref={botaoVersoes} className="botao" type="button" aria-expanded={aberto === 'versoes'} onClick={() => setAberto(aberto === 'versoes' ? null : 'versoes')}>
+              Versões
+            </button>
+            <button ref={botaoCompartilhar} className="botao" type="button" aria-haspopup="dialog" onClick={() => setCompartilhando(true)}>
+              <Icone nome="link" />
+              Compartilhar
+            </button>
             <button className="bi" type="button" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled={soLeitura || !hist.antes.length} onClick={() => historia(desfazer)}>
               <Icone nome="desfazer" />
             </button>
@@ -706,6 +869,22 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             </button>
           </div>
         </header>
+        {aberto === 'versoes' && (
+          <Pop titulo="Versões" voltarPara={botaoVersoes} aoFechar={() => setAberto(null)}>
+            <Versoes versoes={vers} soLeitura={soLeitura} acoes={{ marcar: marcarUmaVersao, restaurar }} />
+          </Pop>
+        )}
+        {aberto === 'cenarios' && (
+          <Pop titulo="Cenários" voltarPara={botaoCenarios} aoFechar={() => setAberto(null)}>
+            <Cenarios
+              cenarios={cens}
+              situacoes={situacoes}
+              nomeDaPeca={(id) => docDiag.pecas.find((p) => p.id === id)?.nome ?? 'peça que não existe mais'}
+              soLeitura={soLeitura}
+              acoes={acoesCenarios}
+            />
+          </Pop>
+        )}
       </div>
 
       <div className="area">
@@ -719,6 +898,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           {botaoFerramenta('nota', 'Nota', 'nota', 'recado no quadro')}
         </nav>
 
+        <div className="quadro-e-gaveta">
         <Quadro
           ref={quadro}
           doc={play ? docPlay : doc}
@@ -730,9 +910,10 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           ferramenta={ferramenta}
           soLeitura={soLeitura}
           play={vis}
-          pausado={pausado}
-          aoAguaChegar={() => aguaChegou(mostrados)}
+          pausado={pl.pausado}
+          aoAguaChegar={pl.aguaChegou}
           renomeando={renomeando}
+          destaque={destaque}
           acoes={{
             selecionar,
             criar,
@@ -772,34 +953,40 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
               doc={docPlay}
               play={play}
               visual={vis}
-              pausado={pausado}
+              pausado={pl.pausado}
               velocidade={estiloVisto.velocidade}
               autoEscolha={estilo.autoEscolha}
               corAgua={corAgua}
               canais={canais}
               inicios={escolhendoInicio}
+              {...(!soLeitura && { salvarCenario: salvarUmCenario })}
               acoes={{
                 escolher,
-                pausar: () => setPausado((p) => !p),
-                voltar,
-                recomecar,
+                pausar: pl.pausar,
+                voltar: pl.voltar,
+                recomecar: pl.recomecar,
                 parar,
                 velocidade: mudarVelocidade,
-                quando: (q) => {
-                  if (!play) return;
-                  setPlay({ ...play, quando: q, escolhas: [] });
-                  setMostrados(0);
-                },
-                relogio: (decide) => {
-                  if (!play) return;
-                  setPlay({ ...play, modo: decide ? 'relogio' : 'livre', escolhas: [] });
-                  setMostrados(0);
-                },
-                comecarEm,
+                quando: pl.mudarQuando,
+                relogio: pl.mudarRelogio,
+                comecarEm: pl.comecarEm,
               }}
             />
           )}
         </Quadro>
+        {gaveta && (
+          <Gaveta
+            id="gaveta-diagnostico"
+            abertos={separados.abertos}
+            intencionais={separados.intencionais}
+            antigos={marcasAntigas}
+            marcas={marcas}
+            podeSimular={(a) => comCaminho.has(a.chave)}
+            soLeitura={soLeitura}
+            acoes={{ verNoQuadro, simularAte, marcar, desmarcar: (chave) => void desmarcar(chave) }}
+          />
+        )}
+        </div>
 
         <Painel
           aba={aba}
@@ -858,7 +1045,24 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           )}
         </div>
       )}
+      <Compartilhar
+        empresaId={empresaId}
+        fluxoId={fluxo.id}
+        aberto={compartilhando}
+        aoFechar={() => setCompartilhando(false)}
+        voltarPara={botaoCompartilhar}
+        configurado={linkConfigurado}
+        versoes={vers}
+        cenarios={cens}
+        links={lnks}
+        setLinks={setLinks}
+        soLeitura={soLeitura}
+      />
       <div role="status">{aviso && <div className="aviso">{aviso}</div>}</div>
+      {/* Montada vazia: a contagem dos achados, quando muda (adiada). */}
+      <div className="so-leitor" role="status">
+        {anuncio}
+      </div>
     </div>
   );
 }

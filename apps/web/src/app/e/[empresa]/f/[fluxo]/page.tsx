@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { unstable_rethrow } from 'next/navigation';
 import { cache } from 'react';
 import { Editor } from '@/componentes/editor/Editor';
-import { cadastros, canais, fluxoParaEditar, tiposCadastro } from '@/lib/dados';
+import { cadastros, canais, cenarios, fluxoParaEditar, intencionais, links, tiposCadastro, versoes } from '@/lib/dados';
+import { linkPublicoConfigurado } from '@/lib/link';
 
 type Props = { params: Promise<{ empresa: string; fluxo: string }> };
 
@@ -25,7 +26,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PaginaEditor({ params }: Props) {
   const { empresa: empresaId, fluxo: fluxoId } = await params;
-  const [f, cs, ks, ts] = await Promise.all([fluxoDoPedido(empresaId, fluxoId), canais(empresaId), cadastros(empresaId), tiposCadastro(empresaId)]);
+  const [f, cs, ks, ts, is, cens, vs, ls] = await Promise.all([
+    fluxoDoPedido(empresaId, fluxoId),
+    canais(empresaId),
+    cadastros(empresaId),
+    tiposCadastro(empresaId),
+    intencionais(empresaId, fluxoId),
+    cenarios(empresaId, fluxoId),
+    versoes(empresaId, fluxoId),
+    links(empresaId, fluxoId),
+  ]);
   // Canal arquivado some da lista, a não ser que o fluxo ainda use (como principal ou numa peça).
   const usados = new Set([f.canal, ...f.documento.pecas.map((p) => p.canal)]);
   return (
@@ -35,6 +45,11 @@ export default async function PaginaEditor({ params }: Props) {
       canais={cs.filter((c) => !c.arquivado || usados.has(c.chave)).map(({ chave, nome, cor }) => ({ chave, nome, cor }))}
       cadastros={ks}
       tipos={ts}
+      intencionais={is}
+      cenarios={cens}
+      versoes={vs}
+      links={ls}
+      linkConfigurado={linkPublicoConfigurado()}
     />
   );
 }

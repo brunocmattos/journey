@@ -65,6 +65,8 @@ export interface PropsQuadro {
   pausado: boolean;
   aoAguaChegar: () => void;
   renomeando: string | null;
+  /** "Ver no quadro" de um achado: estas peças e conexões ficam no holofote. */
+  destaque?: ReadonlySet<string> | null;
   acoes: AcoesQuadro;
   ref?: React.Ref<QuadroApi>;
   children?: React.ReactNode;
@@ -94,7 +96,7 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 2.5;
 const limitar = (v: number, m: number) => Math.max(-m, Math.min(m, v));
 
-export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, ferramenta, soLeitura, play, pausado, aoAguaChegar, renomeando, acoes, ref, children }: PropsQuadro) {
+export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, ferramenta, soLeitura, play, pausado, aoAguaChegar, renomeando, destaque = null, acoes, ref, children }: PropsQuadro) {
   const palco = useRef<HTMLElement>(null);
   const [vista, setVista] = useState<Vista>({ x: 120, y: 260, k: 1 });
   const vistaRef = useRef(vista);
@@ -456,6 +458,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
           pausado={pausado}
           aoAguaChegar={aoAguaChegar}
           renomeando={renomeando}
+          destaque={destaque}
           temp={temp}
           acoes={acoes}
         />
@@ -537,6 +540,7 @@ interface PropsMundo {
   pausado: boolean;
   aoAguaChegar: () => void;
   renomeando: string | null;
+  destaque: ReadonlySet<string> | null;
   temp: { d: string; alvo: string | null } | null;
   acoes: AcoesQuadro;
 }
@@ -545,7 +549,7 @@ interface PropsMundo {
  * O que está dentro do mundo (grupos, canos, peças, rótulos). Memorizado e sem a vista: andar e dar zoom só mudam o
  * transform do `.mundo`, sem redesenhar os canos a cada quadro.
  */
-const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, soLeitura, play, pausado, aoAguaChegar, renomeando, temp, acoes }: PropsMundo) {
+const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, soLeitura, play, pausado, aoAguaChegar, renomeando, destaque, temp, acoes }: PropsMundo) {
   const pecas = useMemo(() => new Map(doc.pecas.map((p) => [p.id, p])), [doc.pecas]);
   const canos = useMemo(() => {
     // Ida e volta entre as mesmas peças: cada cano vai pra um lado, senão ficam um em cima do outro.
@@ -559,8 +563,8 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
     });
   }, [doc.conexoes, pecas, estilo.curva]);
 
-  // A simulação: o que está molhado, a pergunta (holofote) e a água.
-  const foco = new Set<string>();
+  // A simulação: o que está molhado, a pergunta (holofote) e a água. Sem pergunta, o holofote é o do achado.
+  const foco = new Set<string>(play?.pergunta ? [] : (destaque ?? []));
   if (play?.pergunta) {
     foco.add(play.pergunta.peca);
     for (const o of play.pergunta.opcoes) foco.add(o.para);
@@ -611,7 +615,7 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
             const selecionado = sel?.tipo === 'conexao' && sel.id === c.id;
             const seta = `url(#${selecionado ? 'seta-sel' : 'seta'})`;
             return (
-              <g key={c.id} className={`cano${selecionado ? ' sel' : ''}${escolhiveis.has(c.id) ? ' foco' : ''}`} data-cano={c.id}>
+              <g key={c.id} className={`cano${selecionado ? ' sel' : ''}${escolhiveis.has(c.id) || foco.has(c.id) ? ' foco' : ''}`} data-cano={c.id}>
                 {estilo.cano === 'cano' ? (
                   <>
                     <path className="parede" d={geo.d} strokeWidth={esp} markerEnd={seta} />
@@ -659,8 +663,8 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
                 ...(play.molhadas.has(p.id) && { agua: cor(play.molhadas.get(p.id)) }),
                 atual: play.atual === p.id,
                 perguntando: play.pergunta?.peca === p.id,
-                foco: foco.has(p.id),
               })}
+              foco={foco.has(p.id)}
               soLeitura={soLeitura || !!play}
             />
           );
@@ -673,6 +677,7 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
             y={geo.meio.y}
             selecionado={sel?.tipo === 'conexao' && sel.id === c.id}
             escolhivel={escolhiveis.has(c.id)}
+            destacado={foco.has(c.id)}
             {...(play && { corAgua: cor(play.canal) })}
           />
         ))}
