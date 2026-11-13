@@ -5,4 +5,4 @@ export { indexar, textoRegra, type Indice } from './indice';
 export { lerQuando, dentroDoHorario, ehFeriado, formatarTempo } from './relogio';
 export { Execucao, executar, simular, type Contexto, type Modo, type OpcoesExecucao, type Opcao, type QuemEscolheu, type MotivoFim, type Evento } from './motor';
 export { diagnosticar, type Achado, type Gravidade, type OpcoesDiagnostico } from './diagnostico';
-export { MODELOS, type Modelo } from './modelos';
+export { MODELOS, instanciarModelo, type Modelo } from './modelos';
