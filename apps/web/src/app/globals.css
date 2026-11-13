@@ -4,15 +4,11 @@
   --ink: #13212a; --ink-2: #4b5d68; --ink-3: #7c8c95; --line: #d2dbdf;
   --node: #ffffff; --node-line: #b6c3ca; --tile: #e7eef1; --plate: #13212a17;
   --pipe-wall: #9fafb8; --pipe-core: #d9e1e5; --pipe-sheen: #f6f9fa;
-  --lane: #e2e9ec; --lane-ink: #b4c1c8;
-  --w-telefonia: #1e8bdc; --w-whatsapp: #159e5a; --w-ocorrencia: #7650d6; --w-email: #c98410;
-  --ret: #8e7ccb; --foam: #ffffff;
+  --w-telefonia: #1e8bdc;
   --bad: #cf3a3a; --bad-soft: #fbe4e2; --warn: #9c6205; --warn-soft: #fbefd6;
   --ok: #17914f; --ok-soft: #ddf3e6; --info: #3a6a88; --info-soft: #e0ecf3;
   --btn: #13212a; --btn-ink: #f2f6f7;
   --shadow: 0 14px 36px -16px rgba(14, 38, 52, 0.42);
-  --agenda-1: #1e7fd0; --agenda-2: #c98410; --agenda-3: #17914f; --agenda-4: #7650d6; --agenda-5: #cf3a3a; --agenda-6: #3a6a88;
-  --lit: var(--w-telefonia);
   /* Editor (v2): destaque, nota, grupo e quanto as cores claras se misturam no fundo. */
   --accent: #1e8bdc; --accent-soft: #dcecf8; --nota: #f6eaa8; --nota-ink: #4f4110; --grupo: #dfe8ec; --mistura: 60%;
   --f-display: var(--fonte-display), 'IBM Plex Sans', system-ui, sans-serif;
@@ -26,15 +22,12 @@
     --ink: #e2ebee; --ink-2: #9baeb8; --ink-3: #6b7f8a; --line: #1f2c34;
     --node: #121d24; --node-line: #2e404a; --tile: #1b2931; --plate: #00000066;
     --pipe-wall: #34454f; --pipe-core: #1a252c; --pipe-sheen: #2d3d46;
-    --lane: #10191e; --lane-ink: #26353d;
-    --w-telefonia: #46a8f0; --w-whatsapp: #2cc274; --w-ocorrencia: #9c7ef2; --w-email: #eda63a;
-    --ret: #8e80d8;
+    --w-telefonia: #46a8f0;
     --accent: #46a8f0; --accent-soft: #14283a; --nota: #4a4220; --nota-ink: #f3e7b0; --grupo: #131f26; --mistura: 16%;
     --bad: #f06a62; --bad-soft: #3a1c1d; --warn: #e6a23c; --warn-soft: #33270f;
     --ok: #3cc47d; --ok-soft: #12301f; --info: #7fb2d6; --info-soft: #14262f;
     --btn: #e2ebee; --btn-ink: #0a1014;
     --shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.65);
-    --agenda-1: #3b86cc; --agenda-2: #bf8326; --agenda-3: #3cc47d; --agenda-4: #9c7ef2; --agenda-5: #f06a62; --agenda-6: #7fb2d6;
     color-scheme: dark;
   }
 }
@@ -43,15 +36,12 @@
   --ink: #e2ebee; --ink-2: #9baeb8; --ink-3: #6b7f8a; --line: #1f2c34;
   --node: #121d24; --node-line: #2e404a; --tile: #1b2931; --plate: #00000066;
   --pipe-wall: #34454f; --pipe-core: #1a252c; --pipe-sheen: #2d3d46;
-  --lane: #10191e; --lane-ink: #26353d;
-  --w-telefonia: #46a8f0; --w-whatsapp: #2cc274; --w-ocorrencia: #9c7ef2; --w-email: #eda63a;
-  --ret: #8e80d8;
+  --w-telefonia: #46a8f0;
   --accent: #46a8f0; --accent-soft: #14283a; --nota: #4a4220; --nota-ink: #f3e7b0; --grupo: #131f26; --mistura: 16%;
   --bad: #f06a62; --bad-soft: #3a1c1d; --warn: #e6a23c; --warn-soft: #33270f;
   --ok: #3cc47d; --ok-soft: #12301f; --info: #7fb2d6; --info-soft: #14262f;
   --btn: #e2ebee; --btn-ink: #0a1014;
   --shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.65);
-  --agenda-1: #3b86cc; --agenda-2: #bf8326; --agenda-3: #3cc47d; --agenda-4: #9c7ef2; --agenda-5: #f06a62; --agenda-6: #7fb2d6;
   color-scheme: dark;
 }
 
@@ -78,14 +68,9 @@ h2 { font-size: 18px; font-weight: 700; }
 .marca svg { width: 30px; height: 30px; }
 .migalhas { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 13px; min-width: 0; }
 .migalhas .barra { color: var(--ink-3); }
-/* No link público o nome da jornada é o h1 da página, com o desenho das migalhas. */
-.migalhas h1 { font: inherit; letter-spacing: inherit; }
-.selos-link { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
-.selos-link .validade { color: var(--ink-2); font-size: 12.5px; }
 .nav { display: flex; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; flex-wrap: wrap; }
 .nav a, .nav button { display: flex; align-items: center; gap: 7px; border: 0; background: none; border-radius: 8px; padding: 5px 11px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; text-decoration: none; }
 .nav a[aria-current='page'], .nav button[aria-pressed='true'], .nav button[aria-selected='true'] { background: var(--node); color: var(--ink); box-shadow: 0 1px 0 var(--line); }
-.nav .ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .empurra { margin-left: auto; }
 
 /* Páginas comuns. */
@@ -116,9 +101,6 @@ h2 { font-size: 18px; font-weight: 700; }
 table.tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tabela th { text-align: left; font: 600 10.5px var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .tabela td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.tabela tr[aria-selected='true'] td { background: var(--tile); }
-.tabela tbody tr.clicavel { cursor: pointer; }
-.tabela tbody tr.clicavel:hover td { background: var(--tile); }
 .numeros { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); }
 .numeros b { font: 600 15px var(--f-mono); color: var(--ink); margin-right: 4px; font-variant-numeric: tabular-nums; }
 .vazio { color: var(--ink-3); font-size: 13px; margin: 0; }

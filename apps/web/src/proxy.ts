@@ -26,4 +26,4 @@ export async function proxy(request: NextRequest) {
   return resposta;
 }
 
-export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|modelos/).*)'] };
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'] };

@@ -25,26 +25,5 @@ export async function entrar(page: Page, request: APIRequestContext, email: stri
   await page.goto(link);
 }
 
-/**
- * As telas da v1 (importar, catálogo) saíram do menu na etapa B e continuam até a C: os testes delas chegam pelo endereço.
- */
-export async function irPara(page: Page, secao: 'importar' | 'catalogo') {
-  await page.waitForURL(/\/e\/[0-9a-f-]+/);
-  const empresa = /\/e\/([0-9a-f-]+)/.exec(page.url())![1];
-  await page.goto(`/e/${empresa}/${secao}`);
-}
-
 export const emailNovo = (prefixo: string) => `${prefixo}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@exemplo.com`;
 
-/** Cria a empresa e importa os arquivos; termina na página da jornada. */
-export async function empresaComImport(page: Page, arquivos: string[], nome = 'Empresa de teste') {
-  await expect(page).toHaveURL(/\/empresa\/nova/);
-  await page.getByLabel('Nome da empresa').fill(nome);
-  await page.getByRole('button', { name: 'Criar' }).click();
-  await irPara(page, 'importar');
-  await page.getByLabel('Arquivos').setInputFiles(arquivos);
-  await page.getByRole('button', { name: 'Analisar' }).click();
-  await expect(page.getByText('pode confirmar')).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Confirmar import' }).click();
-  await expect(page.getByTestId('mapa')).toBeVisible({ timeout: 30_000 });
-}
