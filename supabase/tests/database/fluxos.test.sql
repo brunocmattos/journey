@@ -1,7 +1,7 @@
 -- Journey v2 (etapa A): canais, cadastros, fluxos, salvar, trava e versões.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(46);
 
 insert into auth.users (id, email, aud, role, email_confirmed_at) values
   ('00000000-0000-0000-0000-0000000000f1', 'ana@exemplo.com', 'authenticated', 'authenticated', now()),
@@ -64,7 +64,14 @@ select is(public.salvar_fluxo(current_setting('teste.f')::uuid, 0,
   '{"velocidade":2}'), 1, 'salva e devolve a revisão nova');
 select is((select array_agg(cadastro_id::text) from public.fluxo_cadastros), array[current_setting('teste.fila')], 'o "onde é usado" vem do documento');
 select is((select estilo from public.fluxos), '{"velocidade":2}'::jsonb, 'e o estilo junto');
+select is((select pecas from public.fluxos_resumo), 1, 'a lista diz quantas peças, sem abrir o documento');
+select throws_ok($$ update public.fluxos_resumo set nome = 'x' $$, '42501', null, 'a lista só se lê');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 0, pg_temp.doc()) $$, '40001', null, 'revisão velha: outra pessoa salvou no meio');
+select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, null, pg_temp.doc()) $$, '40001', null, 'sem revisão também não sobrescreve');
+select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1,
+  pg_temp.doc((select jsonb_agg(jsonb_build_object('id', 'p' || g, 'tipo', 'etapa', 'nome', 'x', 'x', 0, 'y', 0)) from generate_series(1, 2001) g))) $$,
+  '23514', null, 'mais de 2.000 peças não entra');
+select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, pg_temp.doc(), '[]') $$, '23514', null, 'estilo tem que ser um objeto');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, '{"formato":"journey/1","pecas":[]}') $$, '23514', null, 'documento que não é journey/2 não entra');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, '{"formato":"journey/2"}') $$, '23514', null, 'nem documento sem as listas');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, pg_temp.doc('[{"id":"a","tipo":"etapa","nome":"x","x":0,"y":0,"responsavel":"maria"}]')) $$, '22023', null, 'responsável que não é cadastro não entra');
@@ -92,6 +99,24 @@ select is((public.pegar_trava(current_setting('teste.f')::uuid) ->> 'ok')::boole
 -- Versões.
 select is(public.marcar_versao(current_setting('teste.f')::uuid, 'antes do horário novo'), 1, 'marca a versão 1');
 select is((select documento from public.fluxo_versoes), (select documento from public.fluxos), 'a versão guarda o documento de agora');
+
+
+-- Depois da revisão: maiúsculas, mais versões, soltar a trava, membro que sai, empresa que sai.
+select is(public.salvar_fluxo(current_setting('teste.f')::uuid, 1,
+  pg_temp.doc(jsonb_build_array(jsonb_build_object('id', 'a', 'tipo', 'atendimento', 'nome', 'Cobra', 'x', 0, 'y', 0, 'responsavel', upper(current_setting('teste.fila')))))),
+  2, 'id de cadastro em maiúsculas também vale');
+select is(public.marcar_versao(current_setting('teste.f')::uuid, 'depois'), 2, 'a próxima versão é a 2');
+select public.soltar_trava(current_setting('teste.f')::uuid);
+select is((select trava_por from public.fluxos), null, 'quem tem a trava solta');
+select pg_temp.entrar('00000000-0000-0000-0000-0000000000f1');
+select public.pegar_trava(current_setting('teste.f')::uuid);
+reset role;
+delete from public.membros where usuario_id = '00000000-0000-0000-0000-0000000000f1';
+set local role authenticated;
+select pg_temp.entrar('00000000-0000-0000-0000-0000000000f2');
+select is((public.pegar_trava(current_setting('teste.f')::uuid) ->> 'ok')::boolean, true, 'trava de quem saiu da empresa não vale');
+reset role;
+select lives_ok($$ delete from public.empresas where id = current_setting('teste.a')::uuid $$, 'empresa com cadastro em uso se apaga, com tudo dela');
 
 select * from finish();
 rollback;

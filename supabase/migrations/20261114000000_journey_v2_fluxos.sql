@@ -89,6 +89,8 @@ create table public.fluxos (
   documento jsonb not null default '{"formato":"journey/2","pecas":[],"conexoes":[],"grupos":[],"notas":[]}',
   -- Estilo e animação do fluxo (o que muda em relação ao padrão).
   estilo jsonb not null default '{}' check (jsonb_typeof(estilo) = 'object'),
+  -- Quantas peças o documento tem (pra lista, sem abrir o documento). Só salvar_fluxo mexe.
+  total_pecas int not null default 0,
   -- Meta de tempo do fluxo, em segundos (o diagnóstico avisa quando o caminho mais longo passa dela).
   meta_s int check (meta_s > 0),
   -- Sobe a cada salvamento: quem salva manda a revisão que abriu; se mudou no meio, o banco recusa.
@@ -102,13 +104,15 @@ create table public.fluxos (
   trava_ate timestamptz,
   unique (id, empresa_id),
   foreign key (empresa_id, canal) references public.canais (empresa_id, chave),
-  -- coalesce: chave faltando dá null, e null passaria no check.
+  -- coalesce: chave faltando dá null, e null passaria no check. case: o Postgres não garante a ordem do and. Os limites são os de LIMITES (packages/fluxo/src/validar.ts).
   constraint fluxos_documento_forma check (coalesce(
     documento ->> 'formato' = 'journey/2'
-    and jsonb_typeof(documento -> 'pecas') = 'array'
-    and jsonb_typeof(documento -> 'conexoes') = 'array'
-    and jsonb_typeof(documento -> 'grupos') = 'array'
-    and jsonb_typeof(documento -> 'notas') = 'array', false))
+    and case when jsonb_typeof(documento -> 'pecas') = 'array' then jsonb_array_length(documento -> 'pecas') <= 2000 else false end
+    and case when jsonb_typeof(documento -> 'conexoes') = 'array' then jsonb_array_length(documento -> 'conexoes') <= 6000 else false end
+    and case when jsonb_typeof(documento -> 'grupos') = 'array' then jsonb_array_length(documento -> 'grupos') <= 500 else false end
+    and case when jsonb_typeof(documento -> 'notas') = 'array' then jsonb_array_length(documento -> 'notas') <= 500 else false end, false)),
+  constraint fluxos_documento_tamanho check (octet_length(documento::text) <= 8000000),
+  constraint fluxos_estilo_tamanho check (octet_length(estilo::text) <= 20000)
 );
 create index fluxos_empresa on public.fluxos (empresa_id, editado_em desc);
 
@@ -137,11 +141,35 @@ create table public.fluxo_cadastros (
   foreign key (cadastro_id, empresa_id) references public.cadastros (id, empresa_id) on delete restrict
 );
 create index fluxo_cadastros_cadastro on public.fluxo_cadastros (cadastro_id);
+create index fluxo_versoes_empresa on public.fluxo_versoes (empresa_id);
+
+-- Apagar a empresa apaga tudo dela. O "onde é usado" sai antes, senão o cadastro em uso barraria a cascata.
+create function public.limpar_uso_da_empresa() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.fluxo_cadastros where empresa_id = old.id;
+  return old;
+end;
+$$;
+create trigger limpar_uso_da_empresa before delete on public.empresas for each row execute function public.limpar_uso_da_empresa();
+revoke execute on function public.limpar_uso_da_empresa() from public, anon, authenticated;
+
+-- Quem mudou o fluxo por último, inclusive nome, canal e meta (que a tela grava direto).
+create function public.carimbar_fluxo() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.editado_em := now();
+  new.editado_por := coalesce(auth.uid(), new.editado_por);
+  return new;
+end;
+$$;
+create trigger carimbar_fluxo before update of nome, descricao, canal, meta_s, documento, estilo on public.fluxos
+  for each row execute function public.carimbar_fluxo();
 
 -- A lista de fluxos sem trazer os documentos: só o tamanho. security_invoker: valem as regras de quem pergunta.
 create view public.fluxos_resumo with (security_invoker = true) as
   select f.id, f.empresa_id, f.nome, f.descricao, f.canal, f.editado_em, f.editado_por,
-    jsonb_array_length(f.documento -> 'pecas') as pecas,
+    f.total_pecas as pecas,
     case when f.trava_ate > now() then f.trava_por end as editando_por
   from public.fluxos f;
 
@@ -178,7 +206,9 @@ create policy "membro vê onde é usado" on public.fluxo_cadastros for select to
 
 -- Por coluna: o que a tela grava direto. Documento, revisão, trava e versões só pelas funções abaixo.
 revoke all on public.canais, public.tipos_cadastro, public.cadastros, public.fluxos, public.fluxo_versoes, public.fluxo_cadastros, public.fluxos_resumo from anon;
-revoke insert, update, delete, truncate, trigger, references on
+revoke all on public.fluxos_resumo from authenticated;
+grant select on public.fluxos_resumo to authenticated;
+revoke insert, update, delete, truncate, trigger, references, maintain on
   public.canais, public.tipos_cadastro, public.cadastros, public.fluxos, public.fluxo_versoes, public.fluxo_cadastros from authenticated;
 grant insert (empresa_id, chave, nome, cor, icone, ordem) on public.canais to authenticated;
 grant update (nome, cor, icone, ordem, arquivado) on public.canais to authenticated;
@@ -207,14 +237,15 @@ begin
   if not found or not public.eh_membro(v.empresa_id) then
     raise exception 'fluxo não encontrado' using errcode = 'P0002';
   end if;
-  if v.trava_por is not null and v.trava_por <> auth.uid() and v.trava_ate > now() then
+  if v.trava_por is not null and v.trava_por <> auth.uid() and v.trava_ate > now()
+    and exists (select 1 from public.membros m where m.empresa_id = v.empresa_id and m.usuario_id = v.trava_por) then
     raise exception 'outra pessoa está editando este fluxo' using errcode = 'P0001';
   end if;
-  if v.revisao <> p_revisao then
+  if v.revisao is distinct from p_revisao then
     raise exception 'o fluxo mudou desde que foi aberto: recarregue' using errcode = '40001';
   end if;
   if jsonb_typeof(p_documento -> 'pecas') = 'array' then
-    select array_agg(distinct p ->> 'responsavel') into v_resp
+    select array_agg(distinct lower(p ->> 'responsavel')) into v_resp
     from jsonb_array_elements(p_documento -> 'pecas') p
     where coalesce(p ->> 'responsavel', '') <> '';
   end if;
@@ -229,6 +260,7 @@ begin
   update public.fluxos set
     documento = p_documento,
     estilo = coalesce(p_estilo, estilo),
+    total_pecas = coalesce(jsonb_array_length(case when jsonb_typeof(p_documento -> 'pecas') = 'array' then p_documento -> 'pecas' end), 0),
     revisao = revisao + 1,
     editado_por = auth.uid(),
     editado_em = now(),
@@ -253,7 +285,8 @@ begin
   if not found or not public.eh_membro(v.empresa_id) then
     raise exception 'fluxo não encontrado' using errcode = 'P0002';
   end if;
-  if v.trava_por is null or v.trava_por = auth.uid() or v.trava_ate <= now() then
+  if v.trava_por is null or v.trava_por = auth.uid() or v.trava_ate <= now()
+    or not exists (select 1 from public.membros m where m.empresa_id = v.empresa_id and m.usuario_id = v.trava_por) then
     update public.fluxos set trava_por = auth.uid(), trava_ate = v_ate where id = p_fluxo;
     return jsonb_build_object('ok', true, 'ate', v_ate);
   end if;
