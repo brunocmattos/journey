@@ -2,7 +2,10 @@ import 'server-only';
 import { cache } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { lerDocumento, type Cadastro, type Documento } from '@journey/fluxo';
+import type { LinkResumo } from '@/compartilhar/opcoes';
 import type { TipoCadastro } from '@/editor/cadastros';
+import type { Cenario } from '@/editor/cenarios';
+import type { Intencional } from '@/editor/diagnostico';
 import type { CanalEditor } from '@/editor/estilo';
 import { supabaseServidor } from './supabase/servidor';
 
@@ -176,4 +179,71 @@ export async function usosDosCadastros(empresaId: string): Promise<Map<string, {
     m.set(u.cadastro_id, [...(m.get(u.cadastro_id) ?? []), { id: u.fluxo_id, nome: nomes.get(u.fluxo_id) ?? 'fluxo' }]);
   }
   return m;
+}
+
+// Versões, cenários, intencionais e links de um fluxo (etapa C) ----------------------------------------------------
+
+export interface VersaoResumo {
+  numero: number;
+  nome: string;
+  /** E-mail de quem marcou (null se não é mais membro, ou foi apagado). */
+  autor: string | null;
+  criada_em: string;
+}
+
+/** As versões marcadas do fluxo, da mais nova pra mais velha (sem os documentos). */
+export async function versoes(empresaId: string, fluxoId: string): Promise<VersaoResumo[]> {
+  const { supabase } = await usuarioAtual();
+  const [linhas, emails] = await Promise.all([
+    todas<{ numero: number; nome: string; autor: string | null; criada_em: string }>((de, ate) =>
+      supabase.from('fluxo_versoes').select('numero, nome, autor, criada_em').eq('empresa_id', empresaId).eq('fluxo_id', fluxoId).order('numero', { ascending: false }).range(de, ate),
+    ),
+    emailsDosMembros(empresaId),
+  ]);
+  return linhas.map((l) => ({ ...l, autor: (l.autor && emails.get(l.autor)) ?? null }));
+}
+
+/** Os cenários do fluxo, por nome. A forma do resultado esperado o banco já conferiu (cenarios_esperado). */
+export async function cenarios(empresaId: string, fluxoId: string): Promise<Cenario[]> {
+  const { supabase } = await usuarioAtual();
+  return todas<Cenario>((de, ate) =>
+    supabase
+      .from('cenarios')
+      .select('id, nome, inicio, quando, modo, escolhas, esperado, revisao_aprovada, atualizado_em')
+      .eq('empresa_id', empresaId)
+      .eq('fluxo_id', fluxoId)
+      .order('nome')
+      .order('id')
+      .range(de, ate),
+  );
+}
+
+/** Os achados marcados como intencionais no fluxo, com o e-mail de quem marcou. */
+export async function intencionais(empresaId: string, fluxoId: string): Promise<Intencional[]> {
+  const { supabase } = await usuarioAtual();
+  const [linhas, emails] = await Promise.all([
+    todas<{ chave: string; nota: string; autor: string | null; criado_em: string }>((de, ate) =>
+      supabase.from('achados_intencionais').select('chave, nota, autor, criado_em').eq('empresa_id', empresaId).eq('fluxo_id', fluxoId).order('chave').range(de, ate),
+    ),
+    emailsDosMembros(empresaId),
+  ]);
+  return linhas.map((l) => ({ ...l, autor: (l.autor && emails.get(l.autor)) ?? null }));
+}
+
+/**
+ * Os links do fluxo, do mais novo pro mais velho (vencidos e revogados também: a lista conta o que já foi mandado).
+ * O nome do cenário vem da cópia guardada no link, não do cenário (que pode ter mudado ou sumido).
+ */
+export async function links(empresaId: string, fluxoId: string): Promise<LinkResumo[]> {
+  const { supabase } = await usuarioAtual();
+  return todas<LinkResumo>((de, ate) =>
+    supabase
+      .from('links')
+      .select('id, token, versao, esconder_nomes, cenario_nome:cenario->>nome, expira_em, revogado_em, criado_em')
+      .eq('empresa_id', empresaId)
+      .eq('fluxo_id', fluxoId)
+      .order('criado_em', { ascending: false })
+      .order('id')
+      .range(de, ate),
+  );
 }
