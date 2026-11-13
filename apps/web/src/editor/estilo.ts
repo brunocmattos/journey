@@ -19,8 +19,9 @@ export interface Estilo {
   autoEscolha: number;
 }
 
-export const ESTILO_PADRAO: Estilo = {
-  canais: {},
+/** Congelado: quem quer mudar, copia (`{ ...ESTILO_PADRAO, … }`). */
+export const ESTILO_PADRAO: Estilo = Object.freeze({
+  canais: Object.freeze({}),
   cano: 'cano',
   curva: 'suave',
   espessura: 10,
@@ -31,7 +32,7 @@ export const ESTILO_PADRAO: Estilo = {
   holofote: true,
   camera: true,
   autoEscolha: 0,
-};
+});
 
 export const VELOCIDADES = [0.5, 1, 2, 4] as const;
 
@@ -73,5 +74,6 @@ export interface CanalEditor {
 /** A cor da água num canal: a do estilo do fluxo, senão a da empresa, senão um azul. */
 export function corDoCanal(estilo: Estilo, canais: readonly CanalEditor[], chave: string | null | undefined): string {
   if (!chave) return '#1e8bdc';
-  return estilo.canais[chave] ?? canais.find((c) => c.chave === chave)?.cor ?? '#1e8bdc';
+  // hasOwn: um canal chamado "constructor" não pode achar a função do Object.
+  return (Object.hasOwn(estilo.canais, chave) ? estilo.canais[chave] : undefined) ?? canais.find((c) => c.chave === chave)?.cor ?? '#1e8bdc';
 }
