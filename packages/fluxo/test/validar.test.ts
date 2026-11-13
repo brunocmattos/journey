@@ -25,9 +25,40 @@ describe('lerDocumento', () => {
     expect(lerDocumento(null).documento).toBeNull();
   });
 
-  it('ids: faltando e repetidos', () => {
+  it('ids: faltando e repetidos, inclusive entre listas', () => {
     expect(codigos(doc([peca('a', 'inicio'), peca('a', 'fim')]))).toContain('id_repetido');
     expect(codigos(doc([{ tipo: 'fim', nome: 'x', x: 0, y: 0 } as never]))).toContain('id');
+    expect(codigos(doc([peca('a', 'inicio'), peca('b', 'fim')], [liga('a', 'b', { id: 'a' })]))).toEqual(['id_repetido']);
+    expect(codigos({ ...doc([peca('a', 'inicio')]), notas: [{ id: 'a', texto: '', x: 0, y: 0, w: 1, h: 1 }] })).toEqual(['id_repetido']);
+  });
+
+  it('limites: tamanho das listas, dos textos e do tempo', () => {
+    const muitas = Array.from({ length: 2001 }, (_, k) => peca(`p${k}`, 'etapa'));
+    expect(codigos(doc(muitas))).toEqual(['tamanho']);
+    expect(codigos(doc([peca('a', 'etapa', { nome: 'x'.repeat(5001) })]))).toEqual(['tamanho']);
+    expect(codigos(doc([peca('a', 'etapa', { tempo_s: 366 * 86400 })]))).toEqual(['tempo']);
+    expect(codigos(doc([peca('a', 'etapa', { tempo_s: Infinity })]))).toEqual(['tempo']);
+    expect(codigos(doc([peca('a', 'inicio'), peca('b', 'fim')], [liga('a', 'b', { regra: 'tempo', tempo_s: 8.7e12 })]))).toEqual(['tempo']);
+  });
+
+  it('a cópia guarda os campos de cada coisa e não depende da entrada', () => {
+    const entrada = {
+      ...doc(
+        [peca('a', 'decisao', { descricao: ' d ', cor: '#fff', responsavel: 'k1', tempo_s: 30 }), peca('b', 'fim')],
+        [liga('a', 'b', { regra: 'opcao', valor: 1 as never, rotulo: 'Um' }), liga('b', 'a', { id: 'h', regra: 'horario', horario: 'dentro' })],
+      ),
+      grupos: [{ id: 'g', nome: 'G', x: 1, y: 2, w: 3, h: 4, cor: '#000' }],
+      notas: [{ id: 'n', texto: 'oi', x: 1, y: 2, w: 3, h: 4 }],
+    };
+    const r = lerDocumento(entrada).documento!;
+    expect(r.pecas[0]).toEqual({ id: 'a', tipo: 'decisao', nome: 'a', x: 0, y: 0, descricao: 'd', cor: '#fff', responsavel: 'k1', tempo_s: 30 });
+    expect(r.conexoes).toEqual([{ id: 'a>b', de: 'a', para: 'b', regra: 'opcao', valor: '1', rotulo: 'Um' }, { id: 'h', de: 'b', para: 'a', regra: 'horario', horario: 'dentro' }]);
+    expect(r.grupos).toEqual(entrada.grupos);
+    expect(r.notas).toEqual(entrada.notas);
+    entrada.pecas[0]!.nome = 'mudou';
+    entrada.grupos[0]!.w = 99;
+    expect(r.pecas[0]!.nome).toBe('a');
+    expect(r.grupos[0]!.w).toBe(3);
   });
 
   it('peça: tipo, nome, posição e tempo', () => {
