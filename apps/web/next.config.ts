@@ -2,6 +2,16 @@ import type { NextConfig } from 'next';
 
 const config: NextConfig = {
   transpilePackages: ['@journey/nucleo'],
+  // O link público: nenhum buscador indexa, e o endereço (que é a chave) não vai no Referer pra outro site.
+  headers: async () => [
+    {
+      source: '/l/:token*',
+      headers: [
+        { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        { key: 'Referrer-Policy', value: 'no-referrer' },
+      ],
+    },
+  ],
   serverExternalPackages: ['exceljs'],
   experimental: {
     // O import aceita até 4 MB (importacao/limite.ts; a Vercel corta em 4,5 MB); a folga é das bordas do multipart.

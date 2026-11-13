@@ -8,7 +8,7 @@ const PASTA = process.env.CAPTURAS ?? '';
 
 test.skip(!PASTA, 'só com CAPTURAS=<pasta>');
 
-test('capturas da tela', async ({ page, request }) => {
+test('capturas da tela', async ({ page, request, browser }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await entrar(page, request, emailNovo('captura'));
@@ -38,4 +38,22 @@ test('capturas da tela', async ({ page, request }) => {
   await page.getByRole('tab', { name: 'Simular' }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: join(PASTA, '6-escuro.png') });
+
+  // Etapa 3: o "Compartilhar" e o link público, aberto sem conta (no computador e no celular).
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.getByRole('button', { name: 'Compartilhar' }).click();
+  const dialogo = page.getByRole('dialog', { name: 'Compartilhar' });
+  await dialogo.getByRole('button', { name: 'Criar link' }).click();
+  const endereco = await dialogo.getByLabel('Endereço do link').inputValue();
+  await page.screenshot({ path: join(PASTA, '7-compartilhar.png') });
+  const fora = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const visita = await fora.newPage();
+  await visita.goto(endereco);
+  await expect(visita.getByTestId('mapa')).toBeVisible({ timeout: 30_000 });
+  await visita.waitForTimeout(800);
+  await visita.screenshot({ path: join(PASTA, '8-link-publico.png') });
+  await visita.setViewportSize({ width: 390, height: 844 });
+  await visita.waitForTimeout(500);
+  await visita.screenshot({ path: join(PASTA, '9-link-celular.png'), fullPage: true });
+  await fora.close();
 });

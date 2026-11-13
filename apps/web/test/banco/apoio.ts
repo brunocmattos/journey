@@ -33,6 +33,12 @@ export async function bancoNoAr(): Promise<boolean> {
   }
 }
 
+/** Cliente com a chave secreta (service_role), como o servidor do app ao abrir um link público. */
+export const clienteSecreto = (): SupabaseClient => createClient(URL_LOCAL, CHAVE_SECRETA, { auth: { persistSession: false } });
+
+/** Cliente sem sessão, só com a chave pública: quem abre um link sem conta, falando direto com a API. */
+export const clienteAnonimo = (): SupabaseClient => createClient(URL_LOCAL, CHAVE_PUBLICA, { auth: { persistSession: false } });
+
 export async function usuarioNovo(): Promise<{ cliente: SupabaseClient; email: string; id: string }> {
   const admin = createClient(URL_LOCAL, CHAVE_SECRETA, { auth: { persistSession: false } });
   const email = `t${Date.now()}${Math.random().toString(36).slice(2, 7)}@exemplo.com`;
