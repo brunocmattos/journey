@@ -57,25 +57,33 @@ export const TIPOS_CADASTRO_PADRAO = [
   { chave: 'horario', nome: 'Horário' },
 ] as const;
 
-const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
-const DATA = /^\d{4}-\d{2}-\d{2}$/;
+const INICIO = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** O fim da janela pode ser 24:00 (até a meia-noite). */
+const FIM = /^(([01]\d|2[0-3]):[0-5]\d|24:00)$/;
+/** AAAA-MM-DD que existe no calendário (2026-02-30 não). */
+const ehData = (v: unknown): v is string =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00Z`).toISOString().slice(0, 10) === v;
 
-/** Os campos de um cadastro Horário, se o cadastro é um horário com campos válidos; senão null. */
+/**
+ * Os campos de um cadastro Horário, se o cadastro é um horário com campos válidos; senão null.
+ * Uma janela vai de início a fim no mesmo dia (fim depois do início; 24:00 vale como fim). Pra passar da
+ * meia-noite, use duas janelas (22:00–24:00 num dia, 00:00–06:00 no outro).
+ */
 export function camposHorario(c: Cadastro | undefined): CamposHorario | null {
   if (!c || c.tipo !== 'horario' || !c.campos) return null;
   const { janelas, feriados } = c.campos as { janelas?: unknown; feriados?: unknown };
-  if (!Array.isArray(janelas)) return null;
+  if (!Array.isArray(janelas) || (feriados !== undefined && !Array.isArray(feriados))) return null;
   const js: JanelaHorario[] = [];
   for (const j of janelas) {
     const { dias, inicio, fim } = (j ?? {}) as Record<string, unknown>;
     if (!Array.isArray(dias) || !dias.every((d) => (DIAS as readonly unknown[]).includes(d))) return null;
-    if (typeof inicio !== 'string' || typeof fim !== 'string' || !HORA.test(inicio) || !HORA.test(fim)) return null;
-    js.push({ dias: dias as Dia[], inicio, fim });
+    if (typeof inicio !== 'string' || typeof fim !== 'string' || !INICIO.test(inicio) || !FIM.test(fim) || fim <= inicio) return null;
+    js.push({ dias: [...dias] as Dia[], inicio, fim });
   }
   const fs: Feriado[] = [];
-  for (const f of Array.isArray(feriados) ? feriados : []) {
+  for (const f of (feriados ?? []) as unknown[]) {
     const { data, todo_ano, nome } = (f ?? {}) as Record<string, unknown>;
-    if (typeof data !== 'string' || !DATA.test(data)) return null;
+    if (!ehData(data)) return null;
     fs.push({ data, ...(todo_ano === true && { todo_ano: true }), ...(typeof nome === 'string' && { nome }) });
   }
   return { janelas: js, feriados: fs };

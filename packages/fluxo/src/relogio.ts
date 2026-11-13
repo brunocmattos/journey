@@ -6,8 +6,12 @@ import { DIAS, type CamposHorario, type Dia } from './cadastros';
  */
 export function lerQuando(texto: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(texto);
-  if (!m) throw new Error(`data e hora inválidas: "${texto}". Use AAAA-MM-DDTHH:MM`);
-  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  const ms = m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) : NaN;
+  // Date.UTC aceita 30 de fevereiro e 24h (vira o dia seguinte): só vale o que volta igual.
+  if (!m || Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 16) !== texto) {
+    throw new Error(`data e hora inválidas: "${texto}". Use AAAA-MM-DDTHH:MM`);
+  }
+  return ms;
 }
 
 const diaDaSemana = (ms: number): Dia => DIAS[new Date(ms).getUTCDay()] as Dia;
@@ -25,7 +29,7 @@ export function ehFeriado(h: CamposHorario, ms: number): boolean {
   return h.feriados.some((f) => f.data === iso || (f.todo_ano === true && f.data.slice(5) === iso.slice(5)));
 }
 
-/** Dentro de alguma janela da semana e fora dos feriados. */
+/** Dentro de alguma janela da semana e fora dos feriados. `ms` é hora de parede, de `lerQuando` (não `Date.now()`). */
 export function dentroDoHorario(h: CamposHorario, ms: number): boolean {
   if (ehFeriado(h, ms)) return false;
   const dia = diaDaSemana(ms);
@@ -35,6 +39,7 @@ export function dentroDoHorario(h: CamposHorario, ms: number): boolean {
 
 /** "2 h 5 min", "3 d 4 h", "40 s". */
 export function formatarTempo(segundos: number): string {
+  if (!Number.isFinite(segundos)) return '—';
   const s = Math.max(0, Math.round(segundos));
   if (s < 60) return `${s} s`;
   const d = Math.floor(s / 86400);
