@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa A) mesclada. Este plano, o código e o PR da etapa B saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 241 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 245 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Sem migração nova.** A etapa B usa as tabelas e funções da etapa A (`fluxos`, `cadastros`, `canais`, `tipos_cadastro`, `salvar_fluxo`, `pegar_trava`, `soltar_trava`), que já estão em produção.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`, "Rodar").
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -33,6 +33,8 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Quadro próprio (o protótipo em React), não React Flow** | O protótipo é a especificação aprovada ("melhorou MUITO"): canos que saem pelo lado mais direto de cada peça, a bolinha de ligar e o + com menu, grupos que levam o que está dentro, renomear em cima da peça, a água quadro a quadro com bolhas. Portar o desenho é direto; refazer tudo isso nos nós, alças e arestas do React Flow é reescrever o protótipo noutro modelo. O spec (14) previa o React Flow como base: o desvio fica registrado aqui e no README do app | React Flow: alças fixas, aresta com outro desenho, a água teria que entrar como aresta animada |
 | **A lógica do editor sem tela, em funções puras** (`editor/documento.ts`) que recebem o documento e devolvem outro | Testável sem navegador; o histórico guarda as versões por referência, sem cópia profunda | Mutar o documento no lugar, como o protótipo: desfazer exigiria serializar a cada passo |
 | **O cano sai pelo vão maior entre as bordas das peças** (no empate, pelos lados), e o cano de volta (a→b e b→a) ganha um desvio de 9 px pro lado | Olhar só os centros (o protótipo) faz peças em escada ligarem pelos lados, com o cano voltando por dentro delas; e o laço "fechado, espera e tenta de novo" desenhava os dois canos um em cima do outro | Os centros, como no protótipo |
+| **O que sai do editor sempre passa no `lerDocumento`:** "depois de um tempo" nasce com tempo 0, "horário" com um lado, nome só de espaços volta pro nome do tipo, número de opção é o menor que falta, virar Início ou Fim tira o tempo; e o salvamento confere com o `lerDocumento` antes de mandar | O banco só confere a forma do documento: um documento que o `lerDocumento` recusa seria salvo e o fluxo não abriria mais (a página do editor lê com ele) | Deixar o banco aceitar e descobrir ao abrir |
+| **Sem mudança, o mesmo documento** (mover pro mesmo lugar da grade, remendo que não muda nada, id que não existe) | O histórico não ganha passo vazio e o salvamento não manda à toa | Sempre um documento novo |
 | **Desfazer: 120 passos; arrasto é um passo só** (o primeiro quadro registra, os seguintes substituem) | Ctrl+Z depois de arrastar volta a peça pro lugar de antes, não um pixel | Um passo por quadro |
 | **Salvamento automático pelo navegador**, direto no `salvar_fluxo`, meio segundo depois da última mudança, um envio por vez, com a revisão | O documento vai inteiro (até ~300 KB com 500 peças); pelo servidor do Next seria uma ida a mais. A função do banco confere empresa, revisão, trava e responsáveis | Server action a cada mudança: mais lenta e o mesmo controle |
 | **Sem rede: cópia no navegador e tentar de novo** (2 s, 4 s… até 30 s); ao abrir, a cópia volta se partiu da mesma revisão | Spec 7.1 ("cópia local até voltar"). Cópia de outra revisão é descartada: o banco já tem coisa mais nova | Pedir pra pessoa recarregar e perder o que fez |
@@ -671,8 +673,8 @@ git commit -m "editor: formas, canos e estilo" -m "$(cat .git/atribuicao.txt)"
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { documentoVazio, type Documento } from '@journey/fluxo';
-import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, mudarConexao, mudarPeca, redimensionarGrupo } from '@/editor/documento';
+import { documentoVazio, lerDocumento, type Documento } from '@journey/fluxo';
+import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
 
 const base = (): Documento => {
   let d = criarPeca(documentoVazio(), 'a', 'inicio', 95, 30);
@@ -710,7 +712,15 @@ describe('editor/documento', () => {
     let d = ligado(base(), 'c1', 'a', 'b');
     d = mudarConexao(d, 'c1', { regra: 'condicao', valor: 'pago' });
     d = ligado(d, 'c2', 'a', 'c');
-    expect(d.conexoes.map((c) => [c.regra, c.valor])).toEqual([['condicao', 'pago'], ['opcao', '2']]);
+    expect(d.conexoes.map((c) => [c.regra, c.valor])).toEqual([['condicao', 'pago'], ['opcao', '1']]);
+  });
+
+  it('número de opção não se repete: depois de apagar a 2 de 1, 2, 3, a próxima é a 2', () => {
+    let d = criarPeca(base(), 'x', 'fim', 700, 300);
+    d = ligado(ligado(ligado(d, 'k1', 'b', 'a'), 'k2', 'b', 'c'), 'k3', 'b', 'x');
+    d = apagar(d, { tipo: 'conexao', id: 'k2' });
+    d = ligado(d, 'k4', 'b', 'c');
+    expect(d.conexoes.filter((c) => c.de === 'b').map((c) => [c.id, c.valor])).toEqual([['k1', '1'], ['k3', '3'], ['k4', '2']]);
   });
 
   it('ligar recusa a mesma peça, ligação repetida e peça que não existe', () => {
@@ -746,6 +756,36 @@ describe('editor/documento', () => {
     d = mudarConexao(d, 'c1', { regra: 'horario' });
     expect(d.conexoes[0]).toEqual({ id: 'c1', de: 'a', para: 'b', regra: 'horario', horario: 'dentro' });
     expect(inverterConexao(d, 'c1').conexoes[0]).toMatchObject({ de: 'b', para: 'a' });
+  });
+
+  it('o que sai daqui sempre passa no lerDocumento (senão salvaria e não abriria mais)', () => {
+    let d = ligado(base(), 'c1', 'a', 'b');
+    d = mudarConexao(d, 'c1', { regra: 'tempo' });
+    expect(d.conexoes[0]).toMatchObject({ regra: 'tempo', tempo_s: 0 });
+    d = mudarConexao(d, 'c1', { regra: 'horario', horario: undefined });
+    expect(d.conexoes[0]).toMatchObject({ regra: 'horario', horario: 'dentro' });
+    d = mudarPeca(d, 'b', { nome: ' \t ' });
+    expect(d.pecas.find((p) => p.id === 'b')!.nome).toBe('Etapa');
+    d = mudarPeca(d, 'b', { tipo: undefined, x: undefined });
+    d = criarNota(d, 'n', 0, 0);
+    d = mudarNota(d, 'n', { texto: '' });
+    expect(lerDocumento(d).problemas).toEqual([]);
+  });
+
+  it('virar Fim tira o tempo e o responsável que o painel não mostra mais', () => {
+    let d = mudarPeca(base(), 'b', { tempo_s: 3600, responsavel: 'k1', cor: '#fff' });
+    d = mudarPeca(d, 'b', { tipo: 'fim' });
+    expect(d.pecas.find((p) => p.id === 'b')).toEqual({ id: 'b', tipo: 'fim', nome: 'Etapa', x: 320, y: 0, cor: '#fff' });
+  });
+
+  it('sem mudança, o mesmo documento (o histórico não ganha passo vazio)', () => {
+    const d = ligado(base(), 'c1', 'a', 'b');
+    expect(moverPeca(d, 'b', 302, 3)).toBe(d);
+    expect(mudarPeca(d, 'b', { nome: 'Etapa' })).toBe(d);
+    expect(mudarPeca(d, 'zz', { nome: 'X' })).toBe(d);
+    expect(mudarConexao(d, 'c1', { regra: 'sempre' })).toBe(d);
+    expect(apagar(d, { tipo: 'peca', id: 'zz' })).toBe(d);
+    expect(inverterConexao(ligado(d, 'c2', 'b', 'a'), 'c2')).toEqual(ligado(d, 'c2', 'b', 'a'));
   });
 
   it('grupo leva junto o que tem o centro dentro dele, a partir de onde o arrasto começou', () => {
@@ -821,11 +861,13 @@ Expected: FAIL nos dois arquivos novos (`Failed to resolve import "@/editor/docu
 ```ts
 import type { Conexao, Documento, Grupo, Nota, Peca, TipoPeca } from '@journey/fluxo';
 import { dentro } from './geometria';
-import { FORMAS, GRUPO, NOTA, caixaDe, naGrade } from './pecas';
+import { FORMAS, GRUPO, NOTA, ROTULO_RESPONSAVEL, caixaDe, naGrade } from './pecas';
 
 /**
  * As mudanças do editor no documento journey/2. Todas puras: recebem o documento e devolvem outro, sem tocar
  * no de entrada (o histórico guarda as versões anteriores por referência). Ids vêm de quem chama.
+ * Quando nada muda, devolvem o mesmo documento (o histórico não ganha passo vazio). O que sai daqui passa no
+ * `lerDocumento`: um documento que ele recusa seria salvo e depois não abriria mais.
  */
 
 /** Aplica um remendo: chave com `undefined` some do objeto (o documento não guarda campo vazio). */
@@ -838,7 +880,28 @@ function remendar<T extends object>(obj: T, patch: Partial<NoInfer<T>>): T {
   return novo as T;
 }
 
-const trocar = <T extends { id: string }>(lista: readonly T[], id: string, f: (x: T) => T): T[] => lista.map((x) => (x.id === id ? f(x) : x));
+/** Troca um item da lista; se nada mudou (id que não existe, ou o mesmo item), devolve a mesma lista. */
+function trocar<T extends { id: string }>(lista: T[], id: string, f: (x: T) => T): T[] {
+  let mudou = false;
+  const nova = lista.map((x) => {
+    if (x.id !== id) return x;
+    const y = f(x);
+    if (y !== x) mudou = true;
+    return y;
+  });
+  return mudou ? nova : lista;
+}
+
+/** O documento com uma lista trocada, ou o mesmo documento se a lista é a mesma. */
+const com = <K extends 'pecas' | 'conexoes' | 'grupos' | 'notas'>(doc: Documento, chave: K, lista: Documento[K]): Documento => (lista === doc[chave] ? doc : { ...doc, [chave]: lista });
+
+/** Os números de opção que as saídas de uma peça já usam. O próximo é o menor que falta. */
+function proximaOpcao(usados: Set<string>): string {
+  let n = 1;
+  while (usados.has(String(n))) n++;
+  usados.add(String(n));
+  return String(n);
+}
 
 /** Uma peça nova com o centro em (cx, cy), na grade, com o nome do tipo. */
 export function criarPeca(doc: Documento, id: string, tipo: TipoPeca, cx: number, cy: number): Documento {
@@ -871,13 +934,10 @@ export function ligar(doc: Documento, id: string, de: string, para: string): Lig
   let conexoes = doc.conexoes;
   let nova: Conexao = { id, de, para, regra: 'sempre' };
   if (outras.length >= 1) {
-    let i = 0;
-    conexoes = conexoes.map((c) => {
-      if (c.de !== de) return c;
-      i++;
-      return c.regra === 'sempre' && !c.rotulo ? { ...c, regra: 'opcao', valor: String(i) } : c;
-    });
-    nova = { ...nova, regra: 'opcao', valor: String(outras.length + 1) };
+    // Números que já são opção não se repetem: depois de apagar a opção 2 de 1, 2, 3, a próxima é 2.
+    const usados = new Set(outras.filter((c) => c.regra === 'opcao' && c.valor).map((c) => c.valor!));
+    conexoes = conexoes.map((c) => (c.de === de && c.regra === 'sempre' && !c.rotulo ? { ...c, regra: 'opcao', valor: proximaOpcao(usados) } : c));
+    nova = { ...nova, regra: 'opcao', valor: proximaOpcao(usados) };
   }
   return { doc: { ...doc, conexoes: [...conexoes, nova] }, conexao: nova };
 }
@@ -898,8 +958,13 @@ export function criarLigada(doc: Documento, idPeca: string, idConexao: string, o
   return 'doc' in r ? r.doc : comPeca;
 }
 
-export const moverPeca = (doc: Documento, id: string, x: number, y: number): Documento => ({ ...doc, pecas: trocar(doc.pecas, id, (p) => ({ ...p, x: naGrade(x), y: naGrade(y) })) });
-export const moverNota = (doc: Documento, id: string, x: number, y: number): Documento => ({ ...doc, notas: trocar(doc.notas, id, (n) => ({ ...n, x: naGrade(x), y: naGrade(y) })) });
+/** Põe x e y na grade; se o lugar não muda, o item é o mesmo. */
+const noLugar = <T extends { x: number; y: number }>(item: T, x: number, y: number): T => {
+  const [gx, gy] = [naGrade(x), naGrade(y)];
+  return gx === item.x && gy === item.y ? item : { ...item, x: gx, y: gy };
+};
+export const moverPeca = (doc: Documento, id: string, x: number, y: number): Documento => com(doc, 'pecas', trocar(doc.pecas, id, (p) => noLugar(p, x, y)));
+export const moverNota = (doc: Documento, id: string, x: number, y: number): Documento => com(doc, 'notas', trocar(doc.notas, id, (n) => noLugar(n, x, y)));
 
 /** O que um grupo leva junto quando se move: peças e notas com o centro dentro dele. */
 export function conteudoDoGrupo(doc: Documento, id: string): { pecas: string[]; notas: string[] } {
@@ -915,6 +980,7 @@ export function conteudoDoGrupo(doc: Documento, id: string): { pecas: string[]; 
 export function moverGrupo(inicio: Documento, id: string, dx: number, dy: number, levar: { pecas: string[]; notas: string[] }): Documento {
   const mx = naGrade(dx);
   const my = naGrade(dy);
+  if (!mx && !my) return inicio;
   const pecas = new Set(levar.pecas);
   const notas = new Set(levar.notas);
   return {
@@ -925,53 +991,92 @@ export function moverGrupo(inicio: Documento, id: string, dx: number, dy: number
   };
 }
 
-export const redimensionarGrupo = (doc: Documento, id: string, w: number, h: number): Documento => ({
-  ...doc,
-  grupos: trocar(doc.grupos, id, (g) => ({ ...g, w: Math.max(GRUPO.minW, naGrade(w)), h: Math.max(GRUPO.minH, naGrade(h)) })),
-});
-
-/** Muda campos de uma peça. Trocar o tipo mantém o centro (as formas têm tamanhos diferentes) e as ligações. */
-export function mudarPeca(doc: Documento, id: string, patch: Partial<Omit<Peca, 'id'>>): Documento {
-  return {
-    ...doc,
-    pecas: trocar(doc.pecas, id, (p) => {
-      const nova = remendar(p, patch);
-      if (patch.tipo && patch.tipo !== p.tipo) {
-        const a = FORMAS[p.tipo];
-        const b = FORMAS[patch.tipo];
-        nova.x = naGrade(p.x + a.w / 2 - b.w / 2);
-        nova.y = naGrade(p.y + a.h / 2 - b.h / 2);
-      }
-      if (!nova.nome) nova.nome = FORMAS[nova.tipo].nome;
-      return nova;
-    }),
-  };
+export function redimensionarGrupo(doc: Documento, id: string, w: number, h: number): Documento {
+  const [gw, gh] = [Math.max(GRUPO.minW, naGrade(w)), Math.max(GRUPO.minH, naGrade(h))];
+  return com(doc, 'grupos', trocar(doc.grupos, id, (g) => (g.w === gw && g.h === gh ? g : { ...g, w: gw, h: gh })));
 }
 
-/** Muda a regra ou os campos de uma conexão. Trocar a regra limpa os campos que não são dela. */
+/** O remendo mudou alguma coisa? (Pra não criar passo no histórico à toa.) */
+const igual = <T extends object>(a: T, b: T): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Muda campos de uma peça. Trocar o tipo mantém o centro (as formas têm tamanhos diferentes) e as ligações, e tira
+ * o que o novo tipo não mostra no painel: o tempo no Início e no Fim, o responsável onde não há responsável.
+ * Nome vazio (ou só espaços) volta pro nome do tipo; tipo e posição nunca somem.
+ */
+export function mudarPeca(doc: Documento, id: string, patch: Partial<Omit<Peca, 'id'>>): Documento {
+  return com(
+    doc,
+    'pecas',
+    trocar(doc.pecas, id, (p) => {
+      const nova = remendar(p, patch);
+      nova.tipo ??= p.tipo;
+      nova.x ??= p.x;
+      nova.y ??= p.y;
+      if (nova.tipo !== p.tipo) {
+        const a = FORMAS[p.tipo];
+        const b = FORMAS[nova.tipo];
+        nova.x = naGrade(p.x + a.w / 2 - b.w / 2);
+        nova.y = naGrade(p.y + a.h / 2 - b.h / 2);
+        if (nova.tipo === 'inicio' || nova.tipo === 'fim') delete nova.tempo_s;
+        if (!ROTULO_RESPONSAVEL[nova.tipo]) delete nova.responsavel;
+      }
+      nova.nome = nova.nome?.trim() || FORMAS[nova.tipo].nome;
+      return igual(nova, p) ? p : nova;
+    }),
+  );
+}
+
+/**
+ * Muda a regra ou os campos de uma conexão. Trocar a regra limpa os campos que não são dela. "Depois de um tempo"
+ * sempre tem um tempo (zero, até a pessoa preencher) e "horário" sempre tem um lado: sem eles o documento não abre.
+ */
 export function mudarConexao(doc: Documento, id: string, patch: Partial<Omit<Conexao, 'id' | 'de' | 'para'>>): Documento {
-  return {
-    ...doc,
-    conexoes: trocar(doc.conexoes, id, (c) => {
+  return com(
+    doc,
+    'conexoes',
+    trocar(doc.conexoes, id, (c) => {
       let base: Conexao = c;
       if (patch.regra && patch.regra !== c.regra) {
         const { valor: _v, tempo_s: _t, horario: _h, ...resto } = c;
         base = resto;
-        if (patch.regra === 'horario' && !patch.horario) base = { ...base, horario: 'dentro' };
       }
-      return remendar(base, patch);
+      const nova = remendar(base, patch);
+      nova.regra ??= c.regra;
+      if (nova.regra === 'tempo' && nova.tempo_s === undefined) nova.tempo_s = 0;
+      if (nova.regra === 'horario' && !nova.horario) nova.horario = 'dentro';
+      return igual(nova, c) ? c : nova;
     }),
-  };
+  );
 }
 
-export const inverterConexao = (doc: Documento, id: string): Documento => ({ ...doc, conexoes: trocar(doc.conexoes, id, (c) => ({ ...c, de: c.para, para: c.de })) });
-export const mudarGrupo = (doc: Documento, id: string, patch: Partial<Pick<Grupo, 'nome' | 'cor'>>): Documento => ({ ...doc, grupos: trocar(doc.grupos, id, (g) => remendar(g, patch)) });
-export const mudarNota = (doc: Documento, id: string, patch: Partial<Pick<Nota, 'texto' | 'cor'>>): Documento => ({ ...doc, notas: trocar(doc.notas, id, (n) => remendar(n, patch)) });
+/** Inverte a direção. Se a de volta já existe, não faz nada: seriam duas ligações iguais (o que `ligar` recusa). */
+export function inverterConexao(doc: Documento, id: string): Documento {
+  const c = doc.conexoes.find((x) => x.id === id);
+  if (!c || c.de === c.para || doc.conexoes.some((x) => x.de === c.para && x.para === c.de)) return doc;
+  return com(doc, 'conexoes', trocar(doc.conexoes, id, () => ({ ...c, de: c.para, para: c.de })));
+}
+
+export const mudarGrupo = (doc: Documento, id: string, patch: Partial<Pick<Grupo, 'nome' | 'cor'>>): Documento =>
+  com(doc, 'grupos', trocar(doc.grupos, id, (g) => {
+    const novo = remendar(g, patch);
+    novo.nome = novo.nome?.trim() || 'Grupo';
+    return igual(novo, g) ? g : novo;
+  }));
+
+/** O texto da nota pode ficar vazio, mas não some do documento. */
+export const mudarNota = (doc: Documento, id: string, patch: Partial<Pick<Nota, 'texto' | 'cor'>>): Documento =>
+  com(doc, 'notas', trocar(doc.notas, id, (n) => {
+    const nova = remendar(n, patch);
+    nova.texto ??= '';
+    return igual(nova, n) ? n : nova;
+  }));
 
 export type Selecao = { tipo: 'peca' | 'conexao' | 'grupo' | 'nota'; id: string } | null;
 
 /** Apaga o que está selecionado. Peça leva junto as ligações dela; grupo deixa as peças. */
 export function apagar(doc: Documento, sel: NonNullable<Selecao>): Documento {
+  if (!existe(doc, sel)) return doc;
   if (sel.tipo === 'peca') return { ...doc, pecas: doc.pecas.filter((p) => p.id !== sel.id), conexoes: doc.conexoes.filter((c) => c.de !== sel.id && c.para !== sel.id) };
   if (sel.tipo === 'conexao') return { ...doc, conexoes: doc.conexoes.filter((c) => c.id !== sel.id) };
   if (sel.tipo === 'grupo') return { ...doc, grupos: doc.grupos.filter((g) => g.id !== sel.id) };
@@ -1037,7 +1142,7 @@ export function refazer(h: Historico): Historico {
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  27 passed (27)`; `tsc` sem saída.
+Expected: `Tests  31 passed (31)`; `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -1248,7 +1353,7 @@ export const tituloDoFim = (m: MotivoFim): string => NOMES_FIM[m];
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  32 passed (32)`; `tsc` sem saída.
+Expected: `Tests  36 passed (36)`; `tsc` sem saída.
 
 - [ ] **Passo 5: commit**
 
@@ -1416,7 +1521,7 @@ describe('editor/cadastros', () => {
 - [ ] **Passo 2: rodar e ver falhar**
 
 Run: `cd apps/web && npx vitest run test/editor`
-Expected: FAIL nos dois arquivos novos; os 32 anteriores passam.
+Expected: FAIL nos dois arquivos novos; os 36 anteriores passam.
 
 - [ ] **Passo 3: o salvamento**
 
@@ -1622,7 +1727,7 @@ export function usosNoDocumento(doc: Documento): Map<string, number> {
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  40 passed (40)`; `tsc` sem saída.
+Expected: `Tests  44 passed (44)`; `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -4515,7 +4620,7 @@ Expected: FAIL nos 4 (a tela da empresa ainda é a de jornadas: não há "Criar 
 import './editor.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Cadastro, Documento, TipoPeca } from '@journey/fluxo';
+import { lerDocumento, type Cadastro, type Documento, type TipoPeca } from '@journey/fluxo';
 import { criarCadastro, renomearCadastro } from '@/acoes/cadastros';
 import { apagarFluxo, mudarFluxo, type DadosDoFluxo } from '@/acoes/fluxos';
 import { Icone } from '@/componentes/Icone';
@@ -4583,6 +4688,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   salv.current ??= new Salvamento({
     revisao: fluxo.revisao,
     enviar: async (revisao, documento, est) => {
+      // O banco só confere a forma: um documento que o lerDocumento recusa salvaria e depois não abriria mais.
+      const lido = lerDocumento(documento);
+      if (!lido.documento) return { ok: false, motivo: 'recusado', mensagem: lido.problemas.map((p) => p.mensagem).join(' ') };
       const r = await supabase.rpc('salvar_fluxo', { p_fluxo: fluxo.id, p_revisao: revisao, p_documento: documento, p_estilo: est });
       return r.error ? motivoDoErro(r.error) : { ok: true, revisao: r.data as number };
     },
@@ -5444,7 +5552,7 @@ export function Nav({ empresaId }: { empresaId: string }) {
 - [ ] **Passo 8: rodar e ver passar**
 
 Run: `npm run typecheck && npm test -w apps/web && npm run e2e -- e2e/editor.spec.ts e2e/fluxos.spec.ts e2e/membros.spec.ts e2e/aceitacao.spec.ts --trace=off`
-Expected: `tsc` sem saída; app `Tests  241 passed (241)` (com o Supabase no ar); os 6 de ponta a ponta passando.
+Expected: `tsc` sem saída; app `Tests  245 passed (245)` (com o Supabase no ar); os 6 de ponta a ponta passando.
 
 - [ ] **Passo 9: commit**
 
@@ -5881,7 +5989,7 @@ index 78941d5..beaddec 100644
 - [ ] **Passo 2: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes && npm run build && npm run e2e -- --trace=off`
-Expected: fluxo 78, núcleo 253, app 241; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
+Expected: fluxo 78, núcleo 253, app 245; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
 
 - [ ] **Passo 3: commit e push**
 
