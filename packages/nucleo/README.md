@@ -1,6 +1,8 @@
 # @journey/nucleo
 
 O núcleo do Journey, sem tela: o formato dos dados, a importação, os modelos pra baixar, o motor de simulação e o diagnóstico.
+
+É o núcleo da v1 (telefonia). Desde a v2 o app não usa: ele fica no repositório pra virar o importador de central da etapa E (a planilha da central vira um fluxo genérico do `@journey/fluxo`).
 Nada aqui conhece React, Next.js ou Supabase. Tudo recebe dados e devolve dados.
 
 ## Partes
