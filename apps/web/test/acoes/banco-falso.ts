@@ -25,7 +25,7 @@ export function bancoFalso() {
       select: () => q,
       order: () => q,
     };
-    for (const m of ['eq', 'in']) q[m] = (c: string, v: unknown) => (f.filtros.push([c, v]), q);
+    for (const m of ['eq', 'in', 'ilike']) q[m] = (c: string, v: unknown) => (f.filtros.push([c, v]), q);
     for (const m of ['insert', 'update', 'delete', 'upsert'])
       q[m] = (valores?: unknown) => {
         f.op = m;

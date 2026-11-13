@@ -36,6 +36,20 @@ function ok<T>(r: { data: T[] | null; error: ErroBanco }): T[] {
   return r.data ?? [];
 }
 
+/**
+ * Lista que pode passar de 1000 linhas: o PostgREST devolve no máximo `max_rows` (1000, aqui e no Supabase) por
+ * pedido, calado. Lê de 1000 em 1000, numa ordem fixa, até vir uma página incompleta.
+ */
+async function todas<T>(pedir: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: ErroBanco }>): Promise<T[]> {
+  const POR_VEZ = 1000;
+  const linhas: T[] = [];
+  for (let de = 0; ; de += POR_VEZ) {
+    const pagina = ok(await pedir(de, de + POR_VEZ - 1));
+    linhas.push(...pagina);
+    if (pagina.length < POR_VEZ) return linhas;
+  }
+}
+
 /** Uma linha ou nada. */
 function talvez<T>(r: { data: T | null; error: ErroBanco }): T | null {
   falhou(r.error);
@@ -303,7 +317,9 @@ export async function canais(empresaId: string): Promise<(CanalEditor & { arquiv
 
 export async function cadastros(empresaId: string): Promise<Cadastro[]> {
   const { supabase } = await usuarioAtual();
-  const linhas = ok<{ id: string; tipo: string; nome: string; campos: Record<string, unknown> }>(await supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).order('nome'));
+  const linhas = await todas<{ id: string; tipo: string; nome: string; campos: Record<string, unknown> }>((de, ate) =>
+    supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).order('nome').order('id').range(de, ate),
+  );
   return linhas.map((l) => ({ id: l.id, tipo: l.tipo, nome: l.nome, campos: l.campos }));
 }
 
@@ -320,12 +336,14 @@ export async function tiposCadastro(empresaId: string): Promise<TipoCadastro[]> 
 export async function usosDosCadastros(empresaId: string): Promise<Map<string, { id: string; nome: string }[]>> {
   const { supabase } = await usuarioAtual();
   const [usos, fs] = await Promise.all([
-    supabase.from('fluxo_cadastros').select('cadastro_id, fluxo_id').eq('empresa_id', empresaId),
-    supabase.from('fluxos_resumo').select('id, nome').eq('empresa_id', empresaId),
+    todas<{ cadastro_id: string; fluxo_id: string }>((de, ate) =>
+      supabase.from('fluxo_cadastros').select('cadastro_id, fluxo_id').eq('empresa_id', empresaId).order('cadastro_id').order('fluxo_id').range(de, ate),
+    ),
+    todas<{ id: string; nome: string }>((de, ate) => supabase.from('fluxos_resumo').select('id, nome').eq('empresa_id', empresaId).order('id').range(de, ate)),
   ]);
-  const nomes = new Map(ok<{ id: string; nome: string }>(fs).map((f) => [f.id, f.nome]));
+  const nomes = new Map(fs.map((f) => [f.id, f.nome]));
   const m = new Map<string, { id: string; nome: string }[]>();
-  for (const u of ok<{ cadastro_id: string; fluxo_id: string }>(usos)) {
+  for (const u of usos) {
     m.set(u.cadastro_id, [...(m.get(u.cadastro_id) ?? []), { id: u.fluxo_id, nome: nomes.get(u.fluxo_id) ?? 'fluxo' }]);
   }
   return m;

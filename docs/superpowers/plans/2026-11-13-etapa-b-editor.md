@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa A) mesclada. Este plano, o código e o PR da etapa B saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 254 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 255 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Sem migração nova.** A etapa B usa as tabelas e funções da etapa A (`fluxos`, `cadastros`, `canais`, `tipos_cadastro`, `salvar_fluxo`, `pegar_trava`, `soltar_trava`), que já estão em produção.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`, "Rodar").
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -44,7 +44,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Trava ao abrir, renovada a cada 4 minutos, solta ao sair** (`fetch` com `keepalive`); sem trava, só leitura com "Fulano está editando" | Spec 4: sem edição simultânea, mas quem abre depois vê e dá play | Abrir pra editar e descobrir o conflito no primeiro salvamento |
 | **O responsável é uma busca nos cadastros com "Criar" no fim**, com o tipo sugerido pelo nome ("Fila …", "Equipe …", "Horário …") ou pela peça (Sistema, Decisão); a peça guarda o id | Critério 2: o cadastro nasce do desenho e renomear muda em todos os fluxos sem tocar nos documentos | Guardar o nome na peça, como o protótipo: renomear teria que varrer os fluxos |
 | **Horário nasce de segunda a sexta, 8h às 18h**, e a tela Cadastros edita janelas e feriados | Uma decisão de horário funciona no play desde o primeiro minuto | Horário vazio: o relógio diria "fora" sempre |
-| **Fluxo a partir de modelo: os cadastros do modelo viram os da empresa** (reaproveitando o que já existe com o mesmo tipo e nome) e o documento é salvo com `instanciarModelo`; se salvar falha, o fluxo criado é apagado | O banco só aceita responsável que seja cadastro da empresa; e não sobra fluxo vazio | Uma função nova no banco (`criar_fluxo_de_modelo`): mais uma migração pra uma coisa que três chamadas resolvem |
+| **Fluxo a partir de modelo: os cadastros do modelo viram os da empresa** (reaproveitando o que já existe com o mesmo tipo e nome: tenta criar e, se o nome já existe, acha o igual) e o documento é salvo com `instanciarModelo`; se algo falha, o fluxo e os cadastros que esta chamada criou são apagados | O banco só aceita responsável que seja cadastro da empresa; e não sobra fluxo vazio | Uma função nova no banco (`criar_fluxo_de_modelo`): mais uma migração pra uma coisa que três chamadas resolvem |
 | **Play: o motor roda tudo de uma vez a partir das escolhas; a tela mostra os eventos um a um** | Voltar é tirar a última escolha e refazer; o motor já é previsível (etapa A) | Um motor passo a passo na tela |
 | **O play usa uma cópia do documento de quando começou; mexer no desenho para o play** | A água não corre por um cano que acabou de sumir | Recalcular no meio do play |
 | **Hora do play: agora, em São Paulo**, com o campo "Dia e hora" e "o relógio decide os horários" no cartão | É o que a pessoa espera ao dar play; o campo deixa testar "e se fosse domingo" | Uma hora fixa (segunda às 10h): o play "mentiria" sobre agora |
@@ -60,6 +60,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **Teclas no play só valem com a pergunta na tela:** a peça aparece (evento `chegou`) meio segundo antes da pergunta (`pede_escolha`). Os testes esperam o botão da opção antes de apertar a tecla.
 - **O modo estrito do React roda a limpeza do efeito uma vez ao montar:** a limpeza do editor não pode `parar()` o salvamento (ele ficaria parado de vez). Ela só espera o que falta (`agora()`) e solta a trava.
 - **A água passa de novo por um cano já cheio** (voltar ao menu, "fechado, espera e tenta de novo"): o `correu` tira o cano das cheias, senão o quadro desenha o cano cheio, a água nunca chega e o play para.
+- **O PostgREST devolve no máximo 1000 linhas por pedido, calado** (`max_rows`, aqui e no Supabase): a lista de cadastros e o "onde é usado" vêm de 1000 em 1000 (`todas`, no `dados.ts`), e criar um cadastro nunca lê a lista inteira (`acharOuCriarCadastro` tenta criar e, no 23505, busca só os parecidos).
 - **Hora da trava no fuso de São Paulo** (`timeZone: FUSO`): o servidor e o navegador de teste rodam em UTC.
 - **Um canal chamado `constructor`** acharia a função do `Object` em `estilo.canais[chave]`: a cor só vale se for própria do objeto (`Object.hasOwn`). E o `ESTILO_PADRAO` é congelado: quem quer mudar, copia.
 - **`naGrade` devolve 0, não -0:** `Math.round(-0.1) * 10` é `-0`, e o `toEqual` do Vitest diferencia.
@@ -77,6 +78,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | `apps/web/src/editor/salvamento.ts`, `cadastros.ts` | Salvamento automático; busca, tipo sugerido e Horário padrão dos cadastros |
 | `apps/web/src/lib/dados.ts` | Leituras: fluxos (lista), fluxo pra editar, canais, cadastros, tipos, "onde é usado" |
 | `apps/web/src/acoes/fluxos.ts`, `cadastros.ts` | Server actions: criar (em branco, de modelo), mudar e apagar fluxo; criar, renomear, apagar cadastro e mudar Horário |
+| `apps/web/src/lib/cadastro-unico.ts` | Cria o cadastro ou acha o que já existe com o mesmo nome no tipo (sem ler a lista inteira) |
 | `apps/web/src/componentes/editor/*` | O editor: `editor.css`, `Pecas`, `Agua`, `Quadro`, `Campos`, `Painel`, `CartaoPlay`, `Editor` |
 | `apps/web/src/app/e/[empresa]/page.tsx`, `lista.tsx` | A tela Fluxos (casa da empresa) com o "Novo fluxo" |
 | `apps/web/src/app/e/[empresa]/f/[fluxo]/page.tsx`, `error.tsx` | O editor |
@@ -1612,12 +1614,15 @@ describe('editor/salvamento', () => {
     expect(motivoDoErro({ code: '40001' })).toEqual({ ok: false, motivo: 'conflito' });
     expect(motivoDoErro({ code: 'P0001' })).toEqual({ ok: false, motivo: 'trava' });
     expect(motivoDoErro({ code: '', message: 'TypeError: Failed to fetch' }, 0)).toEqual({ ok: false, motivo: 'rede' });
-    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'responsável' });
+    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
+    expect(motivoDoErro({ code: '23514', message: 'nome' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'nome' });
     // A mensagem não decide: código do banco com "failed" no texto continua recusa.
     expect(motivo({ code: '22023', message: 'validation failed' }, 400)).toBe('recusado');
     expect(motivo({ code: 'PGRST301' }, 401)).toBe('sessao');
     expect(motivo({ code: 'PGRST303' }, 401)).toBe('sessao');
     expect(motivo({ message: 'Invalid authentication credentials' }, 401)).toBe('sessao');
+    expect(motivoDoErro({ code: 'P0002', message: 'fluxo não encontrado' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' });
+    expect(motivoDoErro({ code: '23503', message: 'insert or update violates foreign key' })).toMatchObject({ motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
     expect(motivo({ code: '57014' }, 500)).toBe('rede');
     expect(motivo({ code: '40P01' }, 500)).toBe('rede');
     expect(motivo({ message: 'rate limit' }, 429)).toBe('rede');
@@ -1911,6 +1916,9 @@ export function motivoDoErro(e: { code?: string; message?: string } | null | und
   const c = e.code ?? '';
   if (c === '40001') return { ok: false, motivo: 'conflito' };
   if (c === 'P0001') return { ok: false, motivo: 'trava' };
+  // O que o salvar_fluxo recusa por causa de outra tela: o fluxo ou um cadastro dele foi apagado.
+  if (c === 'P0002') return { ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' };
+  if (c === '22023' || c === '23503') return { ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' };
   if (c === 'PGRST301' || c === 'PGRST303' || status === 401) return { ok: false, motivo: 'sessao' };
   if (c === '57014' || c === '40P01' || /^(08|53)/.test(c) || status === 429 || (status !== undefined && status >= 500)) return { ok: false, motivo: 'rede' };
   if (!c && status === 413) return { ok: false, motivo: 'recusado', mensagem: 'o fluxo ficou grande demais pra salvar' };
@@ -2008,6 +2016,7 @@ git commit -m "editor: salvamento automático e ajuda dos cadastros" -m "$(cat .
 
 **Arquivos:**
 - Modificar: `apps/web/src/lib/dados.ts`
+- Criar: `apps/web/src/lib/cadastro-unico.ts`
 - Criar: `apps/web/src/acoes/fluxos.ts`, `cadastros.ts`
 - Criar: `apps/web/test/acoes/banco-falso.ts`, `fluxos.test.ts`, `cadastros.test.ts`
 
@@ -2043,7 +2052,7 @@ export function bancoFalso() {
       select: () => q,
       order: () => q,
     };
-    for (const m of ['eq', 'in']) q[m] = (c: string, v: unknown) => (f.filtros.push([c, v]), q);
+    for (const m of ['eq', 'in', 'ilike']) q[m] = (c: string, v: unknown) => (f.filtros.push([c, v]), q);
     for (const m of ['insert', 'update', 'delete', 'upsert'])
       q[m] = (valores?: unknown) => {
         f.op = m;
@@ -2100,14 +2109,16 @@ describe('acoes/fluxos', () => {
 
   it('modelo: reaproveita o cadastro igual, cria os outros e salva o documento com os ids da empresa', async () => {
     const m = MODELOS.find((x) => x.chave === 'credito')!;
-    b.quando('cadastros.select', { data: [{ id: 'k-bureau', tipo: 'sistema', nome: '  bureau de CRÉDITO ' }], error: null });
-    b.quando('cadastros.insert', { data: { id: 'k-analistas' }, error: null });
+    // O Bureau já existe (23505): acha pelo nome, sem ler a lista inteira; os Analistas são novos.
+    b.quando('cadastros.insert', { error: { code: '23505', message: 'duplicate' }, data: null }, { data: { id: 'k-analistas' }, error: null });
+    b.quando('cadastros.select', { data: [{ id: 'k-bureau-2', tipo: 'sistema', nome: 'Bureau de crédito 2' }, { id: 'k-bureau', tipo: 'sistema', nome: '  bureau de CRÉDITO ' }], error: null });
     b.quando('canais.select', { data: { chave: 'interno' }, error: null });
     b.quando('fluxos.insert', { data: { id: 'f9' }, error: null });
     b.quando('rpc.salvar_fluxo', { data: 1, error: null });
     expect(await criarDeModelo('e1', 'credito')).toEqual({ id: 'f9' });
-    const insercoes = b.feitas.filter((f) => f.tabela === 'cadastros' && f.op === 'insert');
-    expect(insercoes.map((f) => (f.valores as { nome: string }).nome)).toEqual(['Analistas de crédito']);
+    const busca = b.feitas.find((f) => f.tabela === 'cadastros' && f.op === 'select')!;
+    expect(busca.filtros).toEqual([['empresa_id', 'e1'], ['tipo', 'sistema'], ['nome', '%Bureau de crédito%']]);
+    expect(b.feitas.find((f) => f.tabela === 'canais')!.filtros).toEqual([['empresa_id', 'e1'], ['chave', 'interno'], ['arquivado', false]]);
     expect(b.feitas.find((f) => f.tabela === 'fluxos')!.valores).toEqual({ empresa_id: 'e1', nome: m.nome, descricao: m.descricao, canal: 'interno' });
     const salvo = b.feitas.find((f) => f.tabela === 'rpc:salvar_fluxo')!.valores as { p_documento: { pecas: { responsavel?: string }[] }; p_revisao: number };
     expect(salvo.p_revisao).toBe(0);
@@ -2115,7 +2126,6 @@ describe('acoes/fluxos', () => {
   });
 
   it('modelo: o Horário entra com as janelas e feriados; canal que a empresa não tem fica vazio', async () => {
-    b.quando('cadastros.select', { data: [], error: null });
     for (const id of ['k1', 'k2', 'k3']) b.quando('cadastros.insert', { data: { id }, error: null });
     b.quando('canais.select', { data: null, error: null });
     b.quando('fluxos.insert', { data: { id: 'f1' }, error: null });
@@ -2126,28 +2136,46 @@ describe('acoes/fluxos', () => {
     expect((b.feitas.find((f) => f.tabela === 'fluxos')!.valores as { canal: unknown }).canal).toBeNull();
   });
 
-  it('modelo: se salvar o documento falha, o fluxo criado é apagado', async () => {
-    b.quando('cadastros.select', { data: [], error: null });
-    for (const id of ['k1', 'k2']) b.quando('cadastros.insert', { data: { id }, error: null });
+  it('modelo: se salvar o documento falha, o fluxo e os cadastros que ele criou são apagados', async () => {
+    b.quando('cadastros.insert', { data: { id: 'k1' }, error: null }, { error: { code: '23505', message: 'duplicate' } });
+    b.quando('cadastros.select', { data: [{ id: 'k-sup', tipo: 'equipe', nome: 'Supervisão SAC' }], error: null });
     b.quando('fluxos.insert', { data: { id: 'f1' }, error: null });
     b.quando('rpc.salvar_fluxo', { error: { code: '22023', message: 'responsável' } });
     expect((await criarDeModelo('e1', 'email')).erro).toBeTruthy();
-    expect(b.feitas.at(-1)).toMatchObject({ tabela: 'fluxos', op: 'delete', filtros: [['id', 'f1']] });
+    const apagados = b.feitas.filter((f) => f.op === 'delete');
+    expect(apagados).toMatchObject([
+      { tabela: 'fluxos', filtros: [['empresa_id', 'e1'], ['id', 'f1']] },
+      // Só o que esta chamada criou: a Supervisão SAC já existia e fica.
+      { tabela: 'cadastros', filtros: [['empresa_id', 'e1'], ['id', ['k1']]] },
+    ]);
     expect(await criarDeModelo('e1', 'nao-existe')).toEqual({ erro: 'Esse modelo não existe.' });
+  });
+
+  it('modelo: o fluxo não entra (sem acesso) e nada fica pra trás', async () => {
+    for (const id of ['k1', 'k2']) b.quando('cadastros.insert', { data: { id }, error: null });
+    b.quando('fluxos.insert', { error: { code: '42501', message: 'rls' } });
+    expect((await criarDeModelo('e1', 'email')).erro).toBeTruthy();
+    expect(b.feitas.filter((f) => f.op === 'delete')).toMatchObject([{ tabela: 'cadastros', filtros: [['empresa_id', 'e1'], ['id', ['k1', 'k2']]] }]);
+    expect(b.feitas.some((f) => f.tabela === 'rpc:salvar_fluxo')).toBe(false);
   });
 
   it('mudar dados do fluxo: confere nome e meta; fluxo que sumiu é erro', async () => {
     expect(await mudarFluxo('e1', 'f1', { nome: ' ' })).toEqual({ erro: 'Dá um nome pro fluxo.' });
-    expect(await mudarFluxo('e1', 'f1', { meta_s: -5 })).toEqual({ erro: 'A meta é um tempo maior que zero.' });
+    expect(await mudarFluxo('e1', 'f1', { meta_s: -5 })).toEqual({ erro: 'A meta é um tempo maior que zero, de até um ano.' });
+    expect(await mudarFluxo('e1', 'f1', { meta_s: 1e12 })).toEqual({ erro: 'A meta é um tempo maior que zero, de até um ano.' });
+    expect(await mudarFluxo('e1', 'f1', { descricao: 'x'.repeat(5001) })).toEqual({ erro: 'A descrição vai até 5000 letras.' });
+    expect(await mudarFluxo('e1', 'f1', {})).toEqual({});
+    expect(b.feitas).toEqual([]);
     b.quando('fluxos.update', { data: [{ id: 'f1' }], error: null }, { data: [], error: null });
     expect(await mudarFluxo('e1', 'f1', { nome: ' Novo ', canal: '', meta_s: null })).toEqual({});
-    expect(b.feitas.at(-1)!.valores).toEqual({ nome: 'Novo', canal: null, meta_s: null });
+    expect(b.feitas.at(-1)).toMatchObject({ valores: { nome: 'Novo', canal: null, meta_s: null }, filtros: [['empresa_id', 'e1'], ['id', 'f1']] });
     expect(await mudarFluxo('e1', 'f1', { descricao: 'x' })).toEqual({ erro: 'Este fluxo não existe mais.' });
   });
 
   it('apagar fluxo', async () => {
     b.quando('fluxos.delete', { data: [{ id: 'f1' }], error: null }, { data: [], error: null });
     expect(await apagarFluxo('e1', 'f1')).toEqual({});
+    expect(b.feitas[0]!.filtros).toEqual([['empresa_id', 'e1'], ['id', 'f1']]);
     expect(await apagarFluxo('e1', 'f1')).toEqual({ erro: 'Este fluxo não existe mais.' });
   });
 });
@@ -2176,16 +2204,25 @@ describe('acoes/cadastros', () => {
   });
 
   it('nome que já existe no tipo: devolve o que existe', async () => {
-    b.quando('cadastros.insert', { error: { code: '23505', message: 'duplicate' } });
-    b.quando('cadastros.select', { data: [{ id: 'k7', tipo: 'fila', nome: 'Fila Cobrança', campos: {} }], error: null });
+    b.quando('cadastros.insert', { error: { code: '23505', message: 'duplicate' } }, { error: { code: '23505', message: 'duplicate' } });
+    b.quando('cadastros.select', { data: [{ id: 'k7', tipo: 'fila', nome: 'Fila Cobrança', campos: {} }], error: null }, { data: [], error: null });
     expect((await criarCadastro('e1', 'fila', 'fila cobrança')).cadastro).toMatchObject({ id: 'k7', nome: 'Fila Cobrança' });
+    // A busca é só dos parecidos, com % e _ do nome valendo como letra.
+    expect(b.feitas[1]!.filtros).toEqual([['empresa_id', 'e1'], ['tipo', 'fila'], ['nome', '%fila cobrança%']]);
+    b.limpar();
+    b.quando('cadastros.insert', { error: { code: '23505', message: 'duplicate' } });
+    b.quando('cadastros.select', { data: [], error: null });
+    expect(await criarCadastro('e1', 'fila', '50%_off')).toEqual({ erro: 'Já existe um cadastro com esse nome nesse tipo.' });
+    expect(b.feitas[1]!.filtros.at(-1)).toEqual(['nome', '%50\\%\\_off%']);
   });
 
   it('renomear com nome repetido e apagar em uso explicam o porquê', async () => {
     b.quando('cadastros.update', { error: { code: '23505', message: 'duplicate' } });
     expect(await renomearCadastro('e1', 'k1', 'Ana')).toEqual({ erro: 'Já existe um cadastro com esse nome nesse tipo.' });
+    expect(b.feitas[0]!.filtros).toEqual([['empresa_id', 'e1'], ['id', 'k1']]);
     b.quando('cadastros.delete', { error: { code: '23503', message: 'fk' } });
     expect(await apagarCadastro('e1', 'k1')).toEqual({ erro: 'Algum fluxo usa este cadastro. Troca nas peças antes de apagar.' });
+    expect(b.feitas[1]!.filtros).toEqual([['empresa_id', 'e1'], ['id', 'k1']]);
   });
 
   it('horário: confere janelas e feriados antes de gravar', async () => {
@@ -2194,6 +2231,8 @@ describe('acoes/cadastros', () => {
     b.quando('cadastros.update', { data: [{ id: 'k1' }], error: null });
     expect(await mudarHorario('e1', 'k1', { janelas: [{ dias: ['sab'], inicio: '00:00', fim: '24:00' }], feriados: [{ data: '2026-12-25', todo_ano: true, extra: 1 }] })).toEqual({});
     expect(b.feitas[0]!.valores).toEqual({ campos: { janelas: [{ dias: ['sab'], inicio: '00:00', fim: '24:00' }], feriados: [{ data: '2026-12-25', todo_ano: true }] } });
+    // Só Horário: sem o filtro de tipo, mudaria os campos de uma fila.
+    expect(b.feitas[0]!.filtros).toEqual([['empresa_id', 'e1'], ['id', 'k1'], ['tipo', 'horario']]);
   });
 });
 ```
@@ -2207,7 +2246,7 @@ Expected: FAIL, `Failed to resolve import "@/acoes/fluxos"` (e `"@/acoes/cadastr
 
 ```diff
 diff --git a/apps/web/src/lib/dados.ts b/apps/web/src/lib/dados.ts
-index 30d97c3..f2e7f40 100644
+index 30d97c3..2c16897 100644
 --- a/apps/web/src/lib/dados.ts
 +++ b/apps/web/src/lib/dados.ts
 @@ -2,6 +2,9 @@ import 'server-only';
@@ -2220,7 +2259,28 @@ index 30d97c3..f2e7f40 100644
  import type { LinkResumo } from '@/compartilhar/opcoes';
  import type { Revisao } from '@/importacao/revisao';
  import type { Modo } from '@/simulacao/sessao';
-@@ -226,3 +229,104 @@ export async function membros(empresaId: string) {
+@@ -33,6 +36,20 @@ function ok<T>(r: { data: T[] | null; error: ErroBanco }): T[] {
+   return r.data ?? [];
+ }
+ 
++/**
++ * Lista que pode passar de 1000 linhas: o PostgREST devolve no máximo `max_rows` (1000, aqui e no Supabase) por
++ * pedido, calado. Lê de 1000 em 1000, numa ordem fixa, até vir uma página incompleta.
++ */
++async function todas<T>(pedir: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: ErroBanco }>): Promise<T[]> {
++  const POR_VEZ = 1000;
++  const linhas: T[] = [];
++  for (let de = 0; ; de += POR_VEZ) {
++    const pagina = ok(await pedir(de, de + POR_VEZ - 1));
++    linhas.push(...pagina);
++    if (pagina.length < POR_VEZ) return linhas;
++  }
++}
++
+ /** Uma linha ou nada. */
+ function talvez<T>(r: { data: T | null; error: ErroBanco }): T | null {
+   falhou(r.error);
+@@ -226,3 +243,108 @@ export async function membros(empresaId: string) {
    const c = ok(await supabase.from('convites').select('email, criado_em').eq('empresa_id', empresaId).order('criado_em'));
    return { membros: m, convites: c };
  }
@@ -2298,7 +2358,9 @@ index 30d97c3..f2e7f40 100644
 +
 +export async function cadastros(empresaId: string): Promise<Cadastro[]> {
 +  const { supabase } = await usuarioAtual();
-+  const linhas = ok<{ id: string; tipo: string; nome: string; campos: Record<string, unknown> }>(await supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).order('nome'));
++  const linhas = await todas<{ id: string; tipo: string; nome: string; campos: Record<string, unknown> }>((de, ate) =>
++    supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).order('nome').order('id').range(de, ate),
++  );
 +  return linhas.map((l) => ({ id: l.id, tipo: l.tipo, nome: l.nome, campos: l.campos }));
 +}
 +
@@ -2315,16 +2377,56 @@ index 30d97c3..f2e7f40 100644
 +export async function usosDosCadastros(empresaId: string): Promise<Map<string, { id: string; nome: string }[]>> {
 +  const { supabase } = await usuarioAtual();
 +  const [usos, fs] = await Promise.all([
-+    supabase.from('fluxo_cadastros').select('cadastro_id, fluxo_id').eq('empresa_id', empresaId),
-+    supabase.from('fluxos_resumo').select('id, nome').eq('empresa_id', empresaId),
++    todas<{ cadastro_id: string; fluxo_id: string }>((de, ate) =>
++      supabase.from('fluxo_cadastros').select('cadastro_id, fluxo_id').eq('empresa_id', empresaId).order('cadastro_id').order('fluxo_id').range(de, ate),
++    ),
++    todas<{ id: string; nome: string }>((de, ate) => supabase.from('fluxos_resumo').select('id, nome').eq('empresa_id', empresaId).order('id').range(de, ate)),
 +  ]);
-+  const nomes = new Map(ok<{ id: string; nome: string }>(fs).map((f) => [f.id, f.nome]));
++  const nomes = new Map(fs.map((f) => [f.id, f.nome]));
 +  const m = new Map<string, { id: string; nome: string }[]>();
-+  for (const u of ok<{ cadastro_id: string; fluxo_id: string }>(usos)) {
++  for (const u of usos) {
 +    m.set(u.cadastro_id, [...(m.get(u.cadastro_id) ?? []), { id: u.fluxo_id, nome: nomes.get(u.fluxo_id) ?? 'fluxo' }]);
 +  }
 +  return m;
 +}
+```
+
+E o cadastro que nasce sem repetir (as duas ações usam).
+
+`apps/web/src/lib/cadastro-unico.ts`:
+
+```ts
+import type { Cadastro } from '@journey/fluxo';
+import { nomeNormalizado } from '@/editor/cadastros';
+import type { supabaseServidor } from './supabase/servidor';
+
+type Cliente = Awaited<ReturnType<typeof supabaseServidor>>;
+type Erro = { code?: string; message: string };
+
+/** Escapa `%`, `_` e `\` pra que o texto valha literalmente num `ilike`. */
+const literal = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/**
+ * Cria o cadastro, ou acha o que já existe com o mesmo nome no mesmo tipo (sem caixa nem espaços, como o índice
+ * único do banco). Tenta criar primeiro: duas pessoas (ou dois cliques) ao mesmo tempo dão no mesmo cadastro, e
+ * não precisa ler a lista inteira (que passa das 1000 linhas que o PostgREST devolve por vez).
+ */
+export async function acharOuCriarCadastro(
+  supabase: Cliente,
+  empresaId: string,
+  tipo: string,
+  nome: string,
+  campos: object,
+): Promise<{ cadastro: Cadastro; novo: boolean } | { erro: Erro }> {
+  const r = await supabase.from('cadastros').insert({ empresa_id: empresaId, tipo, nome, campos }).select('id, tipo, nome, campos').single();
+  if (!r.error) return { cadastro: r.data as Cadastro, novo: true };
+  if (r.error.code === '23505') {
+    const parecidos = await supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).eq('tipo', tipo).ilike('nome', `%${literal(nome.trim())}%`);
+    const igual = (parecidos.data as Cadastro[] | null)?.find((k) => nomeNormalizado(k.nome) === nomeNormalizado(nome));
+    if (igual) return { cadastro: igual, novo: false };
+  }
+  return { erro: r.error };
+}
 ```
 
 - [ ] **Passo 4: as ações dos fluxos**
@@ -2335,8 +2437,8 @@ index 30d97c3..f2e7f40 100644
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { MODELOS, camposHorario, instanciarModelo } from '@journey/fluxo';
-import { nomeNormalizado } from '@/editor/cadastros';
+import { LIMITES, MODELOS, camposHorario, instanciarModelo } from '@journey/fluxo';
+import { acharOuCriarCadastro } from '@/lib/cadastro-unico';
 import { usuarioAtual } from '@/lib/dados';
 import { mensagemDoErro } from '@/lib/erros';
 
@@ -2344,7 +2446,7 @@ const MENSAGENS = { '23514': 'O nome vai de 1 a 120 letras.', '23503': 'Esse can
 
 /** Fluxo em branco: só nome e canal. O documento vazio vem do banco. */
 export async function criarFluxo(empresaId: string, nome: string, canal: string | null): Promise<{ id?: string; erro?: string }> {
-  const n = nome.trim();
+  const n = typeof nome === 'string' ? nome.trim() : '';
   if (!n) return { erro: 'Dá um nome pro fluxo.' };
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('fluxos').insert({ empresa_id: empresaId, nome: n, canal: canal || null }).select('id').single();
@@ -2355,41 +2457,47 @@ export async function criarFluxo(empresaId: string, nome: string, canal: string 
 
 /**
  * Fluxo a partir de um modelo. Cada cadastro do modelo vira o cadastro da empresa com o mesmo tipo e nome
- * (o que já existe é reaproveitado), e o documento é salvo com os ids dela. Se algo falha no meio,
- * o fluxo criado é apagado: não sobra fluxo vazio.
+ * (o que já existe é reaproveitado), e o documento é salvo com os ids dela. Se algo falha no meio, o que esta
+ * chamada criou é apagado (o fluxo e os cadastros novos): não sobra fluxo vazio nem cadastro solto.
  */
 export async function criarDeModelo(empresaId: string, chave: string): Promise<{ id?: string; erro?: string }> {
   const modelo = MODELOS.find((m) => m.chave === chave);
   if (!modelo) return { erro: 'Esse modelo não existe.' };
   const { supabase } = await usuarioAtual();
 
-  const existentes = await supabase.from('cadastros').select('id, tipo, nome').eq('empresa_id', empresaId);
-  if (existentes.error) return { erro: mensagemDoErro('criarDeModelo', existentes.error) };
   const ids: Record<string, string> = {};
-  for (const k of modelo.cadastros) {
-    const igual = existentes.data.find((e) => e.tipo === k.tipo && nomeNormalizado(e.nome) === nomeNormalizado(k.nome));
-    if (igual) {
-      ids[k.id] = igual.id;
-      continue;
+  const criados: string[] = [];
+  const falhou = async (erro: { code?: string; message: string }, mensagens?: Record<string, string>) => {
+    if (criados.length) {
+      const d = await supabase.from('cadastros').delete().eq('empresa_id', empresaId).in('id', criados);
+      if (d.error) mensagemDoErro('criarDeModelo: desfazer cadastros', d.error);
     }
+    return { erro: mensagemDoErro('criarDeModelo', erro, mensagens) };
+  };
+  for (const k of modelo.cadastros) {
     const campos = k.tipo === 'horario' ? (camposHorario(k) ?? {}) : (k.campos ?? {});
-    const novo = await supabase.from('cadastros').insert({ empresa_id: empresaId, tipo: k.tipo, nome: k.nome, campos }).select('id').single();
-    if (novo.error) return { erro: mensagemDoErro('criarDeModelo', novo.error, { '23503': `A empresa não tem o tipo de cadastro "${k.tipo}".` }) };
-    ids[k.id] = novo.data.id as string;
+    const a = await acharOuCriarCadastro(supabase, empresaId, k.tipo, k.nome, campos);
+    if ('erro' in a) return falhou(a.erro, { '23503': `A empresa não tem o tipo de cadastro "${k.tipo}".` });
+    ids[k.id] = a.cadastro.id;
+    if (a.novo) criados.push(a.cadastro.id);
   }
+  const documento = instanciarModelo(modelo, ids);
 
-  const canal = await supabase.from('canais').select('chave').eq('empresa_id', empresaId).eq('chave', modelo.canal).maybeSingle();
+  // Canal arquivado ou que a empresa não tem: o fluxo nasce sem canal (dá pra escolher no painel).
+  const canal = await supabase.from('canais').select('chave').eq('empresa_id', empresaId).eq('chave', modelo.canal).eq('arquivado', false).maybeSingle();
+  if (canal.error) return falhou(canal.error);
   const f = await supabase
     .from('fluxos')
     .insert({ empresa_id: empresaId, nome: modelo.nome, descricao: modelo.descricao, canal: canal.data ? modelo.canal : null })
     .select('id')
     .single();
-  if (f.error) return { erro: mensagemDoErro('criarDeModelo', f.error, MENSAGENS) };
+  if (f.error) return falhou(f.error, MENSAGENS);
   const id = f.data.id as string;
-  const s = await supabase.rpc('salvar_fluxo', { p_fluxo: id, p_revisao: 0, p_documento: instanciarModelo(modelo, ids) });
+  const s = await supabase.rpc('salvar_fluxo', { p_fluxo: id, p_revisao: 0, p_documento: documento });
   if (s.error) {
-    await supabase.from('fluxos').delete().eq('id', id);
-    return { erro: mensagemDoErro('criarDeModelo', s.error) };
+    const d = await supabase.from('fluxos').delete().eq('empresa_id', empresaId).eq('id', id);
+    if (d.error) mensagemDoErro('criarDeModelo: desfazer fluxo', d.error);
+    return falhou(s.error);
   }
   revalidatePath(`/e/${empresaId}`);
   return { id };
@@ -2406,15 +2514,19 @@ export interface DadosDoFluxo {
 export async function mudarFluxo(empresaId: string, fluxoId: string, d: DadosDoFluxo): Promise<{ erro?: string }> {
   const valores: Record<string, unknown> = {};
   if (d.nome !== undefined) {
-    if (!d.nome.trim()) return { erro: 'Dá um nome pro fluxo.' };
+    if (typeof d.nome !== 'string' || !d.nome.trim()) return { erro: 'Dá um nome pro fluxo.' };
     valores.nome = d.nome.trim();
   }
-  if (d.descricao !== undefined) valores.descricao = d.descricao.trim();
+  if (d.descricao !== undefined) {
+    if (typeof d.descricao !== 'string' || d.descricao.length > LIMITES.texto) return { erro: `A descrição vai até ${LIMITES.texto} letras.` };
+    valores.descricao = d.descricao.trim();
+  }
   if (d.canal !== undefined) valores.canal = d.canal || null;
   if (d.meta_s !== undefined) {
-    if (d.meta_s !== null && !(Number.isInteger(d.meta_s) && d.meta_s > 0)) return { erro: 'A meta é um tempo maior que zero.' };
+    if (d.meta_s !== null && !(Number.isInteger(d.meta_s) && d.meta_s > 0 && d.meta_s <= LIMITES.tempo_s)) return { erro: 'A meta é um tempo maior que zero, de até um ano.' };
     valores.meta_s = d.meta_s;
   }
+  if (!Object.keys(valores).length) return {};
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('fluxos').update(valores).eq('empresa_id', empresaId).eq('id', fluxoId).select('id');
   if (r.error) return { erro: mensagemDoErro('mudarFluxo', r.error, MENSAGENS) };
@@ -2442,7 +2554,8 @@ export async function apagarFluxo(empresaId: string, fluxoId: string): Promise<{
 
 import { revalidatePath } from 'next/cache';
 import { camposHorario, type Cadastro } from '@journey/fluxo';
-import { HORARIO_PADRAO, nomeNormalizado } from '@/editor/cadastros';
+import { HORARIO_PADRAO } from '@/editor/cadastros';
+import { acharOuCriarCadastro } from '@/lib/cadastro-unico';
 import { usuarioAtual } from '@/lib/dados';
 import { mensagemDoErro } from '@/lib/erros';
 
@@ -2460,24 +2573,19 @@ const caminho = (empresaId: string) => `/e/${empresaId}/cadastros`;
  * Horário nasce de segunda a sexta, das 8h às 18h.
  */
 export async function criarCadastro(empresaId: string, tipo: string, nome: string): Promise<{ cadastro?: Cadastro; erro?: string }> {
-  const n = nome.trim();
+  const n = typeof nome === 'string' ? nome.trim() : '';
   if (!n) return { erro: 'Escreve um nome.' };
   const { supabase } = await usuarioAtual();
   const campos = tipo === 'horario' ? HORARIO_PADRAO : {};
-  const r = await supabase.from('cadastros').insert({ empresa_id: empresaId, tipo, nome: n, campos }).select('id, tipo, nome, campos').single();
-  if (r.error?.code === '23505') {
-    const mesmos = await supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).eq('tipo', tipo);
-    const igual = mesmos.data?.find((k) => nomeNormalizado(k.nome as string) === nomeNormalizado(n));
-    if (igual) return { cadastro: igual as Cadastro };
-  }
-  if (r.error) return { erro: mensagemDoErro('criarCadastro', r.error, MENSAGENS) };
-  revalidatePath(caminho(empresaId));
-  return { cadastro: r.data as Cadastro };
+  const r = await acharOuCriarCadastro(supabase, empresaId, tipo, n, campos);
+  if ('erro' in r) return { erro: mensagemDoErro('criarCadastro', r.erro, MENSAGENS) };
+  if (r.novo) revalidatePath(caminho(empresaId));
+  return { cadastro: r.cadastro };
 }
 
 /** Renomear muda o nome em todos os fluxos: as peças guardam o id, não o nome. */
 export async function renomearCadastro(empresaId: string, id: string, nome: string): Promise<{ erro?: string }> {
-  const n = nome.trim();
+  const n = typeof nome === 'string' ? nome.trim() : '';
   if (!n) return { erro: 'Escreve um nome.' };
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('cadastros').update({ nome: n }).eq('empresa_id', empresaId).eq('id', id).select('id');
@@ -2513,12 +2621,12 @@ export async function mudarHorario(empresaId: string, id: string, campos: unknow
 - [ ] **Passo 6: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/acoes/fluxos.test.ts test/acoes/cadastros.test.ts && npx tsc --noEmit`
-Expected: `Tests  10 passed (10)`; `tsc` sem saída.
+Expected: `Tests  11 passed (11)`; `tsc` sem saída.
 
 - [ ] **Passo 7: commit**
 
 ```bash
-git add apps/web/src/lib/dados.ts apps/web/src/acoes apps/web/test/acoes
+git add apps/web/src/lib/dados.ts apps/web/src/lib/cadastro-unico.ts apps/web/src/acoes apps/web/test/acoes
 git commit -m "web: leituras e ações de fluxos e cadastros" -m "$(cat .git/atribuicao.txt)"
 ```
 
@@ -5829,7 +5937,7 @@ export function Nav({ empresaId }: { empresaId: string }) {
 - [ ] **Passo 8: rodar e ver passar**
 
 Run: `npm run typecheck && npm test -w apps/web && npm run e2e -- e2e/editor.spec.ts e2e/fluxos.spec.ts e2e/membros.spec.ts e2e/aceitacao.spec.ts --trace=off`
-Expected: `tsc` sem saída; app `Tests  254 passed (254)` (com o Supabase no ar); os 6 de ponta a ponta passando.
+Expected: `tsc` sem saída; app `Tests  255 passed (255)` (com o Supabase no ar); os 6 de ponta a ponta passando.
 
 - [ ] **Passo 9: commit**
 
@@ -6266,7 +6374,7 @@ index 78941d5..beaddec 100644
 - [ ] **Passo 2: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes && npm run build && npm run e2e -- --trace=off`
-Expected: fluxo 78, núcleo 253, app 254; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
+Expected: fluxo 78, núcleo 253, app 255; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
 
 - [ ] **Passo 3: commit e push**
 

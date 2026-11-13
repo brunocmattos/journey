@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { camposHorario, type Cadastro } from '@journey/fluxo';
-import { HORARIO_PADRAO, nomeNormalizado } from '@/editor/cadastros';
+import { HORARIO_PADRAO } from '@/editor/cadastros';
+import { acharOuCriarCadastro } from '@/lib/cadastro-unico';
 import { usuarioAtual } from '@/lib/dados';
 import { mensagemDoErro } from '@/lib/erros';
 
@@ -20,24 +21,19 @@ const caminho = (empresaId: string) => `/e/${empresaId}/cadastros`;
  * Horário nasce de segunda a sexta, das 8h às 18h.
  */
 export async function criarCadastro(empresaId: string, tipo: string, nome: string): Promise<{ cadastro?: Cadastro; erro?: string }> {
-  const n = nome.trim();
+  const n = typeof nome === 'string' ? nome.trim() : '';
   if (!n) return { erro: 'Escreve um nome.' };
   const { supabase } = await usuarioAtual();
   const campos = tipo === 'horario' ? HORARIO_PADRAO : {};
-  const r = await supabase.from('cadastros').insert({ empresa_id: empresaId, tipo, nome: n, campos }).select('id, tipo, nome, campos').single();
-  if (r.error?.code === '23505') {
-    const mesmos = await supabase.from('cadastros').select('id, tipo, nome, campos').eq('empresa_id', empresaId).eq('tipo', tipo);
-    const igual = mesmos.data?.find((k) => nomeNormalizado(k.nome as string) === nomeNormalizado(n));
-    if (igual) return { cadastro: igual as Cadastro };
-  }
-  if (r.error) return { erro: mensagemDoErro('criarCadastro', r.error, MENSAGENS) };
-  revalidatePath(caminho(empresaId));
-  return { cadastro: r.data as Cadastro };
+  const r = await acharOuCriarCadastro(supabase, empresaId, tipo, n, campos);
+  if ('erro' in r) return { erro: mensagemDoErro('criarCadastro', r.erro, MENSAGENS) };
+  if (r.novo) revalidatePath(caminho(empresaId));
+  return { cadastro: r.cadastro };
 }
 
 /** Renomear muda o nome em todos os fluxos: as peças guardam o id, não o nome. */
 export async function renomearCadastro(empresaId: string, id: string, nome: string): Promise<{ erro?: string }> {
-  const n = nome.trim();
+  const n = typeof nome === 'string' ? nome.trim() : '';
   if (!n) return { erro: 'Escreve um nome.' };
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('cadastros').update({ nome: n }).eq('empresa_id', empresaId).eq('id', id).select('id');

@@ -193,12 +193,15 @@ describe('editor/salvamento', () => {
     expect(motivoDoErro({ code: '40001' })).toEqual({ ok: false, motivo: 'conflito' });
     expect(motivoDoErro({ code: 'P0001' })).toEqual({ ok: false, motivo: 'trava' });
     expect(motivoDoErro({ code: '', message: 'TypeError: Failed to fetch' }, 0)).toEqual({ ok: false, motivo: 'rede' });
-    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'responsável' });
+    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
+    expect(motivoDoErro({ code: '23514', message: 'nome' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'nome' });
     // A mensagem não decide: código do banco com "failed" no texto continua recusa.
     expect(motivo({ code: '22023', message: 'validation failed' }, 400)).toBe('recusado');
     expect(motivo({ code: 'PGRST301' }, 401)).toBe('sessao');
     expect(motivo({ code: 'PGRST303' }, 401)).toBe('sessao');
     expect(motivo({ message: 'Invalid authentication credentials' }, 401)).toBe('sessao');
+    expect(motivoDoErro({ code: 'P0002', message: 'fluxo não encontrado' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' });
+    expect(motivoDoErro({ code: '23503', message: 'insert or update violates foreign key' })).toMatchObject({ motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
     expect(motivo({ code: '57014' }, 500)).toBe('rede');
     expect(motivo({ code: '40P01' }, 500)).toBe('rede');
     expect(motivo({ message: 'rate limit' }, 429)).toBe('rede');

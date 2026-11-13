@@ -223,6 +223,9 @@ export function motivoDoErro(e: { code?: string; message?: string } | null | und
   const c = e.code ?? '';
   if (c === '40001') return { ok: false, motivo: 'conflito' };
   if (c === 'P0001') return { ok: false, motivo: 'trava' };
+  // O que o salvar_fluxo recusa por causa de outra tela: o fluxo ou um cadastro dele foi apagado.
+  if (c === 'P0002') return { ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' };
+  if (c === '22023' || c === '23503') return { ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' };
   if (c === 'PGRST301' || c === 'PGRST303' || status === 401) return { ok: false, motivo: 'sessao' };
   if (c === '57014' || c === '40P01' || /^(08|53)/.test(c) || status === 429 || (status !== undefined && status >= 500)) return { ok: false, motivo: 'rede' };
   if (!c && status === 413) return { ok: false, motivo: 'recusado', mensagem: 'o fluxo ficou grande demais pra salvar' };
