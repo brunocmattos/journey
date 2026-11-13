@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa A) mesclada. Este plano, o código e o PR da etapa B saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 234 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 241 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Sem migração nova.** A etapa B usa as tabelas e funções da etapa A (`fluxos`, `cadastros`, `canais`, `tipos_cadastro`, `salvar_fluxo`, `pegar_trava`, `soltar_trava`), que já estão em produção.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`, "Rodar").
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -32,6 +32,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 |---|---|---|
 | **Quadro próprio (o protótipo em React), não React Flow** | O protótipo é a especificação aprovada ("melhorou MUITO"): canos que saem pelo lado mais direto de cada peça, a bolinha de ligar e o + com menu, grupos que levam o que está dentro, renomear em cima da peça, a água quadro a quadro com bolhas. Portar o desenho é direto; refazer tudo isso nos nós, alças e arestas do React Flow é reescrever o protótipo noutro modelo. O spec (14) previa o React Flow como base: o desvio fica registrado aqui e no README do app | React Flow: alças fixas, aresta com outro desenho, a água teria que entrar como aresta animada |
 | **A lógica do editor sem tela, em funções puras** (`editor/documento.ts`) que recebem o documento e devolvem outro | Testável sem navegador; o histórico guarda as versões por referência, sem cópia profunda | Mutar o documento no lugar, como o protótipo: desfazer exigiria serializar a cada passo |
+| **O cano sai pelo vão maior entre as bordas das peças** (no empate, pelos lados), e o cano de volta (a→b e b→a) ganha um desvio de 9 px pro lado | Olhar só os centros (o protótipo) faz peças em escada ligarem pelos lados, com o cano voltando por dentro delas; e o laço "fechado, espera e tenta de novo" desenhava os dois canos um em cima do outro | Os centros, como no protótipo |
 | **Desfazer: 120 passos; arrasto é um passo só** (o primeiro quadro registra, os seguintes substituem) | Ctrl+Z depois de arrastar volta a peça pro lugar de antes, não um pixel | Um passo por quadro |
 | **Salvamento automático pelo navegador**, direto no `salvar_fluxo`, meio segundo depois da última mudança, um envio por vez, com a revisão | O documento vai inteiro (até ~300 KB com 500 peças); pelo servidor do Next seria uma ida a mais. A função do banco confere empresa, revisão, trava e responsáveis | Server action a cada mudança: mais lenta e o mesmo controle |
 | **Sem rede: cópia no navegador e tentar de novo** (2 s, 4 s… até 30 s); ao abrir, a cópia volta se partiu da mesma revisão | Spec 7.1 ("cópia local até voltar"). Cópia de outra revisão é descartada: o banco já tem coisa mais nova | Pedir pra pessoa recarregar e perder o que fez |
@@ -54,6 +55,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **Turbopack não compila arquivo fora da raiz do projeto:** um `node_modules` que é link pra outra pasta quebra o `next dev` ("Could not find the Next.js package"). Rode `npm install` de verdade.
 - **Teclas no play só valem com a pergunta na tela:** a peça aparece (evento `chegou`) meio segundo antes da pergunta (`pede_escolha`). Os testes esperam o botão da opção antes de apertar a tecla.
 - **Hora da trava no fuso de São Paulo** (`timeZone: FUSO`): o servidor e o navegador de teste rodam em UTC.
+- **Um canal chamado `constructor`** acharia a função do `Object` em `estilo.canais[chave]`: a cor só vale se for própria do objeto (`Object.hasOwn`). E o `ESTILO_PADRAO` é congelado: quem quer mudar, copia.
 - **`naGrade` devolve 0, não -0:** `Math.round(-0.1) * 10` é `-0`, e o `toEqual` do Vitest diferencia.
 
 ## Mapa de arquivos
@@ -62,7 +64,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 |---|---|
 | `apps/web/package.json`, `next.config.ts`, `package-lock.json` | O app depende do `@journey/fluxo` (e o transpila) |
 | `apps/web/src/app/globals.css`, `src/componentes/Icone.tsx` | Tokens do editor (`--accent`, `--nota`, `--grupo`, `--mistura`) e os ícones das peças e ferramentas |
-| `packages/fluxo/src/modelos.ts` | A URA telefônica com o fora do horário e o desliga mais perto (sem cano cruzando o desenho) |
+| `packages/fluxo/src/modelos.ts` | A URA e a Esteira de crédito arrumadas: nenhum cano atravessa uma peça, nas três curvas |
 | `apps/web/src/editor/pecas.ts`, `geometria.ts`, `estilo.ts` | Formas e tamanhos; desenho dos canos; estilo e cor da água |
 | `apps/web/src/editor/documento.ts`, `historico.ts` | Mudanças no documento (criar, ligar, mover, mudar, apagar, duplicar); desfazer e refazer |
 | `apps/web/src/editor/play.ts` | O play em cima do motor: rodar, o que a tela mostra depois de n eventos, esperas, teclas |
@@ -192,15 +194,31 @@ index efdd1fa..d57ef3f 100644
    const d = TRACOS[nome] ?? TRACOS.seta!;
 ```
 
-- [ ] **Passo 4: a URA mais arrumada**
+- [ ] **Passo 4: os modelos sem cano atravessando peça**
 
-O fora do horário e o desliga ficam embaixo, perto um do outro; a opção inválida, logo abaixo do suporte. Só posições: os testes do pacote não mudam.
+Na URA, o fora do horário e o desliga ficam embaixo, perto um do outro, e a opção inválida logo abaixo do suporte. Na Esteira de crédito, a negativa vai pra baixo e a análise um pouco pra esquerda. Só posições: os testes do pacote não mudam.
 
 ```diff
 diff --git a/packages/fluxo/src/modelos.ts b/packages/fluxo/src/modelos.ts
-index d5f7e74..9257d89 100644
+index d5f7e74..7eacba6 100644
 --- a/packages/fluxo/src/modelos.ts
 +++ b/packages/fluxo/src/modelos.ts
+@@ -94,12 +94,12 @@ export const MODELOS: readonly Modelo[] = congelar([
+         peca('score', 'sistema', 260, 69, 'Consulta o score', { responsavel: 'bureau', tempo_s: 20 }),
+         peca('faixa', 'decisao', 540, 30, 'Score?'),
+         peca('automatico', 'etapa', 760, -60, 'Aprova automático', { tempo_s: 60 }),
+-        peca('analise', 'atendimento', 730, 280, 'Análise do pedido', { responsavel: 'analistas', tempo_s: 14400 }),
++        peca('analise', 'atendimento', 700, 300, 'Análise do pedido', { responsavel: 'analistas', tempo_s: 14400 }),
+         peca('analista', 'decisao', 1030, 240, 'Analista aprova?'),
+         peca('liberado', 'fim', 1320, -56, 'Crédito liberado'),
+         peca('aviso', 'mensagem', 1300, 140, 'Avisa o cliente por e-mail', { canal: 'email', tempo_s: 30 }),
+-        peca('aviso-negado', 'mensagem', 1030, 480, 'Avisa a negativa por e-mail', { canal: 'email', tempo_s: 30 }),
+-        peca('negado', 'fim', 1320, 483, 'Pedido negado'),
++        peca('aviso-negado', 'mensagem', 1300, 560, 'Avisa a negativa por e-mail', { canal: 'email', tempo_s: 30 }),
++        peca('negado', 'fim', 1580, 563, 'Pedido negado'),
+       ],
+       [
+         liga('c1', 'pedido', 'score'),
 @@ -158,9 +158,9 @@ export const MODELOS: readonly Modelo[] = congelar([
          peca('suporte', 'atendimento', 840, 20, 'Atende suporte', { responsavel: 'fila-suporte', tempo_s: 240 }),
          peca('atendido', 'fim', 1180, -70, 'Atendido'),
@@ -234,9 +252,30 @@ git commit -m "web: depende do @journey/fluxo; tokens e ícones do editor" -m "$
 
 **Arquivos:**
 - Criar: `apps/web/src/editor/pecas.ts`, `geometria.ts`, `estilo.ts`
-- Criar: `apps/web/test/editor/geometria.test.ts`, `estilo.test.ts`
+- Criar: `apps/web/test/editor/pecas.test.ts`, `geometria.test.ts`, `estilo.test.ts`
 
 - [ ] **Passo 1: escrever os testes**
+
+`apps/web/test/editor/pecas.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { NOMES_TIPOS, TIPOS_PECA } from '@journey/fluxo';
+import { FORMAS, ORDEM_FORMAS, caixaDe, naGrade } from '@/editor/pecas';
+
+describe('editor/pecas', () => {
+  it('grade de 10 px, sem -0', () => {
+    expect([naGrade(14), naGrade(15), naGrade(-0.1), naGrade(-16)]).toEqual([10, 20, 0, -20]);
+    expect(Object.is(naGrade(-0.1), -0)).toBe(false);
+  });
+
+  it('a caixa vem do tipo; nomes e ordem são os do pacote', () => {
+    expect(caixaDe({ tipo: 'decisao', x: 10, y: 20 })).toEqual({ x: 10, y: 20, w: 140, h: 140 });
+    expect(ORDEM_FORMAS).toEqual(TIPOS_PECA);
+    for (const t of TIPOS_PECA) expect(FORMAS[t].nome).toBe(NOMES_TIPOS[t]);
+  });
+});
+```
 
 `apps/web/test/editor/geometria.test.ts`:
 
@@ -259,6 +298,31 @@ describe('editor/geometria', () => {
     expect(g.d).toBe('M100,30 L293,30');
     expect(g.meio).toEqual({ x: 196.5, y: 30 });
     expect(geometriaCano(A, { x: 300, y: 0, w: 100, h: 60 }, 'suave').d).toMatch(/^M100,30 C/);
+  });
+
+  it('peças em escada ligam por cima e por baixo, não pelos lados (o cano voltaria por dentro delas)', () => {
+    const a = { x: 0, y: 0, w: 210, h: 62 };
+    const b = { x: 150, y: 100, w: 210, h: 62 };
+    expect(lados(a, b)).toEqual(['b', 'c']);
+    expect(geometriaCano(a, b, 'reta').d).toBe('M105,62 L255,93');
+  });
+
+  it('cotovelo vertical também é arredondado', () => {
+    expect(caminho({ x: 0, y: 0, nx: 0, ny: 1 }, { x: 100, y: 200, nx: 0, ny: -1 }, 'cotovelo')).toBe('M0,0 L0,86 Q0,100 14,100 L86,100 Q100,100 100,114 L100,200');
+  });
+
+  it('ida e volta entre as mesmas peças: o desvio afasta os dois canos', () => {
+    const B = { x: 400, y: 0, w: 100, h: 60 };
+    const ida = geometriaCano(A, B, 'reta', false, -9);
+    const volta = geometriaCano(B, A, 'reta', false, 9);
+    expect(ida.d).toBe('M100,21 L393,21');
+    expect(volta.d).toBe('M400,39 L107,39');
+  });
+
+  it('laço na própria peça: o rótulo fica em cima da curva', () => {
+    const g = geometriaCano(A, A, 'suave', true);
+    expect(g.d).toBe('M100,30 C170,30 90,-77 50,-7');
+    expect(g.meio).toEqual({ x: 116.25, y: -14.75 }); // a curva em t = 0,5
   });
 
   it('cotovelo arredondado; sem altura pra curva, vira reta', () => {
@@ -294,12 +358,20 @@ describe('editor/estilo', () => {
     });
   });
 
+  it('canais que não são um objeto de cores ficam vazios; o padrão não muda', () => {
+    expect(lerEstilo({ canais: ['#000000'] }).canais).toEqual({});
+    expect(lerEstilo(JSON.parse('{"canais":{"__proto__":"#000000","email":"#111111"}}')).canais).toEqual({ email: '#111111' });
+    expect(lerEstilo('lixo')).toEqual(ESTILO_PADRAO);
+    expect(Object.isFrozen(ESTILO_PADRAO) && Object.isFrozen(ESTILO_PADRAO.canais)).toBe(true);
+  });
+
   it('cor da água: a do fluxo, senão a da empresa, senão azul', () => {
     const canais = [{ chave: 'whatsapp', nome: 'WhatsApp', cor: '#159e5a' }];
     expect(corDoCanal(lerEstilo({ canais: { whatsapp: '#111111' } }), canais, 'whatsapp')).toBe('#111111');
     expect(corDoCanal(ESTILO_PADRAO, canais, 'whatsapp')).toBe('#159e5a');
     expect(corDoCanal(ESTILO_PADRAO, canais, 'fax')).toBe('#1e8bdc');
     expect(corDoCanal(ESTILO_PADRAO, canais, null)).toBe('#1e8bdc');
+    expect(corDoCanal(ESTILO_PADRAO, [{ chave: 'constructor', nome: 'C', cor: '#222222' }], 'constructor')).toBe('#222222');
   });
 });
 ```
@@ -307,29 +379,33 @@ describe('editor/estilo', () => {
 - [ ] **Passo 2: rodar e ver falhar**
 
 Run: `cd apps/web && npx vitest run test/editor`
-Expected: FAIL, `Failed to resolve import "@/editor/geometria"` (e o do estilo).
+Expected: FAIL, `Failed to resolve import "@/editor/pecas"` (e os da geometria e do estilo).
 
 - [ ] **Passo 3: as formas**
 
 `apps/web/src/editor/pecas.ts`:
 
 ```ts
-import type { Peca, TipoPeca } from '@journey/fluxo';
+import { NOMES_TIPOS, TIPOS_PECA, type Peca, type TipoPeca } from '@journey/fluxo';
 
-/** Tamanho, nome e dica de cada tipo de peça no quadro. O documento não guarda tamanho: vem do tipo. */
-export const FORMAS: Record<TipoPeca, { nome: string; w: number; h: number; dica: string }> = {
-  inicio: { nome: 'Início', w: 190, h: 60, dica: 'Onde a jornada começa: um número, um contato, um formulário…' },
-  mensagem: { nome: 'Mensagem', w: 210, h: 62, dica: 'O que a pessoa recebe ou ouve' },
-  etapa: { nome: 'Etapa', w: 210, h: 62, dica: 'Uma tarefa ou passo do processo' },
-  decisao: { nome: 'Decisão', w: 140, h: 140, dica: 'Um ponto com mais de um caminho' },
-  espera: { nome: 'Espera', w: 200, h: 62, dica: 'Um tempo parado: SLA, fila, aguardando resposta' },
-  atendimento: { nome: 'Atendimento', w: 220, h: 62, dica: 'Uma pessoa, fila ou equipe atende' },
-  sistema: { nome: 'Sistema', w: 210, h: 62, dica: 'Uma consulta ou integração com outro sistema' },
-  fim: { nome: 'Fim', w: 180, h: 56, dica: 'Onde a jornada termina' },
+const TAMANHOS: Record<TipoPeca, { w: number; h: number; dica: string }> = {
+  inicio: { w: 190, h: 60, dica: 'Onde a jornada começa: um número, um contato, um formulário…' },
+  mensagem: { w: 210, h: 62, dica: 'O que a pessoa recebe ou ouve' },
+  etapa: { w: 210, h: 62, dica: 'Uma tarefa ou passo do processo' },
+  decisao: { w: 140, h: 140, dica: 'Um ponto com mais de um caminho' },
+  espera: { w: 200, h: 62, dica: 'Um tempo parado: SLA, fila, aguardando resposta' },
+  atendimento: { w: 220, h: 62, dica: 'Uma pessoa, fila ou equipe atende' },
+  sistema: { w: 210, h: 62, dica: 'Uma consulta ou integração com outro sistema' },
+  fim: { w: 180, h: 56, dica: 'Onde a jornada termina' },
 };
 
-/** A ordem da barra de formas. */
-export const ORDEM_FORMAS: readonly TipoPeca[] = ['inicio', 'mensagem', 'etapa', 'decisao', 'espera', 'atendimento', 'sistema', 'fim'];
+/** Tamanho, nome (o do pacote) e dica de cada tipo de peça no quadro. O documento não guarda tamanho: vem do tipo. */
+export const FORMAS: Record<TipoPeca, { nome: string; w: number; h: number; dica: string }> = Object.fromEntries(
+  TIPOS_PECA.map((t) => [t, { nome: NOMES_TIPOS[t], ...TAMANHOS[t] }]),
+) as Record<TipoPeca, { nome: string; w: number; h: number; dica: string }>;
+
+/** A ordem da barra de formas: a do pacote. */
+export const ORDEM_FORMAS: readonly TipoPeca[] = TIPOS_PECA;
 
 export const NOTA = { w: 190, h: 110 } as const;
 export const GRUPO = { w: 400, h: 240, minW: 160, minH: 100 } as const;
@@ -377,13 +453,16 @@ export interface Ancora {
 
 export const centro = (c: Caixa) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 });
 
-/** De que lado sai e por qual entra: o mais direto entre as duas peças (prefere os lados, um pouco). */
+/**
+ * De que lado sai e por qual entra: pelo vão maior entre as bordas (no empate, pelos lados). Olhar só os centros
+ * faria peças em escada (uma abaixo e um pouco à direita) ligarem pelos lados, com o cano voltando por dentro delas.
+ */
 export function lados(a: Caixa, b: Caixa): [Lado, Lado] {
-  const ca = centro(a);
-  const cb = centro(b);
-  const dx = cb.x - ca.x;
-  const dy = cb.y - ca.y;
-  if (Math.abs(dx) >= Math.abs(dy) * 0.9) return dx >= 0 ? ['d', 'e'] : ['e', 'd'];
+  const dx = centro(b).x - centro(a).x;
+  const dy = centro(b).y - centro(a).y;
+  const vaoX = dx >= 0 ? b.x - (a.x + a.w) : a.x - (b.x + b.w);
+  const vaoY = dy >= 0 ? b.y - (a.y + a.h) : a.y - (b.y + b.h);
+  if (vaoX >= vaoY) return dx >= 0 ? ['d', 'e'] : ['e', 'd'];
   return dy >= 0 ? ['b', 'c'] : ['c', 'b'];
 }
 
@@ -439,16 +518,25 @@ export interface GeometriaCano {
   meio: { x: number; y: number };
 }
 
-/** O cano entre duas peças. Laço na própria peça sai pela direita e volta por cima. */
-export function geometriaCano(a: Caixa, b: Caixa, curva: Curva, mesmaPeca = false): GeometriaCano {
+/** Afasta uma âncora pro lado (perpendicular à saída): é o que separa um cano do de volta. */
+const desviar = (p: Ancora, d: number): Ancora => (p.nx !== 0 ? { ...p, y: p.y + d } : { ...p, x: p.x + d });
+
+/**
+ * O cano entre duas peças. Laço na própria peça sai pela direita e volta por cima. `desvio` afasta as duas pontas
+ * pro lado (em px): quem desenha usa quando há o cano de volta (a→b e b→a), pra os dois não ficarem um em cima do outro.
+ */
+export function geometriaCano(a: Caixa, b: Caixa, curva: Curva, mesmaPeca = false, desvio = 0): GeometriaCano {
   if (mesmaPeca) {
     const p1 = ancora(a, 'd');
     const p2 = { ...ancora(a, 'c'), y: a.y - RECUO };
-    return { d: `M${p1.x},${p1.y} C${p1.x + 70},${p1.y} ${p2.x + 40},${p2.y - 70} ${p2.x},${p2.y}`, p1, p2, meio: { x: p1.x + 40, y: p2.y - 40 } };
+    const c1 = { x: p1.x + 70, y: p1.y };
+    const c2 = { x: p2.x + 40, y: p2.y - 70 };
+    const meio = { x: (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8, y: (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8 };
+    return { d: `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`, p1, p2, meio };
   }
   const [la, lb] = lados(a, b);
-  const p1 = ancora(a, la);
-  const p2 = ancora(b, lb);
+  const p1 = desviar(ancora(a, la), desvio);
+  const p2 = desviar(ancora(b, lb), desvio);
   const p2r = { ...p2, x: p2.x + p2.nx * RECUO, y: p2.y + p2.ny * RECUO };
   const meio = curva === 'suave' ? meioSuave(p1, p2r) : { x: (p1.x + p2r.x) / 2, y: (p1.y + p2r.y) / 2 };
   return { d: caminho(p1, p2r, curva), p1, p2: p2r, meio };
@@ -497,8 +585,9 @@ export interface Estilo {
   autoEscolha: number;
 }
 
-export const ESTILO_PADRAO: Estilo = {
-  canais: {},
+/** Congelado: quem quer mudar, copia (`{ ...ESTILO_PADRAO, … }`). */
+export const ESTILO_PADRAO: Estilo = Object.freeze({
+  canais: Object.freeze({}),
   cano: 'cano',
   curva: 'suave',
   espessura: 10,
@@ -509,7 +598,7 @@ export const ESTILO_PADRAO: Estilo = {
   holofote: true,
   camera: true,
   autoEscolha: 0,
-};
+});
 
 export const VELOCIDADES = [0.5, 1, 2, 4] as const;
 
@@ -551,14 +640,15 @@ export interface CanalEditor {
 /** A cor da água num canal: a do estilo do fluxo, senão a da empresa, senão um azul. */
 export function corDoCanal(estilo: Estilo, canais: readonly CanalEditor[], chave: string | null | undefined): string {
   if (!chave) return '#1e8bdc';
-  return estilo.canais[chave] ?? canais.find((c) => c.chave === chave)?.cor ?? '#1e8bdc';
+  // hasOwn: um canal chamado "constructor" não pode achar a função do Object.
+  return (Object.hasOwn(estilo.canais, chave) ? estilo.canais[chave] : undefined) ?? canais.find((c) => c.chave === chave)?.cor ?? '#1e8bdc';
 }
 ```
 
 - [ ] **Passo 6: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  6 passed (6)`; `tsc` sem saída.
+Expected: `Tests  13 passed (13)`; `tsc` sem saída.
 
 - [ ] **Passo 7: commit**
 
@@ -722,7 +812,7 @@ describe('editor/historico', () => {
 - [ ] **Passo 2: rodar e ver falhar**
 
 Run: `cd apps/web && npx vitest run test/editor`
-Expected: FAIL nos dois arquivos novos (`Failed to resolve import "@/editor/documento"` e `"@/editor/historico"`); os 6 da tarefa 2 passam.
+Expected: FAIL nos dois arquivos novos (`Failed to resolve import "@/editor/documento"` e `"@/editor/historico"`); os 13 da tarefa 2 passam.
 
 - [ ] **Passo 3: o documento**
 
@@ -947,7 +1037,7 @@ export function refazer(h: Historico): Historico {
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  20 passed (20)`; `tsc` sem saída.
+Expected: `Tests  27 passed (27)`; `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -1158,7 +1248,7 @@ export const tituloDoFim = (m: MotivoFim): string => NOMES_FIM[m];
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  25 passed (25)`; `tsc` sem saída.
+Expected: `Tests  32 passed (32)`; `tsc` sem saída.
 
 - [ ] **Passo 5: commit**
 
@@ -1326,7 +1416,7 @@ describe('editor/cadastros', () => {
 - [ ] **Passo 2: rodar e ver falhar**
 
 Run: `cd apps/web && npx vitest run test/editor`
-Expected: FAIL nos dois arquivos novos; os 25 anteriores passam.
+Expected: FAIL nos dois arquivos novos; os 32 anteriores passam.
 
 - [ ] **Passo 3: o salvamento**
 
@@ -1532,7 +1622,7 @@ export function usosNoDocumento(doc: Documento): Map<string, number> {
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  33 passed (33)`; `tsc` sem saída.
+Expected: `Tests  40 passed (40)`; `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2719,16 +2809,17 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
   }, []);
 
   const pecas = useMemo(() => new Map(doc.pecas.map((p) => [p.id, p])), [doc.pecas]);
-  const canos = useMemo(
-    () =>
-      doc.conexoes.flatMap((c) => {
-        const a = pecas.get(c.de);
-        const b = pecas.get(c.para);
-        if (!a || !b) return [];
-        return [{ c, geo: geometriaCano(caixaDe(a), caixaDe(b), estilo.curva, a.id === b.id) }];
-      }),
-    [doc.conexoes, pecas, estilo.curva],
-  );
+  const canos = useMemo(() => {
+    // Ida e volta entre as mesmas peças: cada cano vai pra um lado, senão ficam um em cima do outro.
+    const pares = new Set(doc.conexoes.map((c) => `${c.de}>${c.para}`));
+    return doc.conexoes.flatMap((c) => {
+      const a = pecas.get(c.de);
+      const b = pecas.get(c.para);
+      if (!a || !b) return [];
+      const desvio = a.id !== b.id && pares.has(`${c.para}>${c.de}`) ? (c.de < c.para ? -9 : 9) : 0;
+      return [{ c, geo: geometriaCano(caixaDe(a), caixaDe(b), estilo.curva, a.id === b.id, desvio) }];
+    });
+  }, [doc.conexoes, pecas, estilo.curva]);
 
   const fim = (alvo: EventTarget | null, seletor: string) => (alvo as Element | null)?.closest?.(seletor) as HTMLElement | null;
 
@@ -5353,7 +5444,7 @@ export function Nav({ empresaId }: { empresaId: string }) {
 - [ ] **Passo 8: rodar e ver passar**
 
 Run: `npm run typecheck && npm test -w apps/web && npm run e2e -- e2e/editor.spec.ts e2e/fluxos.spec.ts e2e/membros.spec.ts e2e/aceitacao.spec.ts --trace=off`
-Expected: `tsc` sem saída; app `Tests  234 passed (234)` (com o Supabase no ar); os 6 de ponta a ponta passando.
+Expected: `tsc` sem saída; app `Tests  241 passed (241)` (com o Supabase no ar); os 6 de ponta a ponta passando.
 
 - [ ] **Passo 9: commit**
 
@@ -5790,7 +5881,7 @@ index 78941d5..beaddec 100644
 - [ ] **Passo 2: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes && npm run build && npm run e2e -- --trace=off`
-Expected: fluxo 78, núcleo 253, app 234; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
+Expected: fluxo 78, núcleo 253, app 241; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
 
 - [ ] **Passo 3: commit e push**
 
