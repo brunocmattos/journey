@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ESPERA_LIMITE_S, ESPERA_REENVIO_S, mensagemDoErro, type ErroDoAuth } from '@/lib/acesso';
 import { supabaseNavegador } from '@/lib/supabase/navegador';
+import { BotaoGoogle } from './botao-google';
 
 /**
  * - entrar: e-mail e senha (o caminho principal);
@@ -11,6 +12,7 @@ import { supabaseNavegador } from '@/lib/supabase/navegador';
  *   a senha na confirmação, migração 20261116000000);
  * - esqueci: manda o link de recuperação, que também leva a /conta/senha;
  * - link: o link mágico por e-mail, como alternativa.
+ * Sem o e-mail (NEXT_PUBLIC_LOGIN_EMAIL=nao, enquanto o envio não tem domínio próprio), só o botão do Google.
  */
 type Modo = 'entrar' | 'criar' | 'esqueci' | 'link';
 type Enviado = 'link' | 'confirmacao' | 'recuperacao';
@@ -23,7 +25,7 @@ const ABAS = ['entrar', 'criar'] as const;
  * Os e-mails voltam pelo /auth/confirm (os modelos em supabase/templates dizem pra onde): a página tem um botão, e o
  * POST dele (/auth/confirmar) confirma no servidor, então o link abre em qualquer navegador. O Google volta pelo /auth/callback, com o código do PKCE que fica neste navegador.
  */
-export function FormularioEntrar({ google, aviso }: { google: boolean; aviso: string | null }) {
+export function FormularioEntrar({ google, email: comEmail, aviso }: { google: boolean; email: boolean; aviso: string | null }) {
   // Antes de o React assumir a página, os botões ficam desligados: um Enter ali mandaria o formulário pelo navegador.
   const [pronto, setPronto] = useState(false);
   useEffect(() => setPronto(true), []);
@@ -113,7 +115,7 @@ export function FormularioEntrar({ google, aviso }: { google: boolean; aviso: st
     const { error } = await supabaseNavegador().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/auth/callback` } });
     if (error) {
       console.error('[entrar com Google]', error.message);
-      setErro('Não deu pra entrar com o Google agora. Tenta de novo, ou entra com o e-mail.');
+      setErro(`Não deu pra entrar com o Google agora. Tenta de novo${comEmail ? ', ou entra com o e-mail' : ''}.`);
     }
   }
 
@@ -138,6 +140,17 @@ export function FormularioEntrar({ google, aviso }: { google: boolean; aviso: st
     esqueci: 'Chega um link no teu e-mail pra escolher uma senha nova.',
     link: 'Sem senha: chega um link no teu e-mail, e é só abrir.',
   };
+
+  const alerta = <div role="alert">{erro && <div className="aviso-caixa erro">{erro}</div>}</div>;
+
+  if (!comEmail)
+    return (
+      <div className="form-entrar">
+        <BotaoGoogle disabled={!pronto} onClick={comGoogle} />
+        <p className="so-google">Primeira vez? A conta é criada na hora, com o e-mail do teu Google.</p>
+        {alerta}
+      </div>
+    );
 
   return (
     <div className="form-entrar">
@@ -262,15 +275,13 @@ export function FormularioEntrar({ google, aviso }: { google: boolean; aviso: st
           </button>
         </div>
       )}
-      <div role="alert">{erro && <div className="aviso-caixa erro">{erro}</div>}</div>
+      {alerta}
       {google && (
         <>
           <div className="ou" aria-hidden="true">
             ou
           </div>
-          <button className="botao" type="button" disabled={!pronto} onClick={comGoogle}>
-            Entrar com Google
-          </button>
+          <BotaoGoogle disabled={!pronto} onClick={comGoogle} />
         </>
       )}
     </div>

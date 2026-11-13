@@ -65,10 +65,20 @@ export function mensagemDoErro(e: ErroDoAuth): MensagemDoAuth {
   }
 }
 
+/**
+ * Os jeitos de entrar, das variáveis NEXT_PUBLIC_LOGIN_GOOGLE e NEXT_PUBLIC_LOGIN_EMAIL (quem chama passa as duas: o
+ * Next só põe no navegador a variável escrita por extenso). O Google só com "sim"; o e-mail (senha, criar conta, o link)
+ * sai só com "nao" e o Google ligado: sem nenhum dos dois, ninguém entraria.
+ */
+export function jeitosDeEntrar(google: string | undefined, email: string | undefined): { google: boolean; email: boolean } {
+  const comGoogle = google === 'sim';
+  return { google: comGoogle, email: email !== 'nao' || !comGoogle };
+}
+
 /** O aviso de quem volta pro entrar (`/entrar?erro=…`): o link do e-mail que não valeu, ou o Google que não terminou. */
-export function avisoDaVolta(erro: string | undefined): string | null {
+export function avisoDaVolta(erro: string | undefined, { email = true }: { email?: boolean } = {}): string | null {
   if (erro === 'link') return 'O link expirou ou já foi usado. Pede outro.';
-  if (erro === 'google') return 'O Google não completou a entrada (cancelada ou recusada). Tenta de novo, ou entra com o e-mail.';
+  if (erro === 'google') return `O Google não completou a entrada (cancelada ou recusada). Tenta de novo${email ? ', ou entra com o e-mail' : ''}.`;
   return null;
 }
 

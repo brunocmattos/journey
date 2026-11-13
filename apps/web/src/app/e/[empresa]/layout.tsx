@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Marca } from '@/componentes/Marca';
 import { Nav } from '@/componentes/Nav';
+import { jeitosDeEntrar } from '@/lib/acesso';
 import { empresa } from '@/lib/dados';
 
 export default async function LayoutEmpresa({ children, params }: { children: React.ReactNode; params: Promise<{ empresa: string }> }) {
@@ -13,10 +14,12 @@ export default async function LayoutEmpresa({ children, params }: { children: Re
         <span className="migalhas">{e.nome}</span>
         <Nav empresaId={id} />
         <div className="empurra conta">
-          {/* Definir ou trocar a senha (quem entrou pelo Google ou pelo link também pode ter uma). */}
-          <Link className="botao pequeno" href="/conta/senha">
-            Senha
-          </Link>
+          {/* Definir ou trocar a senha (quem entrou pelo Google ou pelo link também pode ter uma); só com o e-mail ligado. */}
+          {jeitosDeEntrar(process.env.NEXT_PUBLIC_LOGIN_GOOGLE, process.env.NEXT_PUBLIC_LOGIN_EMAIL).email && (
+            <Link className="botao pequeno" href="/conta/senha">
+              Senha
+            </Link>
+          )}
           <form action="/sair" method="post">
             <button className="botao pequeno">Sair</button>
           </form>
