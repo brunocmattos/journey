@@ -1,0 +1,127 @@
+/* Entrar: o formulário de um lado, a prévia do quadro do outro. Tokens do globals.css; as duas cores de canal da
+   prévia são as dos canais padrão (WhatsApp e E-mail), aqui porque a página não lê os canais de empresa nenhuma. */
+.entrada {
+  --wa: #159e5a;
+  --mail: #c98410;
+  /* O texto em cima da água (a opção escolhida): claro no tema claro, escuro no escuro, onde a água é mais clara. */
+  --na-agua: #ffffff;
+  /* O verde das formas cheias (o Início, a opção escolhida): mais escuro no claro, pro texto branco ter contraste. */
+  --wa-forte: #11804a;
+  min-height: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(20px, 5vw, 64px) clamp(16px, 4vw, 56px);
+  display: grid;
+  grid-template-columns: minmax(0, 430px) minmax(0, 1fr);
+  gap: clamp(28px, 6vw, 88px);
+  align-items: center;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; --wa-forte: #2cc274; }
+}
+:root[data-theme='dark'] .entrada { --wa: #2cc274; --mail: #eda63a; --na-agua: #0a1014; --wa-forte: #2cc274; }
+
+.entrada .lado-form { display: grid; gap: 28px; align-content: center; }
+.entrada .chamada { display: grid; gap: 14px; }
+.entrada h1 { font-size: clamp(36px, 4.4vw, 54px); font-weight: 800; line-height: 1; letter-spacing: -0.035em; text-wrap: balance; }
+.entrada .lead { margin: 0; max-width: 44ch; font-size: 15.5px; line-height: 1.55; color: var(--ink-2); }
+
+.entrada .form-entrar { display: flex; flex-direction: column; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+.entrada .form-entrar-email { display: grid; gap: 10px; }
+/* O espaço vai só entre o que aparece: as regiões vivas ficam montadas mesmo vazias, e vazias não abrem espaço. */
+.entrada .form-entrar > :not(:first-child):not(:empty) { margin-top: 12px; }
+.entrada .form-entrar .campo input { font-size: 15px; padding: 10px 12px; }
+.entrada .form-entrar .botao { padding: 10px 14px; font-size: 14px; }
+.entrada .dica-entrar { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.entrada .outro-email { align-self: flex-start; }
+.entrada .enviado { display: grid; gap: 10px; justify-items: start; line-height: 1.45; }
+.entrada .enviado b { word-break: break-all; }
+.entrada .ou { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-2); }
+.entrada .ou::before, .entrada .ou::after { content: ''; height: 1px; background: var(--line); }
+
+/* A prévia: o palco do editor (pontos sobre o canvas) com um fluxo pequeno dentro. */
+.previa { position: relative; aspect-ratio: 560 / 400; border-radius: 22px; border: 1px solid var(--line); background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1.1px, transparent 1.2px); background-size: 18px 18px; box-shadow: var(--shadow); overflow: hidden; }
+.previa svg { display: block; width: 100%; height: 100%; }
+.previa text { font-family: var(--f-body); }
+.previa .pv-nome { font-size: 13.5px; font-weight: 600; fill: var(--ink); }
+.previa .pv-sub { font-size: 11px; fill: var(--ink-2); }
+.previa .pv-ponto-wa { fill: var(--wa); }
+.previa .pv-ponto-email { fill: var(--mail); }
+.previa .pv-placa { fill: var(--plate); }
+.previa .pv-corpo { fill: var(--node); stroke: var(--node-line); stroke-width: 1.4; }
+.previa .pv-tile { fill: var(--tile); }
+.previa .pv-tile.c-wa-cheio { fill: var(--wa-forte); }
+.previa .pv-icone { fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.previa .pv-icone.cheio { fill: #fff; stroke: none; }
+.previa .pv-nivel { opacity: 0; }
+.previa .pv-nivel.c-wa { fill: var(--wa); }
+.previa .pv-nivel.c-email { fill: var(--mail); }
+.previa .pv-losango { fill: var(--node); stroke: var(--ink-2); stroke-width: 1.6; }
+.previa .pv-pulso { fill: none; stroke: var(--wa); stroke-width: 2.4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.previa .pv-parede { fill: none; stroke: var(--pipe-wall); stroke-width: 12; stroke-linecap: round; }
+.previa .pv-miolo { fill: none; stroke: var(--pipe-core); stroke-width: 7; stroke-linecap: round; }
+.previa .pv-agua { fill: none; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.previa .pv-agua.c-wa { stroke: var(--wa); }
+.previa .pv-agua.c-email { stroke: var(--mail); }
+.previa .pv-agua.agua-seca { display: none; }
+.previa .pv-opcao rect { fill: var(--node); stroke: var(--node-line); }
+.previa .pv-opcao text { font: 500 11.5px var(--f-mono); fill: var(--ink-2); }
+.previa .pv-tempo text { font-size: 12.5px; fill: var(--ink-2); opacity: 0; }
+
+/* O play, uma volta de 9 s: a água enche cano por cano, espera na decisão, escolhe "Protocolo", vira e-mail no
+   protocolo (a cor muda), chega no fim e mostra o tempo; depois esvazia e recomeça. */
+.previa .agua-a { animation: agua-a 9s linear 3; }
+.previa .agua-b { animation: agua-b 9s linear 3; }
+.previa .agua-c { animation: agua-c 9s linear 3; }
+.previa .agua-d { animation: agua-d 9s linear 3; }
+.previa .molha-1 .pv-nivel { animation: molha-1 9s linear 3; }
+.previa .molha-2 .pv-nivel { animation: molha-2 9s linear 3; }
+.previa .molha-4 .pv-nivel { animation: molha-4 9s linear 3; }
+.previa .molha-5 .pv-nivel { animation: molha-5 9s linear 3; }
+.previa .pv-pulso { animation: pulso-pv 9s ease-out 3; }
+.previa .pv-escolhida rect { animation: escolha-rect 9s linear 3; }
+.previa .pv-escolhida text { animation: escolha-texto 9s linear 3; }
+.previa .pv-tempo text { animation: tempo-pv 9s linear 3; }
+
+@keyframes agua-a { 0% { stroke-dashoffset: 1; opacity: 1; } 11% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes agua-b { 0%, 13% { stroke-dashoffset: 1; opacity: 1; } 19% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes agua-c { 0%, 37% { stroke-dashoffset: 1; opacity: 1; } 43% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes agua-d { 0%, 46% { stroke-dashoffset: 1; opacity: 1; } 57% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes molha-1 { 0% { opacity: 0; } 3%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes molha-2 { 0%, 11% { opacity: 0; } 13%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes molha-4 { 0%, 43% { opacity: 0; } 45%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes molha-5 { 0%, 57% { opacity: 0; } 59%, 88% { opacity: .2; } 96%, 100% { opacity: 0; } }
+@keyframes pulso-pv { 0%, 19% { opacity: 0; transform: rotate(45deg) scale(1); } 23% { opacity: .75; } 27% { opacity: 0; transform: rotate(45deg) scale(1.12); } 28% { opacity: 0; transform: rotate(45deg) scale(1); } 31% { opacity: .75; } 35%, 100% { opacity: 0; transform: rotate(45deg) scale(1.12); } }
+@keyframes escolha-rect { 0%, 33% { fill: var(--node); stroke: var(--node-line); } 35%, 88% { fill: var(--wa-forte); stroke: var(--wa-forte); } 96%, 100% { fill: var(--node); stroke: var(--node-line); } }
+@keyframes escolha-texto { 0%, 33% { fill: var(--ink-2); } 35%, 88% { fill: var(--na-agua); } 96%, 100% { fill: var(--ink-2); } }
+@keyframes tempo-pv { 0%, 58% { opacity: 0; } 62%, 88% { opacity: 1; } 96%, 100% { opacity: 0; } }
+
+/* Fora da tela ou com a aba escondida, a água para onde está (ControleDaAnimacao). */
+.previa.pausada * { animation-play-state: paused !important; }
+
+/* Movimento reduzido, ou depois das três voltas: a água parada, já no fim do caminho. */
+.previa.terminou .pv-agua { stroke-dashoffset: 0; animation: none !important; }
+.previa.terminou .pv-nivel, .previa.terminou .pv-pulso, .previa.terminou .pv-tempo text, .previa.terminou .pv-escolhida rect, .previa.terminou .pv-escolhida text { animation: none !important; }
+.previa.terminou .molha-1 .pv-nivel, .previa.terminou .molha-2 .pv-nivel, .previa.terminou .molha-4 .pv-nivel, .previa.terminou .molha-5 .pv-nivel { opacity: .2; }
+.previa.terminou .pv-escolhida rect { fill: var(--wa-forte); stroke: var(--wa-forte); }
+.previa.terminou .pv-escolhida text { fill: var(--na-agua); }
+.previa.terminou .pv-tempo text { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .previa .pv-agua { stroke-dashoffset: 0; animation: none !important; }
+  .previa .pv-nivel, .previa .pv-pulso, .previa .pv-tempo text, .previa .pv-escolhida rect, .previa .pv-escolhida text { animation: none !important; }
+  .previa .molha-1 .pv-nivel, .previa .molha-2 .pv-nivel, .previa .molha-4 .pv-nivel, .previa .molha-5 .pv-nivel { opacity: .2; }
+  .previa .pv-escolhida rect { fill: var(--wa-forte); stroke: var(--wa-forte); }
+  .previa .pv-escolhida text { fill: var(--na-agua); }
+  .previa .pv-tempo text { opacity: 1; }
+}
+
+/* Celular: uma coluna, o formulário primeiro e a prévia menor embaixo. */
+@media (max-width: 820px) {
+  .entrada { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 28px; }
+  .entrada .lado-form { gap: 22px; }
+  .previa { max-width: 560px; width: 100%; justify-self: center; box-shadow: none; }
+}
+/* Bem estreito, a prévia (decorativa) teria letra de 6 px: sai. */
+@media (max-width: 419px) {
+  .previa { display: none; }
+}

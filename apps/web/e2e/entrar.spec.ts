@@ -11,3 +11,52 @@ test('quem entra pela primeira vez cai em criar a empresa', async ({ page, reque
   await expect(page).toHaveURL(/\/empresa\/nova$/);
   await expect(page.getByRole('heading', { name: 'Tua empresa' })).toBeVisible();
 });
+
+test('no celular, sem rolar pro lado: pede o link, vê pra onde foi e pode usar outro e-mail', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.goto('/entrar');
+  await expect(page.getByRole('heading', { name: 'Desenha o fluxo e dá play.' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const email = emailNovo('celular');
+  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
+  await page.getByLabel('E-mail').fill(email);
+  await page.getByRole('button', { name: 'Receber o link' }).click();
+  await expect(page.getByRole('status')).toContainText(`Link enviado para ${email}`);
+  // O e-mail fica no campo, pra conferir (e mandar de novo, se precisar).
+  await expect(page.getByLabel('E-mail')).toHaveValue(email);
+  // Logo depois, o botão espera (o Supabase recusa outro pedido em menos de um minuto) e diz quanto falta.
+  await expect(page.getByRole('button', { name: /Mandar de novo em \d+ s/ })).toHaveAttribute('aria-disabled', 'true');
+  await page.getByRole('button', { name: 'Usar outro e-mail' }).click();
+  await expect(page.getByLabel('E-mail')).toHaveValue('');
+  await expect(page.getByLabel('E-mail')).toBeFocused();
+  await ctx.close();
+});
+
+test('link expirado: a página diz e deixa pedir outro', async ({ page }) => {
+  await page.goto('/entrar?erro=link');
+  await expect(page.getByRole('alert').filter({ hasText: 'O link expirou ou já foi usado' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeEnabled();
+});
+
+test('antes de a página ficar pronta, o Enter não manda o e-mail pela URL', async ({ browser }) => {
+  // Sem JavaScript é a janela de antes da hidratação, esticada: o botão vem desligado do servidor.
+  const ctx = await browser.newContext({ javaScriptEnabled: false });
+  const page = await ctx.newPage();
+  await page.goto('/entrar?erro=link');
+  await expect(page.getByRole('button', { name: 'Receber o link' })).toBeDisabled();
+  await page.getByLabel('E-mail').fill('alguem@exemplo.com');
+  await page.getByLabel('E-mail').press('Enter');
+  await page.waitForLoadState('load');
+  expect(page.url()).not.toContain('alguem');
+  await ctx.close();
+});
+
+test('movimento reduzido: a prévia é decorativa e fica parada', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } });
+  const page = await ctx.newPage();
+  await page.goto('/entrar');
+  await expect(page.locator('.previa[aria-hidden="true"]')).toBeVisible();
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+  await ctx.close();
+});
