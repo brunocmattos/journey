@@ -1,7 +1,8 @@
 # @journey/web
 
-O app de simulação do Journey: login por link mágico, empresa e convites, import com revisão, catálogo com "onde é usado", mapa em encanamento com a água animada, cenários "E se…", diagnóstico e ramais diretos (etapa 2), e links públicos só de leitura, com nomes escondidos, cenário inicial e validade (etapa 3).
-A lógica vem do `@journey/nucleo`; aqui fica a tela, o banco (Supabase) e o que liga os dois.
+O app do Journey. Desde a v2 (etapa B), a casa da empresa é a tela **Fluxos**: criar um fluxo em branco ou a partir de um modelo, desenhar no **editor** (peças, ligações com regra, grupos, notas, estilo da água), dar play e ver a água andar, com os **Cadastros** (pessoas, filas, equipes, sistemas, horários) nascendo do desenho. A lógica do fluxo vem do `@journey/fluxo`.
+
+As telas da v1 (import da central, catálogo, jornadas, links públicos das jornadas) continuam no código e saíram do menu: a etapa C leva os links e os cenários pros fluxos e tira a v1. A lógica delas vem do `@journey/nucleo`.
 
 ## Rodar
 
@@ -33,18 +34,34 @@ npm run build
 
 | Pasta | O que faz |
 |---|---|
+| `src/editor` | O editor sem tela (v2): formas e tamanhos (`pecas`), desenho dos canos (`geometria`), estilo (`estilo`), mudanças no documento (`documento`), desfazer e refazer (`historico`), o play em cima do motor (`play`), salvamento automático (`salvamento`) e busca e tipo sugerido dos cadastros (`cadastros`) |
+| `src/componentes/editor` | O editor (v2): quadro com peças, canos e água (`Quadro`, `Pecas`, `Agua`), painel (`Painel`, `Campos`), cartão do play (`CartaoPlay`) e o componente que junta tudo (`Editor`) |
 | `src/mapa` | `montarMapa`: o documento vira árvore da esquerda pra direita (o algoritmo do protótipo), com atalhos, faixas por regime de horário e canos que seguem o motor |
 | `src/simulacao` | Sessão (refazer as escolhas = mesma execução), passos da animação, estado visual, textos da linha do tempo, comparação com o resultado aprovado e `vinculo` (se a tela ainda é o caminho de um cenário) |
 | `src/diagnostico` | `cenarioAte`: o caminho de uma entrada até o ponto de um achado (o "Simular"); `pontosComAgenda`: as regras de horário que as entradas encontram primeiro, passando por áudios de saída única |
 | `src/importacao` | Jornadas por canal, refs usadas, revisão, relatório e o teto de 4 MB |
 | `src/compartilhar` | O retrato do link público (`montarRetrato`: sem observações e, com "esconder nomes", sem os nomes das pessoas) e as opções do link (validade, situação, a linha que descreve cada um) |
 | `src/lib` | Clientes do Supabase, leituras do servidor (`dados.ts`), o link público (`link.ts`, o único com a chave secreta), origem do app, mensagens de erro, fuso |
-| `src/acoes` | Server actions: import, cenários, intencionais, convites, empresa, links |
+| `src/acoes` | Server actions: fluxos e cadastros (v2); import, cenários, intencionais, convites, empresa, links (v1) |
 | `src/componentes` | Mapa em React Flow (peças e canos), player, cartão da decisão, painéis |
 | `src/app` | Rotas |
 | `supabase/` (na raiz) | Migração, regras de acesso (RLS) e testes pgTAP |
 
 ## Decisões
+
+### Editor de fluxos (v2, etapa B)
+
+- **Quadro próprio, não React Flow.** O editor é o protótipo aprovado em React: peças em HTML, canos em SVG com âncora no lado mais direto de cada peça, água quadro a quadro. O React Flow continua só no mapa da v1.
+- **O documento é a fonte da verdade** e toda mudança é uma função pura (`editor/documento.ts`) que devolve outro documento. O histórico guarda as versões por referência (120 passos); num arrasto, o primeiro quadro entra no histórico e os seguintes substituem.
+- **Salvamento automático pelo navegador**, direto no `salvar_fluxo` (RPC), meio segundo depois da última mudança, um envio por vez, com a revisão. Sem rede, a cópia fica no `localStorage` e o envio tenta de novo (2 s, 4 s… até 30 s); ao abrir, uma cópia que partiu da mesma revisão volta. Conflito (40001), trava perdida (P0001) ou recusa param o salvamento e a tela pede pra recarregar. Nome, canal, descrição e meta são colunas: vão por server action.
+- **Trava:** ao abrir, `pegar_trava`; renova a cada 4 minutos; ao sair, `soltar_trava` com `fetch(..., { keepalive: true })`. Sem a trava, o editor fica só de leitura (dá pra ver e dar play) e diz quem está editando.
+- **Cadastros nascem do desenho:** o campo do responsável busca nos cadastros da empresa e oferece "Criar" com o tipo sugerido pelo nome ("Fila …", "Equipe …", "Horário …") ou pela peça. A peça guarda o id; renomear em Cadastros muda em todos os fluxos. Horário nasce de segunda a sexta, 8h às 18h.
+- **Play:** o motor (`@journey/fluxo`) roda a simulação inteira de uma vez a partir das escolhas; a tela mostra os eventos um a um (`editor/play.ts`). Voltar tira a última escolha e refaz; o play usa uma cópia do documento de quando começou, e mexer no desenho para o play.
+- **Fluxo a partir de modelo:** os cadastros do modelo viram cadastros da empresa (o que já existe com o mesmo tipo e nome é reaproveitado), o fluxo nasce e o documento é salvo com `instanciarModelo`. Se salvar falha, o fluxo criado é apagado.
+- **Dois cuidados do quadro:** o palco tem `overflow: hidden`, mas o navegador ainda o rola pra mostrar um elemento com foco, então ele volta a (0, 0) a cada rolagem; e, com o ponteiro capturado pelo palco (o arrasto começa no primeiro clique), o duplo clique chega no palco, então o alvo é o elemento sob o mouse (`elementFromPoint`).
+- **CSS do editor dentro de `.editor`**, pra não esbarrar no da v1, que ainda existe.
+
+### Telas da v1
 
 - **A tela importa o núcleo só pelos subcaminhos** (`@journey/nucleo/formato`, `/motor`, `/diagnostico`). A raiz reexporta `importacao` e `modelos`, que puxam o exceljs (~1 MB) pro navegador. O teste `test/cliente-sem-exceljs.test.ts` barra a raiz, `importacao` e `modelos` em `src/componentes`, `src/mapa`, `src/simulacao` e `src/diagnostico`; depois do build, `grep -rl ExcelJS apps/web/.next/static` tem que vir vazio. O servidor (páginas, `acoes`, `lib`, `importacao`) pode importar a raiz.
 - **A tela nunca grava no catálogo nem nas versões:** só a função `confirmar_import` (security definer) troca o catálogo e cria versões. O catálogo guarda as colunas do formato em `dados` (jsonb), então coluna nova no formato não pede migração.

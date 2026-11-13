@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { entrar, emailNovo } from './apoio';
+import { entrar, emailNovo, irPara } from './apoio';
 
 test('import com erro mostra aba, linha e coluna e não deixa confirmar', async ({ page, request }) => {
   await entrar(page, request, emailNovo('erro'));
   await page.getByLabel('Nome da empresa').fill('Empresa com erro');
   await page.getByRole('button', { name: 'Criar' }).click();
-  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await irPara(page, 'importar');
   await page.getByLabel('Arquivos').setInputFiles({ name: 'saidas.csv', mimeType: 'text/csv', buffer: Buffer.from('id;de;opcao;para\nx;peca:a;tecla-errada;fim:desliga\n') });
   await page.getByRole('button', { name: 'Analisar' }).click();
   const erros = page.getByTestId('problemas-grave');
@@ -19,7 +19,7 @@ test('arquivos acima de 4 MB juntos são barrados antes de enviar', async ({ pag
   await entrar(page, request, emailNovo('grande'));
   await page.getByLabel('Nome da empresa').fill('Empresa com arquivo grande');
   await page.getByRole('button', { name: 'Criar' }).click();
-  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await irPara(page, 'importar');
   const metade = Buffer.alloc(2 * 1024 * 1024, 'a');
   await page.getByLabel('Arquivos').setInputFiles([
     { name: 'pecas.csv', mimeType: 'text/csv', buffer: metade },

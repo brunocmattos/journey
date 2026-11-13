@@ -13,6 +13,8 @@
   --shadow: 0 14px 36px -16px rgba(14, 38, 52, 0.42);
   --agenda-1: #1e7fd0; --agenda-2: #c98410; --agenda-3: #17914f; --agenda-4: #7650d6; --agenda-5: #cf3a3a; --agenda-6: #3a6a88;
   --lit: var(--w-telefonia);
+  /* Editor (v2): destaque, nota, grupo e quanto as cores claras se misturam no fundo. */
+  --accent: #1e8bdc; --accent-soft: #dcecf8; --nota: #f6eaa8; --nota-ink: #4f4110; --grupo: #dfe8ec; --mistura: 60%;
   --f-display: var(--fonte-display), 'IBM Plex Sans', system-ui, sans-serif;
   --f-body: var(--fonte-corpo), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --f-mono: var(--fonte-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -27,6 +29,7 @@
     --lane: #10191e; --lane-ink: #26353d;
     --w-telefonia: #46a8f0; --w-whatsapp: #2cc274; --w-ocorrencia: #9c7ef2; --w-email: #eda63a;
     --ret: #8e80d8;
+    --accent: #46a8f0; --accent-soft: #14283a; --nota: #4a4220; --nota-ink: #f3e7b0; --grupo: #131f26; --mistura: 16%;
     --bad: #f06a62; --bad-soft: #3a1c1d; --warn: #e6a23c; --warn-soft: #33270f;
     --ok: #3cc47d; --ok-soft: #12301f; --info: #7fb2d6; --info-soft: #14262f;
     --btn: #e2ebee; --btn-ink: #0a1014;
@@ -43,6 +46,7 @@
   --lane: #10191e; --lane-ink: #26353d;
   --w-telefonia: #46a8f0; --w-whatsapp: #2cc274; --w-ocorrencia: #9c7ef2; --w-email: #eda63a;
   --ret: #8e80d8;
+  --accent: #46a8f0; --accent-soft: #14283a; --nota: #4a4220; --nota-ink: #f3e7b0; --grupo: #131f26; --mistura: 16%;
   --bad: #f06a62; --bad-soft: #3a1c1d; --warn: #e6a23c; --warn-soft: #33270f;
   --ok: #3cc47d; --ok-soft: #12301f; --info: #7fb2d6; --info-soft: #14262f;
   --btn: #e2ebee; --btn-ink: #0a1014;

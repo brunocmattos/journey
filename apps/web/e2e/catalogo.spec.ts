@@ -1,13 +1,13 @@
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { empresaComImport, entrar, emailNovo } from './apoio';
+import { empresaComImport, entrar, emailNovo, irPara } from './apoio';
 
 const PEQUENA = join(import.meta.dirname, 'fixtures', 'pequena.json');
 
 test('catálogo diz onde cada coisa é usada', async ({ page, request }) => {
   await entrar(page, request, emailNovo('catalogo'));
   await empresaComImport(page, [PEQUENA]);
-  await page.getByRole('link', { name: 'Catálogo' }).click();
+  await irPara(page, 'catalogo');
   await page.getByRole('link', { name: /^ramais/ }).click();
   await page.getByTestId('tabela-catalogo').getByRole('link', { name: 'r1' }).click();
   const onde = page.getByTestId('onde-usado');
@@ -18,7 +18,7 @@ test('catálogo diz onde cada coisa é usada', async ({ page, request }) => {
 test('import parcial muda só a aba que veio', async ({ page, request }) => {
   await entrar(page, request, emailNovo('parcial'));
   await empresaComImport(page, [PEQUENA], 'Empresa parcial');
-  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await irPara(page, 'importar');
   await page.getByLabel('Arquivos').setInputFiles({
     name: 'filas.csv',
     mimeType: 'text/csv',

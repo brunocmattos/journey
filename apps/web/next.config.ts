@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const config: NextConfig = {
-  transpilePackages: ['@journey/nucleo'],
+  transpilePackages: ['@journey/nucleo', '@journey/fluxo'],
   // O link público: nenhum buscador indexa, e o endereço (que é a chave) não vai no Referer pra outro site.
   headers: async () => [
     {

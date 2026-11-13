@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { entrar, emailNovo } from './apoio';
+import { entrar, emailNovo, irPara } from './apoio';
 
 const CENTRAL = join(import.meta.dirname, '..', '..', '..', 'packages', 'nucleo', 'test', 'fixtures', 'central');
 
@@ -24,9 +24,9 @@ test('critérios 1 e 2: a central entra sem redesenhar e o diagnóstico acha os 
   await expect(page).toHaveURL(/\/empresa\/nova/);
   await page.getByLabel('Nome da empresa').fill('Central de teste');
   await page.getByRole('button', { name: 'Criar' }).click();
-  await expect(page.getByRole('heading', { name: 'Jornadas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Fluxos' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await irPara(page, 'importar');
   const arquivos = readdirSync(CENTRAL).filter((n) => n.endsWith('.csv')).map((n) => join(CENTRAL, n));
   await page.getByLabel('Arquivos').setInputFiles(arquivos);
   await page.getByRole('button', { name: 'Analisar' }).click();
