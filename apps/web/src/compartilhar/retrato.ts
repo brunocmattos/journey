@@ -71,7 +71,9 @@ export const rotuloDaVersao = (v: Retrato['versao']): string => (v ? `versão ${
  * - palavra do nome com menos de 3 letras sozinha ("Li" de "Li Wang"; o nome "Li" inteiro troca);
  * - acento que o texto tem e o nome não ("Anã" não é "Ana");
  * - quem não é cadastro do tipo Pessoa (gente cadastrada como equipe, sistema ou num tipo próprio da empresa);
- * - o nome da empresa, cores, ids e o que não é texto.
+ * - o nome da empresa, cores, ids e o que não é texto;
+ * - dois códigos de opção que viram o mesmo texto ("Ana" e "Souza" de "Ana Souza" viram "Pessoa"): no link, o
+ *   diagnóstico pode mostrar "opções repetidas" e a tecla fica ambígua nessa decisão.
  */
 
 const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -171,6 +173,18 @@ function trocarEmTudo(v: unknown, trocar: (t: string) => string): unknown {
   return v;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Os campos de um Horário sem os nomes: só o nome dos feriados é texto livre. Os dias ("dom", "seg"…) e as horas não
+ * passam pela troca, senão uma Pessoa "Dom Pedro" quebraria a janela de domingo e o relógio no link.
+ */
+function horarioSemNomes(campos: Record<string, unknown>, trocar: (t: string) => string): Record<string, unknown> {
+  if (!Array.isArray(campos.feriados)) return campos;
+  const feriados = campos.feriados.map((f: unknown) => (f && typeof f === 'object' && typeof (f as { nome?: unknown }).nome === 'string' ? { ...f, nome: trocar((f as { nome: string }).nome) } : f));
+  return { ...campos, feriados };
+}
+
 /**
  * O documento sem os nomes: em todo texto livre (nome e descrição da peça, texto no cano, valor da regra, nome do
  * grupo, nota), o nome de cada Pessoa vira o que aparece no lugar.
@@ -180,8 +194,9 @@ function semNomes(doc: Documento, trocar: (t: string) => string, cadastros: Read
   const sem = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
   return {
     formato: doc.formato,
-    // Responsável que não é um dos cadastros que vieram (texto solto, apagado, de outra empresa) pode ser um nome: sai.
-    pecas: doc.pecas.map((p) => sem({ ...p, nome: trocar(p.nome), descricao: t(p.descricao), responsavel: p.responsavel && cadastros.has(p.responsavel) ? p.responsavel : undefined })),
+    // Responsável que não é um dos cadastros que vieram: texto solto pode ser um nome e sai; um id (cadastro apagado ou
+    // de outra empresa) não é nome e fica, pro diagnóstico do link dizer o mesmo que o editor ("não existe").
+    pecas: doc.pecas.map((p) => sem({ ...p, nome: trocar(p.nome), descricao: t(p.descricao), responsavel: p.responsavel && (cadastros.has(p.responsavel) || UUID.test(p.responsavel)) ? p.responsavel : undefined })),
     // O valor de toda regra: o código de uma opção também é texto que a pessoa escreveu.
     conexoes: doc.conexoes.map((c) => sem({ ...c, rotulo: t(c.rotulo), valor: t(c.valor) })),
     grupos: doc.grupos.map((g) => ({ ...g, nome: trocar(g.nome) })),
@@ -210,7 +225,7 @@ export function montarRetrato(l: LinkDoBanco): Retrato | null {
     trocar = trocadorDeNomes(nomes);
     documento = semNomes(documento, trocar, new Set(cadastros.map((k) => k.id)));
     cadastros = cadastros.map((k) =>
-      escondidas.has(k.id) ? { id: k.id, tipo: k.tipo, nome: escondidas.get(k.id)!, campos: {} } : { ...k, nome: trocar(k.nome), campos: trocarEmTudo(k.campos, trocar) as Record<string, unknown> },
+      escondidas.has(k.id) ? { id: k.id, tipo: k.tipo, nome: escondidas.get(k.id)!, campos: {} } : { ...k, nome: trocar(k.nome), campos: k.tipo === 'horario' ? horarioSemNomes(k.campos, trocar) : (trocarEmTudo(k.campos, trocar) as Record<string, unknown>) },
     );
   }
   // As chaves dos achados não dependem de nome; o que não é achado deste documento (uma versão fixa antiga) não vai.

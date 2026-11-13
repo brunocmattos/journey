@@ -26,7 +26,7 @@ npm run typecheck
 npm run build
 ```
 
-Hoje: app 202 testes de unidade (31 arquivos), pgTAP 182 (`compartilhar`, `empresas`, `fluxos`, `senha`), ponta a ponta 25 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar e conta, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
+Hoje: app 204 testes de unidade (31 arquivos), pgTAP 182 (`compartilhar`, `empresas`, `fluxos`, `senha`), ponta a ponta 25 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar e conta, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
 
 ## Partes
 

@@ -188,6 +188,24 @@ describe('montarRetrato', () => {
     expect(intencionais).toEqual([{ chave: CHAVE, nota: 'a Pessoa 2 pediu' }]);
   });
 
+  it('no Horário só o nome do feriado troca: os dias e as horas ficam (uma Pessoa "Dom Pedro" não quebra o domingo)', () => {
+    const horario = { id: 'h', tipo: 'horario', nome: 'Comercial', campos: { janelas: [{ dias: ['dom', 'seg'], inicio: '08:00', fim: '18:00' }], feriados: [{ data: '2026-12-25', nome: 'Folga do Dom Pedro' }] } };
+    const base = link();
+    const r = montarRetrato(link({ cadastros: [...base.cadastros, horario], pessoas: [...base.pessoas, 'Dom Pedro'] }))!;
+    const campos = r.cadastros.find((k) => k.id === 'h')!.campos as { janelas: { dias: string[] }[]; feriados: { nome: string }[] };
+    expect(campos.janelas[0]!.dias).toEqual(['dom', 'seg']);
+    expect(campos.feriados[0]!.nome).not.toContain('Pedro');
+  });
+
+  it('responsável que é um id (cadastro apagado) fica; texto solto sai', () => {
+    const base = link();
+    const sumido = '00000000-0000-4000-8000-000000000000';
+    const documento = { ...DOC, pecas: [...DOC.pecas, { id: 'x', tipo: 'atendimento', nome: 'X', x: 0, y: 300, responsavel: sumido }, { id: 'y', tipo: 'atendimento', nome: 'Y', x: 0, y: 400, responsavel: 'Ana Paula' }] };
+    const r = montarRetrato(link({ documento: documento as unknown as LinkDoBanco['documento'], cadastros: base.cadastros }))!;
+    expect(r.documento.pecas.find((p) => p.id === 'x')!.responsavel).toBe(sumido);
+    expect(r.documento.pecas.find((p) => p.id === 'y')!.responsavel).toBeUndefined();
+  });
+
   it('com nomes à mostra, fica tudo como está', () => {
     const r = montarRetrato(link({ esconder_nomes: false }))!;
     expect(r.documento).toEqual(DOC);
