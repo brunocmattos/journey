@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa B) mesclada. Este plano, o código e o PR da etapa C saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch, e cada parte passou por uma revisão independente antes de virar plano: `@journey/fluxo` 84 testes (eram 78), núcleo 253, app 202 (eram 258: a v1 sai), pgTAP 181 (eram 136), ponta a ponta 25 (eram 30 + 1 pulado: os da v1 saem), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch, e cada parte passou por uma revisão independente antes de virar plano: `@journey/fluxo` 84 testes (eram 78), núcleo 253, app 202 (eram 258: a v1 sai), pgTAP 182 (eram 136), ponta a ponta 25 (eram 30 + 1 pulado: os da v1 saem), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Migrações novas:** `20261115000000_journey_v2_compartilhar.sql` e (tarefa 10) `20261116000000_journey_v2_senha.sql`, com gatilhos em `auth.users`. Ela apaga tabelas da v1 e para (`raise exception`) se a v1 tiver dados ou se o bucket `imports` tiver arquivos. No banco local a v1 tem sobras de testes antigos: a tarefa 2 explica como passar por isso sem apagar nada à mão.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`), com `SUPABASE_SECRET_KEY` pros testes do link público.
 - **Commits:** `.git/atribuicao.txt` tem as duas linhas de atribuição da sessão. Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -8056,7 +8056,10 @@ Pedido do Bruno na aprovação ("só magic link é chato: tem que dar pra logar 
 -- Roda com: npx supabase test db
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(13);
+select plan(14);
+
+-- A migração limpou as trocas de e-mail pendentes, e nenhuma nova entra.
+select is((select count(*)::int from auth.users where coalesce(email_change, '') <> ''), 0, 'nenhuma conta com troca de e-mail pendente');
 
 -- O teste todo é uma transação só: a marca de "conta criada nesta transação" fica com a última conta inserida.
 -- Pra simular a confirmação numa transação depois, a marca é limpa antes.
@@ -8175,6 +8178,11 @@ create trigger senha_some_na_confirmacao
 -- clica no "confirme o novo e-mail" que chegou sem pedir, e a conta (com a senha dele) passa a ter o e-mail dela. Aqui a
 -- trigger da senha não ajuda: o e-mail já era confirmado. O Supabase só grava email_change nesse pedido; o admin e o
 -- painel trocam `email` direto e continuam podendo.
+-- Antes da trigger, quem já tinha uma troca pendente fica sem ela: senão qualquer gravação do Supabase nessa conta que
+-- leve email_change no SET (entrar, trocar a senha) cairia na trigger e daria erro. Vazio é o que o Supabase grava
+-- quando a troca termina ou é cancelada.
+update auth.users set email_change = '' where coalesce(email_change, '') <> '';
+
 create function public.troca_de_email_recusada() returns trigger
 language plpgsql set search_path = '' as $$
 begin
@@ -8627,6 +8635,8 @@ test('o link do e-mail só entra pelo botão: abrir não entra nem gasta o token
   expect(aberto.status()).toBe(200);
   expect(aberto.headers()['set-cookie'] ?? '').not.toContain('auth-token');
   expect(aberto.headers()['referrer-policy']).toBe('same-origin');
+  expect(aberto.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
+  expect(aberto.headers()['x-frame-options']).toBe('DENY');
   // O POST de outro site (login CSRF) é recusado e não toca no token.
   const deFora = await request.post('/auth/confirmar', { form: campos, headers: { origin: 'https://evil.com' }, maxRedirects: 0 });
   expect(deFora.status()).toBe(403);
@@ -9062,10 +9072,10 @@ export async function POST(request: NextRequest) {
 
 ```diff
 diff --git a/apps/web/next.config.ts b/apps/web/next.config.ts
-index 990cbb1..abc9cc1 100644
+index 990cbb1..8334d86 100644
 --- a/apps/web/next.config.ts
 +++ b/apps/web/next.config.ts
-@@ -11,6 +11,15 @@ const config: NextConfig = {
+@@ -11,6 +11,18 @@ const config: NextConfig = {
          { key: 'Referrer-Policy', value: 'no-referrer' },
        ],
      },
@@ -9076,6 +9086,9 @@ index 990cbb1..abc9cc1 100644
 +      headers: [
 +        { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
 +        { key: 'Referrer-Policy', value: 'same-origin' },
++        // O botão não entra em moldura de outro site (clickjacking: alguém faria a pessoa clicar sem ver).
++        { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
++        { key: 'X-Frame-Options', value: 'DENY' },
 +      ],
 +    },
    ],
@@ -9765,7 +9778,7 @@ git commit -m "entrar: e-mail e senha, Google e o link; a senha some na confirma
 
 ````diff
 diff --git a/README.md b/README.md
-index 67608f1..82cf44a 100644
+index 67608f1..28009b3 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,11 +2,13 @@
@@ -9790,7 +9803,7 @@ index 67608f1..82cf44a 100644
  ```
  
 -Testes: `npm test`, `npm run banco:testes`, `npm run e2e`, `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
-+Testes: `npm test` (539: fluxo 84, núcleo 253, app 202), `npm run banco:testes` (181), `npm run e2e` (25), `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
++Testes: `npm test` (539: fluxo 84, núcleo 253, app 202), `npm run banco:testes` (182), `npm run e2e` (25), `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
  
  ## Publicar
  
@@ -9835,7 +9848,7 @@ index 67608f1..82cf44a 100644
 
 ````diff
 diff --git a/apps/web/README.md b/apps/web/README.md
-index beaddec..84740f8 100644
+index beaddec..5d637be 100644
 --- a/apps/web/README.md
 +++ b/apps/web/README.md
 @@ -1,8 +1,6 @@
@@ -9867,7 +9880,7 @@ index beaddec..84740f8 100644
  ```
  
 -`CAPTURAS=<pasta> npm run e2e -- e2e/capturas.spec.ts` tira capturas das telas principais (revisão, mapa, decisão, diagnóstico, celular, escuro, o "Compartilhar" e o link público). Sem `CAPTURAS`, o teste fica pulado.
-+Hoje: app 202 testes de unidade (31 arquivos), pgTAP 181 (`compartilhar`, `empresas`, `fluxos`, `senha`), ponta a ponta 25 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar e conta, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
++Hoje: app 202 testes de unidade (31 arquivos), pgTAP 182 (`compartilhar`, `empresas`, `fluxos`, `senha`), ponta a ponta 25 (critérios 1, 2, 3 e 5, cadastros, cenários, diagnóstico, versões e link, trava, entrar e conta, membros). Passe `--trace=off` direto pro Playwright (`npx playwright test --trace=off`), não `npm run e2e -- --trace off`, que o npm come.
  
  ## Partes
  
@@ -10043,7 +10056,7 @@ index 04d43b3..1ec50a5 100644
 - [ ] **Passo 2: tudo de novo**
 
 Run (da raiz): `npx supabase test db && npm test && npm run typecheck && npm run build && cd apps/web && npx playwright test --trace=off`
-Expected: pgTAP `Tests=181`, `Result: PASS`; fluxo 84, núcleo 253, app 202; `tsc` limpo; build com `/l/[token]`, `/auth/confirm`, `/auth/confirmar`, `/conta/senha` e sem as rotas da v1; ponta a ponta `25 passed`. O pgTAP vem antes da ponta a ponta (a ponta a ponta deixa fluxos e links de teste no banco local; o pgTAP não depende deles, mas começar limpo ajuda a ler uma falha).
+Expected: pgTAP `Tests=182`, `Result: PASS`; fluxo 84, núcleo 253, app 202; `tsc` limpo; build com `/l/[token]`, `/auth/confirm`, `/auth/confirmar`, `/conta/senha` e sem as rotas da v1; ponta a ponta `25 passed`. O pgTAP vem antes da ponta a ponta (a ponta a ponta deixa fluxos e links de teste no banco local; o pgTAP não depende deles, mas começar limpo ajuda a ler uma falha).
 
 - [ ] **Passo 3: commit e push**
 
