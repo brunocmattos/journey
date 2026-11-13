@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 60 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 66 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -35,6 +35,9 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Cadastros fora do documento**; a peça guarda só o id em `responsavel` | O mesmo cadastro (fila, pessoa, horário) serve a vários fluxos e mostra "onde é usado"; renomear o cadastro não mexe nos fluxos | Copiar o cadastro pra dentro do documento: renomear exigiria varrer todos os fluxos |
 | **`lerDocumento` devolve uma cópia só com os campos conhecidos**, com erro (recusa) e aviso (canal ou cadastro que a empresa não tem) | O documento vem do navegador e do banco; o que passa daqui é o que o motor e o diagnóstico entendem. Aviso não recusa: um cadastro apagado não pode travar o editor | Validar com uma biblioteca de esquema: dependência nova pra 130 linhas |
 | **Só o relógio decide sozinho**, e só em saídas `horario` de uma peça cujo responsável é um cadastro Horário, com a hora simulada (`quando` + tempo já passado) | Determinístico e explicável: o resto é escolha de quem simula. Feriado é fora do horário | Regras com expressão (`se valor > 1000`): é um interpretador, fora da v1 |
+| **O relógio decide só quando todas as saídas da peça são de horário (ou "senão")**, inclusive quando a saída é uma só; se o lado da hora não tem saída, a água para (`beco`) | Uma saída única "dentro do horário" não pode deixar passar às 3h de domingo; e numa peça com opção de pessoa, quem escolhe é a pessoa | Saída única andar sempre sozinha |
+| **"Fechado, espera e tenta de novo" não é ciclo** enquanto o tempo simulado anda entre duas decisões do relógio na mesma peça | É o laço clássico de fora do horário; sem tempo andando, continua sendo ciclo, e a trava de passos (`limite`) segura o resto | Contar as voltas sem olhar o relógio: o laço terminaria como ciclo às 8h |
+| **`simular` para na primeira escolha que não serve mais** e a `Execucao` guarda as escolhas aceitas | Se o fluxo mudou, o cenário mostra onde o caminho guardado deixou de valer, em vez de aplicar as escolhas seguintes noutra pergunta | Pular a escolha e seguir: o caminho muda calado |
 | **Modo `livre`** pergunta também no horário, com a escolha do relógio marcada `sugerida` | Quem explica o fluxo quer mostrar o "fora do horário" sem mudar a hora | Só o modo relógio |
 | **Ciclo = terceira chegada na mesma peça sem ninguém escolher no meio**; depois de uma escolha a contagem recomeça | Um menu que volta pra si mesmo ("repetir") não é ciclo; dois passos automáticos que se chamam são | Contar visitas no total: o "repetir" do menu viraria ciclo |
 | **`simular(…, escolhas)` refaz do zero** com a lista de conexões escolhidas | É como a tela vai voltar um passo e como um cenário salvo é reproduzido; sem estado escondido | Guardar e restaurar o estado do motor |
@@ -833,13 +836,25 @@ describe('motor', () => {
     expect(executar(d, {}, { inicio: 'i' }).pendente!.opcoes.map((o) => o.texto)).toEqual(['A', 'B']);
   });
 
-  it('resposta que não é opção vira escolha_ignorada e a pergunta continua', () => {
+  it('resposta que não é opção vira escolha_ignorada e não muda nada', () => {
     const d = doc([peca('i', 'inicio'), peca('a', 'fim'), peca('b', 'fim')], [liga('i', 'a'), liga('i', 'b')]);
     const x = executar(d, {}, { inicio: 'i' });
+    const antes = x.eventos.length;
     expect(x.avancar('nao-existe')).toEqual([{ tipo: 'escolha_ignorada', resposta: 'nao-existe' }]);
     expect(x.pendente).not.toBeNull();
+    expect(x.eventos).toHaveLength(antes);
     x.avancar('i>a');
     expect(x.avancar('i>b')).toEqual([{ tipo: 'escolha_ignorada', resposta: 'i>b' }]);
+    expect(ultimo(x.eventos).tipo).toBe('terminou'); // depois do fim, nada entra
+    expect(x.escolhas).toEqual(['i>a']);
+  });
+
+  it('a simulação não muda se o documento mudar depois', () => {
+    const d = doc([peca('i', 'inicio'), peca('a', 'fim'), peca('b', 'fim')], [liga('i', 'a'), liga('i', 'b')]);
+    const x = executar(d, {}, { inicio: 'i' });
+    d.conexoes.splice(0, 1);
+    x.avancar('i>a');
+    expect(ultimo(x.eventos)).toMatchObject({ motivo: 'fim', peca: 'a' });
   });
 
   it('conexão "depois de um tempo" soma no relógio', () => {
@@ -868,6 +883,29 @@ describe('motor', () => {
     it('no modo livre pergunta, com a escolha do relógio sugerida', () => {
       const x = executar(d, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T10:00', modo: 'livre' });
       expect(x.pendente!.opcoes.map((o) => [o.conexao, o.sugerida])).toEqual([['dentro', true], ['fora', false]]);
+    });
+    it('saída única de horário: o relógio decide; fora dela, não tem pra onde ir', () => {
+      const so = doc([peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('aberto', 'fim')], [liga('i', 'h'), liga('h', 'aberto', { id: 'dentro', regra: 'horario', horario: 'dentro' })]);
+      expect(ultimo(executar(so, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T10:00' }).eventos)).toMatchObject({ motivo: 'fim', peca: 'aberto' });
+      expect(ultimo(executar(so, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-22T03:00' }).eventos)).toMatchObject({ motivo: 'beco', peca: 'h' });
+    });
+    it('"senão" vale quando o lado da hora não tem saída', () => {
+      const comSenao = { ...d, conexoes: [d.conexoes[0]!, d.conexoes[1]!, liga('h', 'fechado', { id: 'senao', regra: 'senao' })] };
+      const x = executar(comSenao, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-22T10:00' });
+      expect(x.eventos.find((e) => e.tipo === 'escolheu' && e.peca === 'h')).toMatchObject({ quem: 'relogio', conexao: 'senao' });
+    });
+    it('peça com saída de horário e opção de pessoa: pergunta', () => {
+      const misto = { ...d, conexoes: [...d.conexoes, liga('h', 'fechado', { id: 'op', regra: 'opcao', valor: '1' })] };
+      expect(executar(misto, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-22T10:00' }).pendente!.peca).toBe('h');
+    });
+    it('fechado, espera e tenta de novo: não é ciclo enquanto o tempo anda', () => {
+      const tenta = doc(
+        [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('w', 'espera'), peca('ok', 'fim')],
+        [liga('i', 'h'), liga('h', 'ok', { regra: 'horario', horario: 'dentro' }), liga('h', 'w', { regra: 'horario', horario: 'fora' }), liga('w', 'h', { regra: 'tempo', tempo_s: 3600 })],
+      );
+      expect(ultimo(executar(tenta, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T06:00' }).eventos)).toMatchObject({ motivo: 'fim', peca: 'ok', relogio_s: 7200 });
+      const semTempo = { ...tenta, conexoes: tenta.conexoes.map((c) => (c.regra === 'tempo' ? { ...c, regra: 'sempre' as const, tempo_s: undefined } : c)) };
+      expect(ultimo(executar(semTempo, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T06:00' }).eventos)).toMatchObject({ motivo: 'ciclo', peca: 'h' });
     });
     it('sem hora ou sem o cadastro de horário, pergunta', () => {
       expect(executar(d, { cadastros: [HORARIO] }, { inicio: 'i' }).pendente).not.toBeNull();
@@ -901,11 +939,21 @@ describe('motor', () => {
   it('fluxo comprido não estoura a pilha', () => {
     const n = 20_000;
     const d = doc([peca('i', 'inicio'), ...Array.from({ length: n }, (_, k) => peca(`p${k}`, 'etapa')), peca('f', 'fim')], [liga('i', 'p0'), ...Array.from({ length: n - 1 }, (_, k) => liga(`p${k}`, `p${k + 1}`)), liga(`p${n - 1}`, 'f')]);
-    expect(ultimo(executar(d, {}, { inicio: 'i' }).eventos)).toMatchObject({ tipo: 'terminou', motivo: 'ciclo' }); // a trava de passos
+    expect(ultimo(executar(d, {}, { inicio: 'i' }).eventos)).toMatchObject({ tipo: 'terminou', motivo: 'limite' }); // a trava de passos
   });
 
   it('início que não existe termina na hora', () => {
     expect(executar(doc([]), {}, { inicio: 'x' }).eventos).toEqual([{ tipo: 'terminou', motivo: 'inexistente', peca: null, relogio_s: 0 }]);
+  });
+
+  it('refazer para na primeira escolha que não serve mais', () => {
+    const d = doc(
+      [peca('i', 'inicio'), peca('m', 'decisao'), peca('n', 'decisao'), peca('f', 'fim')],
+      [liga('i', 'm'), liga('m', 'n', { id: 'vai_novo', regra: 'opcao', valor: '2' }), liga('n', 'm', { id: 'volta' }), liga('n', 'f', { id: 'fica', regra: 'opcao', valor: '9' }), liga('m', 'f', { id: 'sai', regra: 'opcao', valor: '1' })],
+    );
+    const x = simular(d, {}, { inicio: 'i', escolhas: ['vai', 'volta', 'sai'] }); // "vai" não existe mais
+    expect(x.escolhas).toEqual([]);
+    expect(x.pendente!.peca).toBe('m');
   });
 
   it('previsível: as mesmas escolhas dão os mesmos eventos', () => {
@@ -1015,7 +1063,14 @@ export interface Opcao {
 }
 
 export type QuemEscolheu = 'unica' | 'pessoa' | 'relogio';
-export type MotivoFim = 'fim' | 'beco' | 'ciclo' | 'inexistente';
+/**
+ * - fim: chegou num Fim.
+ * - beco: não tem pra onde ir (peça sem saída, ou o relógio decidiu um lado que não tem saída).
+ * - ciclo: andando sozinho, chegou pela terceira vez na mesma peça.
+ * - limite: andou sozinho mais passos do que um fluxo de verdade dá (trava de segurança).
+ * - inexistente: o começo não existe.
+ */
+export type MotivoFim = 'fim' | 'beco' | 'ciclo' | 'limite' | 'inexistente';
 
 export type Evento =
   | { tipo: 'chegou'; peca: string; canal: string | null; relogio_s: number }
@@ -1027,15 +1082,18 @@ export type Evento =
 
 /** Chegar pela terceira vez na mesma peça sem ninguém escolher no meio é ciclo sem fim. */
 const VOLTAS_MAXIMAS = 3;
-/** Trava de segurança: nenhum fluxo de verdade dá tantos passos sozinho. */
+/** Trava de segurança: passos andando sozinho entre duas escolhas de uma pessoa. */
 const PASSOS_MAXIMOS = 10_000;
 
 /**
  * Uma simulação. Previsível: o mesmo documento, o mesmo começo e as mesmas escolhas dão os mesmos eventos.
  * Anda sozinha enquanto há uma saída só (ou o relógio decide) e para quando precisa de uma escolha (`pendente`).
+ * O documento é lido uma vez, no começo: mudar o documento depois não muda esta simulação.
  */
 export class Execucao {
   readonly eventos: Evento[] = [];
+  /** As escolhas aceitas até agora, em ordem (ids de conexão). É o que um cenário guarda, e "voltar" tira a última. */
+  readonly escolhas: string[] = [];
   pendente: { peca: string; opcoes: Opcao[] } | null = null;
   terminou = false;
   relogio_s = 0;
@@ -1046,6 +1104,8 @@ export class Execucao {
   private readonly inicioMs: number | null;
   private readonly modo: Modo;
   private readonly visitas = new Map<string, number>();
+  /** Hora simulada da última vez que o relógio decidiu em cada peça. */
+  private readonly horaDoRelogio = new Map<string, number>();
   private passos = 0;
 
   constructor(doc: Documento, contexto: Contexto, opcoes: OpcoesExecucao) {
@@ -1058,19 +1118,24 @@ export class Execucao {
     else this.andar(opcoes.inicio);
   }
 
-  /** Responde a escolha pendente com o id de uma conexão. Resposta que não serve vira `escolha_ignorada`. Devolve os eventos novos. */
+  /**
+   * Responde a escolha pendente com o id de uma conexão e devolve os eventos novos.
+   * Resposta que não é uma das opções volta como `escolha_ignorada` e não muda nada (nem entra em `eventos`).
+   */
   avancar(conexao: string): Evento[] {
-    const antes = this.eventos.length;
     const pend = this.pendente;
-    if (this.terminou || !pend || !pend.opcoes.some((o) => o.conexao === conexao)) {
-      this.eventos.push({ tipo: 'escolha_ignorada', resposta: conexao });
-      return this.eventos.slice(antes);
+    const escolhida = pend && this.idx.saidas.get(pend.peca)!.find((c) => c.id === conexao);
+    if (this.terminou || !pend || !escolhida || !pend.opcoes.some((o) => o.conexao === conexao)) {
+      return [{ tipo: 'escolha_ignorada', resposta: conexao }];
     }
+    const antes = this.eventos.length;
     this.pendente = null;
-    // Depois de uma escolha, a contagem de voltas recomeça: só caminho que anda sozinho vira ciclo.
+    this.escolhas.push(conexao);
+    // Depois de uma escolha, a contagem de voltas e de passos recomeça: só caminho que anda sozinho vira ciclo.
     this.visitas.clear();
+    this.passos = 0;
     this.eventos.push({ tipo: 'escolheu', peca: pend.peca, conexao, quem: 'pessoa' });
-    this.andar(this.correr(this.idx.doc.conexoes.find((c) => c.id === conexao)!));
+    this.andar(this.correr(escolhida));
     return this.eventos.slice(antes);
   }
 
@@ -1094,19 +1159,25 @@ export class Execucao {
     this.visitas.set(id, voltas);
     if (p.canal) this.canal = p.canal;
     this.eventos.push({ tipo: 'chegou', peca: id, canal: this.canal, relogio_s: this.relogio_s });
-    if (voltas >= VOLTAS_MAXIMAS || ++this.passos > PASSOS_MAXIMOS) return this.terminar('ciclo', id);
+    if (voltas >= VOLTAS_MAXIMAS) return this.terminar('ciclo', id);
+    if (++this.passos > PASSOS_MAXIMOS) return this.terminar('limite', id);
     this.relogio_s += p.tempo_s ?? 0;
     if (p.tipo === 'fim') return this.terminar('fim', id);
     const saidas = this.idx.saidas.get(id)!;
     if (saidas.length === 0) return this.terminar('beco', id);
+    const doRelogio = this.escolhaDoRelogio(id, saidas);
+    if (doRelogio !== undefined && this.modo === 'relogio') {
+      if (!doRelogio) return this.terminar('beco', id);
+      // "Fechado, espera e tenta de novo": se o tempo andou desde a última decisão aqui, voltar não é ciclo.
+      const antes = this.horaDoRelogio.get(id);
+      if (antes !== undefined && this.relogio_s > antes) this.visitas.clear();
+      this.horaDoRelogio.set(id, this.relogio_s);
+      this.eventos.push({ tipo: 'escolheu', peca: id, conexao: doRelogio.id, quem: 'relogio' });
+      return this.correr(doRelogio);
+    }
     if (saidas.length === 1) {
       this.eventos.push({ tipo: 'escolheu', peca: id, conexao: saidas[0]!.id, quem: 'unica' });
       return this.correr(saidas[0]!);
-    }
-    const doRelogio = this.escolhaDoRelogio(id, saidas);
-    if (doRelogio && this.modo === 'relogio') {
-      this.eventos.push({ tipo: 'escolheu', peca: id, conexao: doRelogio.id, quem: 'relogio' });
-      return this.correr(doRelogio);
     }
     const opcoes: Opcao[] = saidas.map((c) => ({
       conexao: c.id,
@@ -1116,16 +1187,21 @@ export class Execucao {
       tempo_s: c.regra === 'tempo' ? (c.tempo_s ?? 0) : 0,
       sugerida: doRelogio?.id === c.id,
     }));
-    this.pendente = { peca: id, opcoes };
+    this.pendente = { peca: id, opcoes: [...opcoes] };
     this.eventos.push({ tipo: 'pede_escolha', peca: id, opcoes });
     return null;
   }
 
-  /** A saída que o relógio escolhe: a de horário que bate com a hora simulada (com o horário do responsável da peça). */
-  private escolhaDoRelogio(id: string, saidas: Conexao[]): Conexao | null {
-    if (this.inicioMs === null || !saidas.some((c) => c.regra === 'horario')) return null;
+  /**
+   * A saída que o relógio escolhe, com a hora simulada e o Horário do responsável da peça.
+   * undefined: o relógio não decide aqui (sem hora, sem Horário, ou a peça tem saídas que não são de horário).
+   * null: decide, mas o lado da hora não tem saída (nem "senão").
+   */
+  private escolhaDoRelogio(id: string, saidas: Conexao[]): Conexao | null | undefined {
+    if (this.inicioMs === null || !saidas.some((c) => c.regra === 'horario')) return undefined;
+    if (!saidas.every((c) => c.regra === 'horario' || c.regra === 'senao')) return undefined;
     const horario = camposHorario(this.cadastros.get(this.idx.pecas.get(id)!.responsavel ?? ''));
-    if (!horario) return null;
+    if (!horario) return undefined;
     const lado = dentroDoHorario(horario, this.inicioMs + this.relogio_s * 1000) ? 'dentro' : 'fora';
     return saidas.find((c) => c.regra === 'horario' && c.horario === lado) ?? saidas.find((c) => c.regra === 'senao') ?? null;
   }
@@ -1142,10 +1218,15 @@ export function executar(doc: Documento, contexto: Contexto, opcoes: OpcoesExecu
   return new Execucao(doc, contexto, opcoes);
 }
 
-/** Refaz uma simulação a partir das escolhas (ids de conexão), em ordem. É assim que cenário, voltar e link refazem o caminho. */
+/**
+ * Refaz uma simulação a partir das escolhas (ids de conexão), em ordem. É assim que cenário, voltar e link refazem o caminho.
+ * Para na primeira escolha que não serve mais (o fluxo mudou): `escolhas.length` diz até onde o caminho guardado valeu.
+ */
 export function simular(doc: Documento, contexto: Contexto, opcoes: OpcoesExecucao & { escolhas?: readonly string[] }): Execucao {
   const e = executar(doc, contexto, opcoes);
-  for (const c of opcoes.escolhas ?? []) e.avancar(c);
+  for (const c of opcoes.escolhas ?? []) {
+    if (e.avancar(c)[0]?.tipo === 'escolha_ignorada') break;
+  }
   return e;
 }
 ```
@@ -1153,7 +1234,7 @@ export function simular(doc: Documento, contexto: Contexto, opcoes: OpcoesExecuc
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  32 passed (32)` e o `tsc` sem saída.
+Expected: `Tests  38 passed (38)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -1458,7 +1539,7 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  47 passed (47)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
+Expected: `Tests  53 passed (53)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
 
 - [ ] **Passo 5: commit**
 
@@ -1726,7 +1807,7 @@ export { MODELOS, type Modelo } from './modelos';
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  60 passed (60)` e o `tsc` sem saída.
+Expected: `Tests  66 passed (66)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2158,7 +2239,7 @@ Expected: `Files=3, Tests=126` e `Result: PASS`.
 - [ ] **Passo 5: a v1 continua de pé**
 
 Run: `npm test && npm run typecheck`
-Expected: `@journey/fluxo` 60, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
+Expected: `@journey/fluxo` 66, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
 
 - [ ] **Passo 6: commit**
 
@@ -2249,7 +2330,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 60, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
+Expected: fluxo 66, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
