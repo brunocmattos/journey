@@ -1,0 +1,5 @@
+<h2>Trocar a senha</h2>
+<p>Pediram pra trocar a senha da tua conta no Journey.</p>
+<p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/conta/senha" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#13212b;color:#ffffff;text-decoration:none;font-weight:600">Escolher uma senha nova</a></p>
+<p style="color:#55636d;font-size:13px">Se o botão não abrir, copia e cola este endereço no navegador:<br><span style="word-break:break-all">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/conta/senha</span></p>
+<p>Se não foi tu, é só ignorar: a senha de agora continua valendo.</p>

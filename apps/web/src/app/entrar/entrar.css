@@ -32,8 +32,23 @@
 .entrada .form-entrar > :not(:first-child):not(:empty) { margin-top: 12px; }
 .entrada .form-entrar .campo input { font-size: 15px; padding: 10px 12px; }
 .entrada .form-entrar .botao { padding: 10px 14px; font-size: 14px; }
-.entrada .dica-entrar { margin: 0; font-size: 12.5px; color: var(--ink-2); }
-.entrada .outro-email { align-self: flex-start; }
+/* Entrar ou criar conta: um segmentado, como os do editor. */
+.entrada .modos { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--node); }
+.entrada .modos button { border: 0; background: none; border-radius: 8px; padding: 7px 10px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+.entrada .modos button[aria-selected='true'] { background: var(--btn); color: var(--btn-ink); }
+/* Esqueci a senha e o link: fora das abas, com título. */
+.entrada .titulo-modo { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.entrada .explica-modo { margin: 0; font-size: 13px; color: var(--ink-2); }
+.entrada .senha { display: flex; gap: 6px; }
+.entrada .senha input { flex: 1; min-width: 0; }
+.entrada .ver-senha { flex: none; border: 1px solid var(--line); background: var(--node); color: var(--ink-2); border-radius: 10px; padding: 0 12px; font-size: 12.5px; cursor: pointer; }
+.entrada .ver-senha[aria-pressed='true'] { color: var(--ink); border-color: var(--ink-3); }
+/* Os outros jeitos (esqueci a senha, link por e-mail): discretos, como links. */
+.entrada .outros-modos { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.entrada .link-modo { border: 0; background: none; padding: 2px 0; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.entrada .link-modo:hover { color: var(--ink); }
+.entrada .acoes-enviado { display: flex; flex-wrap: wrap; gap: 8px; }
+.entrada .aviso-caixa.erro { display: grid; gap: 8px; justify-items: start; }
 .entrada .enviado { display: grid; gap: 10px; justify-items: start; line-height: 1.45; }
 .entrada .enviado b { word-break: break-all; }
 .entrada .ou { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-2); }

@@ -72,6 +72,10 @@ h2 { font-size: 18px; font-weight: 700; }
 .nav a, .nav button { display: flex; align-items: center; gap: 7px; border: 0; background: none; border-radius: 8px; padding: 5px 11px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; text-decoration: none; }
 .nav a[aria-current='page'], .nav button[aria-pressed='true'], .nav button[aria-selected='true'] { background: var(--node); color: var(--ink); box-shadow: 0 1px 0 var(--line); }
 .empurra { margin-left: auto; }
+.empurra.conta { display: flex; gap: 8px; align-items: center; }
+/* Fora do editor (empresa nova, senha): o que é da conta fica embaixo do cartão, discreto. */
+.link-discreto { justify-self: start; font-size: 13px; color: var(--ink-2); text-underline-offset: 3px; }
+.conta-rodape { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 
 /* Páginas comuns. */
 .pagina { max-width: 1080px; width: 100%; margin: 0 auto; display: grid; gap: 16px; align-content: start; padding-bottom: 32px; }

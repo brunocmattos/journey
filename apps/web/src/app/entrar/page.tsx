@@ -1,13 +1,14 @@
 import './entrar.css';
 import { Marca } from '@/componentes/Marca';
+import { avisoDaVolta } from '@/lib/acesso';
 import { FormularioEntrar } from './formulario';
 import { PreviaFluxo } from './previa';
 
 export const metadata = { title: 'Entrar · Journey' };
 
 /**
- * Entrar: de um lado o que o Journey é e o formulário (link por e-mail, Google se estiver ligado), do outro uma
- * prévia do quadro com a água andando. A página é leve: nada do editor nem do pacote do fluxo.
+ * Entrar: de um lado o que o Journey é e o formulário (e-mail e senha, criar conta, o link por e-mail e o Google se
+ * estiver ligado), do outro uma prévia do quadro com a água andando. A página é leve: nada do editor nem do pacote do fluxo.
  */
 export default async function Entrar({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   const { erro } = await searchParams;
@@ -22,8 +23,8 @@ export default async function Entrar({ searchParams }: { searchParams: Promise<{
             quando o canal muda, para nas decisões e mostra quanto tempo o cliente levou.
           </p>
         </div>
-        {/* O aviso do link vencido fica no formulário: some quando a pessoa pede outro. */}
-        <FormularioEntrar google={process.env.NEXT_PUBLIC_LOGIN_GOOGLE === 'sim'} linkVencido={erro === 'link'} />
+        {/* O aviso do link vencido (ou do Google cancelado) fica no formulário: some quando a pessoa tenta de novo. */}
+        <FormularioEntrar google={process.env.NEXT_PUBLIC_LOGIN_GOOGLE === 'sim'} aviso={avisoDaVolta(erro)} />
       </div>
       <PreviaFluxo />
     </main>
