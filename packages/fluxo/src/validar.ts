@@ -25,7 +25,8 @@ const LISTAS = ['pecas', 'conexoes', 'grupos', 'notas'] as const;
  * Limites do documento. O spec mira 500 peças; os limites deixam folga e protegem o motor e o diagnóstico
  * (e o banco) de um documento que só serve pra travar.
  */
-export const LIMITES = { pecas: 2000, conexoes: 6000, grupos: 500, notas: 500, texto: 5000, tempo_s: 365 * 86400 } as const;
+export const LIMITES = { pecas: 2000, conexoes: 6000, grupos: 500, notas: 500, texto: 5000, tempo_s: 365 * 86400, bytes: 6_000_000 } as const;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ehNumero = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const ehTexto = (v: unknown): v is string => typeof v === 'string';
 /** Texto opcional: aparado, e número vira texto (um importador pode escrever a opção 1 como número). */
@@ -54,6 +55,9 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
     const v = bruto[lista];
     if (!Array.isArray(v)) erro('forma', `Falta a lista "${lista}".`);
     else if (v.length > LIMITES[lista]) erro('tamanho', `"${lista}" passa do limite de ${LIMITES[lista]}.`);
+  }
+  if (!problemas.length && new TextEncoder().encode(JSON.stringify(entrada)).length > LIMITES.bytes) {
+    erro('tamanho', `O documento passa de ${LIMITES.bytes / 1_000_000} MB.`);
   }
   if (problemas.length) return { documento: null, problemas };
 
@@ -95,7 +99,8 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
     const nome = p.nome || id;
     const canal = opcional(item.canal);
     if (canal) { p.canal = canal; if (canais && !canais.has(canal)) aviso('canal', `A peça "${nome}" usa o canal "${canal}", que a empresa não tem.`, id); }
-    const resp = opcional(item.responsavel);
+    // Id de cadastro do banco é uuid em minúsculas: o mesmo id em maiúsculas é o mesmo cadastro.
+    const resp = opcional(item.responsavel)?.replace(UUID, (u) => u.toLowerCase());
     if (resp) { p.responsavel = resp; if (cadastros && !cadastros.has(resp)) aviso('responsavel', `A peça "${nome}" aponta pra um cadastro que não existe.`, id); }
     if (item.tempo_s !== undefined && item.tempo_s !== null) {
       if (!tempo(item.tempo_s)) erro('tempo', `O tempo da peça "${nome}" tem que ser um número de segundos, de zero a um ano.`, id);

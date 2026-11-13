@@ -94,6 +94,16 @@ describe('diagnóstico', () => {
     expect(chaves(doc([peca('i', 'inicio'), peca('h', 'decisao'), peca('a', 'fim')], [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' })]))).toEqual(['horario_sem_cadastro:h', 'horario_sem_lado:h:fora']);
   });
 
+  it('"fechado, tenta de novo" sem tempo de espera é ciclo sem espera', () => {
+    const pecas = [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('w', 'espera'), peca('ok', 'fim')];
+    const conexoes = [liga('i', 'h'), liga('h', 'ok', { regra: 'horario', horario: 'dentro' }), liga('h', 'w', { regra: 'horario', horario: 'fora' }), liga('w', 'h')];
+    expect(chaves(doc(pecas, conexoes), { cadastros: [HORARIO] })).toEqual(['ciclo_sem_tempo:h+w']);
+    const comTempo = conexoes.map((c) => (c.de === 'w' ? { ...c, regra: 'tempo' as const, tempo_s: 3600 } : c));
+    expect(chaves(doc(pecas, comTempo), { cadastros: [HORARIO] })).toEqual([]);
+    const comEscolha = [...conexoes, liga('w', 'ok', { regra: 'opcao', valor: '1' })];
+    expect(chaves(doc(pecas, comEscolha), { cadastros: [HORARIO] }).filter((k) => k.startsWith('ciclo'))).toEqual([]);
+  });
+
   it('saídas iguais: um achado por grupo, inclusive "senão" repetido', () => {
     const pecas = [peca('i', 'inicio'), peca('d', 'decisao'), peca('a', 'fim'), peca('b', 'fim'), peca('c', 'fim')];
     const tres = doc(pecas, [liga('i', 'd'), ...['a', 'b', 'c'].map((x) => liga('d', x, { regra: 'opcao', valor: '1' }))]);

@@ -39,6 +39,14 @@ describe('lerDocumento', () => {
     expect(codigos(doc([peca('a', 'etapa', { tempo_s: 366 * 86400 })]))).toEqual(['tempo']);
     expect(codigos(doc([peca('a', 'etapa', { tempo_s: Infinity })]))).toEqual(['tempo']);
     expect(codigos(doc([peca('a', 'inicio'), peca('b', 'fim')], [liga('a', 'b', { regra: 'tempo', tempo_s: 8.7e12 })]))).toEqual(['tempo']);
+    const grande = doc(Array.from({ length: 1500 }, (_, k) => peca(`p${k}`, 'etapa', { descricao: 'x'.repeat(4500) })));
+    expect(codigos(grande)).toEqual(['tamanho']);
+  });
+
+  it('id de cadastro em maiúsculas vira minúsculas', () => {
+    const u = '6ADA6878-0000-4000-8000-00000000000A';
+    expect(lerDocumento(doc([peca('a', 'etapa', { responsavel: u })])).documento!.pecas[0]!.responsavel).toBe(u.toLowerCase());
+    expect(lerDocumento(doc([peca('a', 'etapa', { responsavel: 'Fila-X' })])).documento!.pecas[0]!.responsavel).toBe('Fila-X');
   });
 
   it('a cópia guarda os campos de cada coisa e não depende da entrada', () => {

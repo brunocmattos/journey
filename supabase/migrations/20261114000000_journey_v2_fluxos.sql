@@ -111,7 +111,8 @@ create table public.fluxos (
     and case when jsonb_typeof(documento -> 'conexoes') = 'array' then jsonb_array_length(documento -> 'conexoes') <= 6000 else false end
     and case when jsonb_typeof(documento -> 'grupos') = 'array' then jsonb_array_length(documento -> 'grupos') <= 500 else false end
     and case when jsonb_typeof(documento -> 'notas') = 'array' then jsonb_array_length(documento -> 'notas') <= 500 else false end, false)),
-  constraint fluxos_documento_tamanho check (octet_length(documento::text) <= 8000000),
+  -- O app limita a 6 MB em JSON compacto; o texto do jsonb tem espaços a mais, daí a folga.
+  constraint fluxos_documento_tamanho check (octet_length(documento::text) <= 10000000),
   constraint fluxos_estilo_tamanho check (octet_length(estilo::text) <= 20000)
 );
 create index fluxos_empresa on public.fluxos (empresa_id, editado_em desc);

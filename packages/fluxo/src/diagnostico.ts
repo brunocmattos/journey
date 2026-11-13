@@ -226,9 +226,24 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
     if (vazia) achado('regra_vazia', 'observacao', c.id, `Saída de ${nome(c.de)} sem regra preenchida`, `A ligação de ${nome(c.de)} pra ${nome(c.para)} tem a regra pela metade.`, [c.de, c.id]);
   }
 
+  // O relógio decide sozinho numa peça só com saídas de horário (e "senão") e um responsável Horário.
+  const doRelogio = (id: string) => {
+    const p = idx.pecas.get(id)!;
+    const s = proximas(idx, id);
+    const k = opcoes.cadastros?.find((x) => x.id === p.responsavel);
+    return s.some((c) => c.regra === 'horario') && s.every((c) => c.regra === 'horario' || c.regra === 'senao') && (opcoes.cadastros ? k?.tipo === 'horario' : !!p.responsavel);
+  };
   const comps = ciclos(idx);
   for (const comp of comps) {
-    if (comp.some((id) => chegaNoFim.has(id))) continue;
+    if (comp.some((id) => chegaNoFim.has(id))) {
+      // Tem saída, mas ninguém escolhe e o tempo não anda: se o relógio mandar pra dentro do ciclo, ele manda de novo.
+      const dentro = new Set(comp);
+      const sozinho = comp.every((id) => proximas(idx, id).length === 1 || doRelogio(id));
+      const semTempo = comp.every((id) => !idx.pecas.get(id)!.tempo_s && proximas(idx, id).every((c) => !dentro.has(c.para) || tempoDa(c) === 0));
+      if (sozinho && semTempo && comp.some(doRelogio))
+        achado('ciclo_sem_tempo', 'alerta', comp.join('+'), `Ciclo sem espera: ${comp.map(nome).join(', ')}`, 'O relógio manda a jornada de volta pras mesmas peças sem o tempo andar, então ele decide igual de novo e ela não sai. Põe um tempo na espera (uma peça com tempo ou uma ligação "depois de um tempo").', comp);
+      continue;
+    }
     achado('ciclo_sem_saida', 'grave', comp.join('+'), `Ciclo sem saída: ${comp.map(nome).join(', ')}`, 'Essas peças levam umas às outras e nenhuma chega num Fim: quem entra aqui não termina a jornada.', comp);
   }
 
