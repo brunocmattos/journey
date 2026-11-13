@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 72 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 76 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -45,6 +45,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Ciclo sem saída pelo algoritmo de Tarjan** (componentes fortemente conexos) | Acha todos os ciclos fechados de uma vez, em tempo linear: 500 peças em menos de 100 ms | Procurar ciclos a partir de cada peça: quadrático |
 | **"Passou do prazo" usa o caminho mais longo sem repetir peça** até um Fim, contra a meta do fluxo (`meta_s`): exato e linear quando o fluxo não tem ciclo (ordem topológica); com ciclo, uma busca por Início com teto, que avisa quando é estimativa | É o pior caso que um cliente vive; sem ciclo, o resultado não depende da ordem do documento | Média dos caminhos: esconde o pior. Busca com um teto só pra todos os Inícios: o segundo Início nunca era olhado |
 | **O diagnóstico segue o motor:** Fim encerra (as saídas dele não levam ninguém, `fim_com_saida`); peça só com saídas de horário precisa dos dois lados ou de um "senão" (`horario_sem_lado`); saídas iguais são um achado por grupo | O que o diagnóstico diz tem que bater com o que a água faz no play | Olhar só o desenho: peça "alcançável" atrás de um Fim, decisão de horário chamada de "sem escolha" |
+| **Modelos congelados; um fluxo novo nasce de `instanciarModelo`**, que copia o documento e troca os responsáveis (ids locais do modelo) pelos cadastros da empresa | Editar um fluxo não pode mudar o modelo pra quem vier depois, e o banco só aceita responsável que seja cadastro da empresa | Usar o documento do modelo direto: muda o modelo na mesma sessão e o `salvar_fluxo` recusa |
 | **No banco, o documento é `jsonb` numa coluna só, com `check` da forma** (`formato` `journey/2` e as quatro listas) | O editor salva o documento inteiro; o servidor confere só a forma e os responsáveis. A validação completa é a do pacote, no app | Tabelas de peças e conexões: cada arrasto viraria dezenas de linhas |
 | **Salvar só pela função `salvar_fluxo`**, com a revisão que o editor abriu (40001 se outra pessoa salvou), a trava (P0001) e responsáveis que sejam cadastros da empresa (22023) | Sem edição simultânea na v1 (spec 16): a trava avisa, a revisão garante que ninguém sobrescreve sem saber | Update direto da coluna: sobrescreve calado |
 | **Trava com validade** (`pegar_trava` renova; vencida passa pra quem pede) | Fechar a aba sem soltar não pode prender o fluxo | Trava sem validade |
@@ -1698,21 +1699,36 @@ git commit -m "fluxo: diagnóstico genérico" -m "$(cat .git/atribuicao.txt)"
 
 - [ ] **Passo 1: escrever o teste**
 
-Cada modelo tem que ser um documento válido sem aviso, sem achado grave nem alerta, e chegar num Fim escolhendo sempre a primeira opção numa segunda às 10h; os que têm horário mandam pro "fora" num domingo.
+Cada modelo tem que ser um documento válido sem aviso, sem achado nenhum, e chegar num Fim por qualquer caminho, numa segunda às 10h e num domingo; os que têm horário mandam pro "fora" num domingo e no Natal. Os modelos são congelados e `instanciarModelo` faz a cópia pra uma empresa.
 
 `packages/fluxo/test/modelos.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
+import { CANAIS_PADRAO } from '../src/cadastros';
 import { diagnosticar } from '../src/diagnostico';
-import { MODELOS } from '../src/modelos';
+import { MODELOS, instanciarModelo, type Modelo } from '../src/modelos';
 import { simular, type Evento } from '../src/motor';
 import { lerDocumento } from '../src/validar';
 
 const ultimo = (es: readonly Evento[]) => es[es.length - 1]!;
+const inicioDe = (m: Modelo) => m.documento.pecas.find((p) => p.tipo === 'inicio')!.id;
+
+/** Todos os finais possíveis, escolhendo cada opção em cada pergunta. */
+function finais(m: Modelo, quando: string): Evento[] {
+  const out: Evento[] = [];
+  const pilha: string[][] = [[]];
+  while (pilha.length && out.length < 1000) {
+    const escolhas = pilha.pop()!;
+    const x = simular(m.documento, { cadastros: m.cadastros, canal: m.canal }, { inicio: inicioDe(m), quando, escolhas });
+    if (x.pendente) for (const o of x.pendente.opcoes) pilha.push([...escolhas, o.conexao]);
+    else out.push(ultimo(x.eventos));
+  }
+  return out;
+}
 
 describe.each(MODELOS.map((m) => [m.nome, m] as const))('modelo %s', (_nome, m) => {
-  const conhecidos = { canais: ['telefonia', 'whatsapp', 'email', 'chat', 'interno'], cadastros: m.cadastros.map((k) => k.id) };
+  const conhecidos = { canais: CANAIS_PADRAO.map((c) => c.chave), cadastros: m.cadastros.map((k) => k.id) };
 
   it('é um documento válido, sem aviso', () => {
     const r = lerDocumento(m.documento, conhecidos);
@@ -1720,31 +1736,64 @@ describe.each(MODELOS.map((m) => [m.nome, m] as const))('modelo %s', (_nome, m) 
     expect(r.documento).toEqual(m.documento);
   });
 
-  it('não tem achado grave nem alerta', () => {
-    expect(diagnosticar(m.documento, { cadastros: m.cadastros }).filter((a) => a.gravidade !== 'observacao')).toEqual([]);
+  it('não tem achado nenhum', () => {
+    expect(diagnosticar(m.documento, { cadastros: m.cadastros })).toEqual([]);
   });
 
-  it('chega num Fim escolhendo sempre a primeira opção, numa segunda às 10h', () => {
-    const inicio = m.documento.pecas.find((p) => p.tipo === 'inicio')!.id;
-    const ctx = { cadastros: m.cadastros, canal: m.canal };
-    const escolhas: string[] = [];
-    let x = simular(m.documento, ctx, { inicio, quando: '2026-11-23T10:00' });
-    while (x.pendente) {
-      escolhas.push(x.pendente.opcoes[0]!.conexao);
-      x = simular(m.documento, ctx, { inicio, quando: '2026-11-23T10:00', escolhas });
+  it('todo caminho chega num Fim, numa segunda às 10h e num domingo', () => {
+    for (const quando of ['2026-11-23T10:00', '2026-11-22T10:00']) {
+      const fs = finais(m, quando);
+      expect(fs.length).toBeGreaterThan(0);
+      for (const f of fs) expect(f).toMatchObject({ tipo: 'terminou', motivo: 'fim' });
     }
-    expect(ultimo(x.eventos)).toMatchObject({ tipo: 'terminou', motivo: 'fim' });
   });
 });
 
-describe('modelos com horário', () => {
-  it('num domingo, o relógio manda pro "fora do horário"', () => {
-    for (const m of MODELOS.filter((x) => x.documento.conexoes.some((c) => c.regra === 'horario'))) {
-      const inicio = m.documento.pecas.find((p) => p.tipo === 'inicio')!.id;
-      const x = simular(m.documento, { cadastros: m.cadastros }, { inicio, quando: '2026-11-22T10:00' });
-      const pelo = x.eventos.find((e) => e.tipo === 'escolheu' && e.quem === 'relogio');
-      expect(m.documento.conexoes.find((c) => c.id === (pelo as { conexao: string }).conexao)!.horario).toBe('fora');
+describe('modelos', () => {
+  it('chaves e ids de cadastro não se repetem entre modelos', () => {
+    expect(new Set(MODELOS.map((m) => m.chave)).size).toBe(MODELOS.length);
+    const ids = MODELOS.flatMap((m) => m.cadastros.map((k) => `${k.id}=${k.tipo}:${k.nome}`));
+    expect(new Set(ids.map((x) => x.split('=')[0])).size).toBe(new Set(ids).size);
+  });
+
+  it('num domingo e no Natal, o relógio manda pro "fora do horário"', () => {
+    const comHorario = MODELOS.filter((x) => x.documento.conexoes.some((c) => c.regra === 'horario'));
+    expect(comHorario).toHaveLength(2);
+    for (const m of comHorario) {
+      for (const quando of ['2026-11-22T10:00', '2026-12-25T10:00']) {
+        const x = simular(m.documento, { cadastros: m.cadastros }, { inicio: inicioDe(m), quando });
+        const pelo = x.eventos.find((e) => e.tipo === 'escolheu' && e.quem === 'relogio');
+        expect(pelo).toBeDefined();
+        expect(m.documento.conexoes.find((c) => c.id === (pelo as { conexao: string }).conexao)!.horario).toBe('fora');
+      }
     }
+  });
+
+  it('são congelados: editar um fluxo nunca muda o modelo', () => {
+    const m = MODELOS[0]!;
+    expect(Object.isFrozen(m.documento.pecas[0])).toBe(true);
+    expect(Object.isFrozen(m.cadastros[0]!.campos)).toBe(true);
+    expect(() => {
+      (m.documento.pecas as unknown[]).push({});
+    }).toThrow();
+  });
+
+  it('instanciar: cópia editável com os cadastros da empresa', () => {
+    const m = MODELOS.find((x) => x.chave === 'ura')!;
+    const ids = Object.fromEntries(m.cadastros.map((k, i) => [k.id, `00000000-0000-0000-0000-00000000000${i}`]));
+    const d = instanciarModelo(m, ids);
+    const daEmpresa = m.cadastros.map((k) => ({ ...k, id: ids[k.id]! }));
+    expect(lerDocumento(d, { cadastros: Object.values(ids) }).problemas).toEqual([]);
+    expect(diagnosticar(d, { cadastros: daEmpresa })).toEqual([]);
+    d.pecas[0]!.nome = 'mudou';
+    expect(m.documento.pecas[0]!.nome).not.toBe('mudou');
+    expect(m.documento.pecas.find((p) => p.id === 'horario')!.responsavel).toBe('horario-comercial');
+    const x = simular(d, { cadastros: daEmpresa }, { inicio: 'liga', quando: '2026-11-22T10:00' });
+    expect(ultimo(x.eventos)).toMatchObject({ motivo: 'fim', peca: 'desliga' });
+  });
+
+  it('instanciar sem um dos cadastros é erro', () => {
+    expect(() => instanciarModelo(MODELOS[1]!, { bureau: 'x' })).toThrow('Analistas de crédito');
   });
 });
 ```
@@ -1763,8 +1812,9 @@ import { FORMATO, type Conexao, type Documento, type Peca, type TipoPeca } from 
 import type { Cadastro } from './cadastros';
 
 /**
- * Fluxos prontos pra começar. Os ids dos cadastros aqui são locais ao modelo: quem copia um modelo pra uma
- * empresa troca cada um por um cadastro da empresa (com o mesmo nome e tipo, criando se precisar).
+ * Fluxos prontos pra começar. Os ids dos cadastros aqui são locais ao modelo (e não se repetem entre modelos):
+ * quem copia um modelo pra uma empresa acha ou cria o cadastro da empresa com o mesmo nome e tipo e usa
+ * `instanciarModelo` pra trocar os ids. Os modelos são congelados: nunca edite um, copie.
  */
 export interface Modelo {
   chave: 'whatsapp' | 'credito' | 'email' | 'ura';
@@ -1777,6 +1827,14 @@ export interface Modelo {
 
 const peca = (id: string, tipo: TipoPeca, x: number, y: number, nome: string, extra: Partial<Peca> = {}): Peca => ({ id, tipo, nome, x, y, ...extra });
 const liga = (id: string, de: string, para: string, extra: Partial<Conexao> = {}): Conexao => ({ id, de, para, regra: 'sempre', ...extra });
+/** Congela o objeto e tudo dentro dele. */
+function congelar<T>(x: T): T {
+  if (x && typeof x === 'object' && !Object.isFrozen(x)) {
+    Object.freeze(x);
+    for (const v of Object.values(x)) congelar(v);
+  }
+  return x;
+}
 const doc = (pecas: Peca[], conexoes: Conexao[], extra: Partial<Documento> = {}): Documento => ({ formato: FORMATO, pecas, conexoes, grupos: [], notas: [], ...extra });
 
 const HORARIO_COMERCIAL: Cadastro = {
@@ -1792,13 +1850,13 @@ const HORARIO_COMERCIAL: Cadastro = {
   },
 };
 
-export const MODELOS: readonly Modelo[] = [
+export const MODELOS: readonly Modelo[] = congelar([
   {
     chave: 'whatsapp',
     nome: 'Suporte no WhatsApp',
     descricao: 'Bot de boas-vindas, horário de atendimento, menu de assuntos, filas e encerramento por inatividade.',
     canal: 'whatsapp',
-    cadastros: [HORARIO_COMERCIAL, { id: 'fila-financeiro', tipo: 'fila', nome: 'Fila Financeiro' }, { id: 'fila-suporte', tipo: 'fila', nome: 'Fila Suporte técnico' }],
+    cadastros: [HORARIO_COMERCIAL, { id: 'fila-financeiro', tipo: 'fila', nome: 'Fila Financeiro' }, { id: 'fila-suporte-tecnico', tipo: 'fila', nome: 'Fila Suporte técnico' }],
     documento: doc(
       [
         peca('inicio', 'inicio', 0, 40, 'Cliente manda mensagem', { canal: 'whatsapp' }),
@@ -1806,7 +1864,7 @@ export const MODELOS: readonly Modelo[] = [
         peca('horario', 'decisao', 540, 0, 'Dentro do horário?', { responsavel: 'horario-comercial' }),
         peca('assunto', 'decisao', 900, -80, 'Qual assunto?'),
         peca('financeiro', 'atendimento', 1160, -70, 'Atende o financeiro', { responsavel: 'fila-financeiro', tempo_s: 360 }),
-        peca('suporte', 'atendimento', 1160, 120, 'Atende o suporte', { responsavel: 'fila-suporte', tempo_s: 720 }),
+        peca('suporte', 'atendimento', 1160, 120, 'Atende o suporte', { responsavel: 'fila-suporte-tecnico', tempo_s: 720 }),
         peca('aguardando', 'espera', 1530, 120, 'Aguardando o cliente'),
         peca('resolvido', 'fim', 1820, 20, 'Resolvido'),
         peca('protocolo', 'mensagem', 1820, 220, 'Envia protocolo por e-mail', { canal: 'email', tempo_s: 10 }),
@@ -1823,7 +1881,7 @@ export const MODELOS: readonly Modelo[] = [
         liga('c6', 'assunto', 'suporte', { regra: 'opcao', valor: '2', rotulo: 'Suporte' }),
         liga('c7', 'financeiro', 'resolvido'),
         liga('c8', 'suporte', 'aguardando'),
-        liga('c9', 'aguardando', 'resolvido', { regra: 'condicao', valor: 'respondeu' }),
+        liga('c9', 'aguardando', 'resolvido', { regra: 'condicao', valor: 'cliente confirmou' }),
         liga('c10', 'aguardando', 'protocolo', { regra: 'tempo', tempo_s: 7200 }),
         liga('c11', 'protocolo', 'inatividade'),
         liga('c12', 'fechado', 'encerra'),
@@ -1850,19 +1908,21 @@ export const MODELOS: readonly Modelo[] = [
         peca('analista', 'decisao', 1030, 240, 'Analista aprova?'),
         peca('liberado', 'fim', 1320, -56, 'Crédito liberado'),
         peca('aviso', 'mensagem', 1300, 140, 'Avisa o cliente por e-mail', { canal: 'email', tempo_s: 30 }),
-        peca('negado', 'fim', 760, 520, 'Pedido negado'),
+        peca('aviso-negado', 'mensagem', 1030, 480, 'Avisa a negativa por e-mail', { canal: 'email', tempo_s: 30 }),
+        peca('negado', 'fim', 1320, 483, 'Pedido negado'),
       ],
       [
         liga('c1', 'pedido', 'score'),
         liga('c2', 'score', 'faixa'),
         liga('c3', 'faixa', 'automatico', { regra: 'condicao', valor: 'score ≥ 700' }),
         liga('c4', 'faixa', 'analise', { regra: 'condicao', valor: '500 a 699' }),
-        liga('c5', 'faixa', 'negado', { regra: 'senao' }),
-        liga('c6', 'automatico', 'liberado'),
+        liga('c5', 'faixa', 'aviso-negado', { regra: 'senao' }),
+        liga('c6', 'automatico', 'aviso'),
         liga('c7', 'analise', 'analista'),
         liga('c8', 'analista', 'aviso', { regra: 'opcao', valor: 'S', rotulo: 'Aprova' }),
-        liga('c9', 'analista', 'negado', { regra: 'opcao', valor: 'N', rotulo: 'Nega' }),
+        liga('c9', 'analista', 'aviso-negado', { regra: 'opcao', valor: 'N', rotulo: 'Nega' }),
         liga('c10', 'aviso', 'liberado'),
+        liga('c11', 'aviso-negado', 'negado'),
       ],
       { grupos: [{ id: 'manual', nome: 'Análise manual', x: 690, y: 210, w: 560, h: 250, cor: '#fbefd6' }] },
     ),
@@ -1887,7 +1947,7 @@ export const MODELOS: readonly Modelo[] = [
         liga('c1', 'chega', 'automatica'),
         liga('c2', 'automatica', 'triagem'),
         liga('c3', 'triagem', 'aguardando'),
-        liga('c4', 'aguardando', 'resolvido', { regra: 'condicao', valor: 'cliente respondeu' }),
+        liga('c4', 'aguardando', 'resolvido', { regra: 'condicao', valor: 'cliente confirmou a solução' }),
         liga('c5', 'aguardando', 'escala', { regra: 'tempo', tempo_s: 172800 }),
         liga('c6', 'escala', 'encerrado'),
       ],
@@ -1905,11 +1965,12 @@ export const MODELOS: readonly Modelo[] = [
         peca('horario', 'decisao', 260, 0, 'Dentro do horário?', { responsavel: 'horario-comercial' }),
         peca('menu', 'decisao', 560, -60, 'Menu principal', { tempo_s: 8, descricao: 'Digite 1 para vendas ou 2 para suporte.' }),
         peca('vendas', 'atendimento', 840, -150, 'Atende vendas', { responsavel: 'fila-vendas', tempo_s: 120 }),
-        peca('suporte', 'atendimento', 840, 20, 'Atende suporte', { responsavel: 'fila-suporte' }),
+        peca('suporte', 'atendimento', 840, 20, 'Atende suporte', { responsavel: 'fila-suporte', tempo_s: 240 }),
         peca('atendido', 'fim', 1180, -70, 'Atendido'),
         peca('caixa', 'mensagem', 1160, 120, 'Caixa postal', { tempo_s: 30 }),
         peca('desliga', 'fim', 1440, 123, 'Desliga'),
         peca('fechado', 'mensagem', 300, 240, 'Fora do horário', { tempo_s: 9 }),
+        peca('invalida', 'mensagem', 840, 240, 'Opção inválida', { tempo_s: 4 }),
       ],
       [
         liga('c1', 'liga', 'horario'),
@@ -1917,16 +1978,29 @@ export const MODELOS: readonly Modelo[] = [
         liga('c3', 'horario', 'fechado', { regra: 'horario', horario: 'fora' }),
         liga('c4', 'menu', 'vendas', { regra: 'opcao', valor: '1', rotulo: 'Vendas' }),
         liga('c5', 'menu', 'suporte', { regra: 'opcao', valor: '2', rotulo: 'Suporte' }),
-        liga('c6', 'menu', 'desliga', { regra: 'senao' }),
+        liga('c6', 'menu', 'invalida', { regra: 'senao' }),
         liga('c7', 'vendas', 'atendido'),
         liga('c8', 'suporte', 'atendido', { regra: 'condicao', valor: 'alguém atendeu' }),
         liga('c9', 'suporte', 'caixa', { regra: 'tempo', tempo_s: 180 }),
         liga('c10', 'caixa', 'desliga'),
         liga('c11', 'fechado', 'desliga'),
+        liga('c12', 'invalida', 'desliga'),
       ],
     ),
   },
-];
+]);
+
+/**
+ * O documento de um fluxo novo a partir de um modelo: uma cópia que se pode editar, com cada responsável
+ * trocado pelo cadastro da empresa. `ids` leva o id local de cada cadastro do modelo ao id do cadastro da empresa.
+ */
+export function instanciarModelo(m: Modelo, ids: Readonly<Record<string, string>>): Documento {
+  const faltam = m.cadastros.filter((k) => !Object.hasOwn(ids, k.id)).map((k) => k.nome);
+  if (faltam.length) throw new Error(`Faltam os cadastros da empresa pra: ${faltam.join(', ')}.`);
+  const d = structuredClone(m.documento) as Documento;
+  for (const p of d.pecas) if (p.responsavel) p.responsavel = ids[p.responsavel]!;
+  return d;
+}
 ```
 
 - [ ] **Passo 4: o que o pacote exporta**
@@ -1941,13 +2015,13 @@ export { indexar, textoRegra, type Indice } from './indice';
 export { lerQuando, dentroDoHorario, ehFeriado, formatarTempo } from './relogio';
 export { Execucao, executar, simular, type Contexto, type Modo, type OpcoesExecucao, type Opcao, type QuemEscolheu, type MotivoFim, type Evento } from './motor';
 export { diagnosticar, type Achado, type Gravidade, type OpcoesDiagnostico } from './diagnostico';
-export { MODELOS, type Modelo } from './modelos';
+export { MODELOS, instanciarModelo, type Modelo } from './modelos';
 ```
 
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  72 passed (72)` e o `tsc` sem saída.
+Expected: `Tests  76 passed (76)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2379,7 +2453,7 @@ Expected: `Files=3, Tests=126` e `Result: PASS`.
 - [ ] **Passo 5: a v1 continua de pé**
 
 Run: `npm test && npm run typecheck`
-Expected: `@journey/fluxo` 72, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
+Expected: `@journey/fluxo` 76, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
 
 - [ ] **Passo 6: commit**
 
@@ -2444,6 +2518,7 @@ const achados = diagnosticar(m.documento, { cadastros: m.cadastros, meta_s: 4 * 
 - **Ciclo** é chegar pela terceira vez na mesma peça sem ninguém escolher no meio; depois de uma escolha, a contagem recomeça.
 - **Tempo do cliente:** soma o tempo de cada peça ao chegar e o das conexões "depois de um tempo" ao passar.
 - **Chave de achado** é tipo mais ids: não muda quando se renomeia uma peça, e "marcar como intencional" sobrevive.
+- **Modelos são congelados.** Um fluxo novo começa de `instanciarModelo(modelo, ids)`, que copia o documento e troca cada responsável pelo cadastro da empresa (achado ou criado pelo mesmo nome e tipo).
 ````
 
 - [ ] **Passo 2: o README da raiz**
@@ -2470,7 +2545,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 72, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
+Expected: fluxo 76, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
