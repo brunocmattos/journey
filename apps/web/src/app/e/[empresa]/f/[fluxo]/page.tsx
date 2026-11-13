@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { unstable_rethrow } from 'next/navigation';
 import { cache } from 'react';
 import { Editor } from '@/componentes/editor/Editor';
 import { cadastros, canais, fluxoParaEditar, tiposCadastro } from '@/lib/dados';
@@ -11,8 +12,15 @@ const fluxoDoPedido = cache(fluxoParaEditar);
 /** O nome do fluxo no título da aba (no editor, ele acompanha quando renomeia). */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { empresa, fluxo } = await params;
-  const f = await fluxoDoPedido(empresa, fluxo);
-  return { title: `${f.nome} · Journey` };
+  try {
+    const f = await fluxoDoPedido(empresa, fluxo);
+    return { title: `${f.nome} · Journey` };
+  } catch (erro) {
+    // notFound e redirect (login vencido) seguem pro Next; um documento que não abre fica com o título genérico e a
+    // página de erro do fluxo aparece pelo erro da própria página (aqui ele deixava a aba sem título).
+    unstable_rethrow(erro);
+    return { title: 'Editor · Journey' };
+  }
 }
 
 export default async function PaginaEditor({ params }: Props) {

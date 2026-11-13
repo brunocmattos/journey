@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { documentoVazio, lerDocumento, type Documento } from '@journey/fluxo';
-import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
+import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverGrupoEm, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
 
 const base = (): Documento => {
   let d = criarPeca(documentoVazio(), 'a', 'inicio', 95, 30);
@@ -123,6 +123,12 @@ describe('editor/documento', () => {
     expect(m.pecas.map((p) => [p.id, p.x, p.y])).toEqual([['a', 50, 10], ['b', 350, 10], ['c', 610, 0]]);
     expect(m.grupos[0]).toMatchObject({ x: 90, y: -80 });
     expect(redimensionarGrupo(m, 'g', 20, 20).grupos[0]).toMatchObject({ w: 160, h: 100 });
+    // Em cima do documento de agora: o que mudou no meio do arrasto (nome, peça nova) fica; as posições vêm do início.
+    const agora = criarPeca(mudarPeca(m, 'a', { nome: 'Mudou no meio' }), 'z', 'etapa', 900, 900);
+    const m2 = moverGrupoEm(agora, d, 'g', 47, 13, levar);
+    expect(m2.pecas.find((p) => p.id === 'a')).toMatchObject({ nome: 'Mudou no meio', x: 50, y: 10 });
+    expect(m2.pecas.find((p) => p.id === 'z')).toBeDefined();
+    expect(moverGrupoEm(m2, d, 'g', 47, 13, levar)).toBe(m2);
   });
 
   it('apagar peça leva as ligações; duplicar não', () => {

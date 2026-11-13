@@ -65,7 +65,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **A água passa de novo por um cano já cheio** (voltar ao menu, "fechado, espera e tenta de novo"): o `correu` tira o cano das cheias, senão o quadro desenha o cano cheio, a água nunca chega e o play para.
 - **O PostgREST devolve no máximo 1000 linhas por pedido, calado** (`max_rows`, aqui e no Supabase): a lista de cadastros e o "onde é usado" vêm de 1000 em 1000 (`todas`, no `dados.ts`), e criar um cadastro nunca lê a lista inteira (`acharOuCriarCadastro` tenta criar e, no 23505, busca só os parecidos).
 - **Clicar noutra peça com um campo do painel em foco:** o `pointerdown` muda a seleção antes de o navegador tirar o foco, e o `blur` do campo gravava o texto na peça nova (o React reaproveita o `<input>` quando o valor é igual). O quadro tira o foco do painel antes de selecionar, cada painel tem `key` pela seleção, e o campo grava o que ficou digitado ao desmontar, com o id de antes.
-- **Callback depois de um `await` não pode usar o documento da renderização de antes:** criar um cadastro (ação no servidor) e só então pôr o responsável na peça desfazia o que a pessoa mudou nesse meio-tempo. As mudanças partem de uma ref com o documento mais recente (`docAtual()`), e o arrasto tira a foto do documento no primeiro movimento, não no `pointerdown`.
+- **Callback depois de um `await` não pode usar o documento da renderização de antes:** criar um cadastro (ação no servidor) e só então pôr o responsável na peça desfazia o que a pessoa mudou nesse meio-tempo. As mudanças partem de uma ref com o documento mais recente (`docAtual()`), e cada quadro do arrasto é uma função aplicada ao documento atual (posição absoluta da peça; o grupo leva os de dentro a partir da posição de início), não um documento calculado de uma foto: senão o que chega no meio do arrasto (um responsável criado no servidor, Ctrl+Z, Delete) some no quadro seguinte. Ctrl+Z, Ctrl+Y e Delete no meio do arrasto encerram o arrasto.
 - **Gestos por ponteiro:** guarde o `pointerId` e ignore os outros; `pointercancel` e `lostpointercapture` encerram o gesto (o sistema pode tomar o toque e o `pointerup` nunca chega).
 - **Enter com foco num botão ou link é do botão:** o atalho de renomear (Enter) ignora `button, a, [role=button]…`; a peça trata o próprio Enter no quadro. Botão com só `onPointerDown` não funciona no teclado: o `onClick` com `e.detail === 0` cobre teclado e leitor de tela. Pelo teclado, uma forma da barra cria a peça no centro do quadro visível, já selecionada e com foco (Enter renomeia).
 - **`beforeunload` com o salvamento parado** (conflito, trava, recusa) não pede confirmação: senão "Recarregar" abria o diálogo "sair do site?".
@@ -689,7 +689,7 @@ git commit -m "editor: formas, canos e estilo" -m "$(cat .git/atribuicao.txt)"
 ```ts
 import { describe, expect, it } from 'vitest';
 import { documentoVazio, lerDocumento, type Documento } from '@journey/fluxo';
-import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
+import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverGrupoEm, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
 
 const base = (): Documento => {
   let d = criarPeca(documentoVazio(), 'a', 'inicio', 95, 30);
@@ -812,6 +812,12 @@ describe('editor/documento', () => {
     expect(m.pecas.map((p) => [p.id, p.x, p.y])).toEqual([['a', 50, 10], ['b', 350, 10], ['c', 610, 0]]);
     expect(m.grupos[0]).toMatchObject({ x: 90, y: -80 });
     expect(redimensionarGrupo(m, 'g', 20, 20).grupos[0]).toMatchObject({ w: 160, h: 100 });
+    // Em cima do documento de agora: o que mudou no meio do arrasto (nome, peça nova) fica; as posições vêm do início.
+    const agora = criarPeca(mudarPeca(m, 'a', { nome: 'Mudou no meio' }), 'z', 'etapa', 900, 900);
+    const m2 = moverGrupoEm(agora, d, 'g', 47, 13, levar);
+    expect(m2.pecas.find((p) => p.id === 'a')).toMatchObject({ nome: 'Mudou no meio', x: 50, y: 10 });
+    expect(m2.pecas.find((p) => p.id === 'z')).toBeDefined();
+    expect(moverGrupoEm(m2, d, 'g', 47, 13, levar)).toBe(m2);
   });
 
   it('apagar peça leva as ligações; duplicar não', () => {
@@ -993,17 +999,33 @@ export function conteudoDoGrupo(doc: Documento, id: string): { pecas: string[]; 
  * (o documento de quando o arrasto começou), pra o arredondamento na grade não acumular erro.
  */
 export function moverGrupo(inicio: Documento, id: string, dx: number, dy: number, levar: { pecas: string[]; notas: string[] }): Documento {
+  return moverGrupoEm(inicio, inicio, id, dx, dy, levar);
+}
+
+/**
+ * O mesmo, aplicado em cima de `doc` (o documento de agora): só as posições do grupo e do que ele leva mudam, e
+ * vêm de `inicio` mais o deslocamento. O que mudou no meio do arrasto (um responsável que chegou do servidor, um
+ * nome) fica. Sem mudança, devolve o próprio `doc`.
+ */
+export function moverGrupoEm(doc: Documento, inicio: Documento, id: string, dx: number, dy: number, levar: { pecas: string[]; notas: string[] }): Documento {
   const mx = naGrade(dx);
   const my = naGrade(dy);
-  if (!mx && !my) return inicio;
-  const pecas = new Set(levar.pecas);
-  const notas = new Set(levar.notas);
-  return {
-    ...inicio,
-    grupos: trocar(inicio.grupos, id, (g) => ({ ...g, x: g.x + mx, y: g.y + my })),
-    pecas: inicio.pecas.map((p) => (pecas.has(p.id) ? { ...p, x: p.x + mx, y: p.y + my } : p)),
-    notas: inicio.notas.map((n) => (notas.has(n.id) ? { ...n, x: n.x + mx, y: n.y + my } : n)),
+  const partida = new Map<string, { x: number; y: number }>();
+  const g0 = inicio.grupos.find((g) => g.id === id);
+  if (g0) partida.set(`g:${id}`, g0);
+  for (const p of inicio.pecas) if (levar.pecas.includes(p.id)) partida.set(`p:${p.id}`, p);
+  for (const n of inicio.notas) if (levar.notas.includes(n.id)) partida.set(`n:${n.id}`, n);
+  const levar1 = <T extends { id: string; x: number; y: number }>(lista: T[], pre: string): T[] => {
+    let mudou = false;
+    const nova = lista.map((x) => {
+      const o = partida.get(`${pre}:${x.id}`);
+      if (!o || (x.x === o.x + mx && x.y === o.y + my)) return x;
+      mudou = true;
+      return { ...x, x: o.x + mx, y: o.y + my };
+    });
+    return mudou ? nova : lista;
   };
+  return com(com(com(doc, 'grupos', levar1(doc.grupos, 'g')), 'pecas', levar1(doc.pecas, 'p')), 'notas', levar1(doc.notas, 'n'));
 }
 
 export function redimensionarGrupo(doc: Documento, id: string, w: number, h: number): Documento {
@@ -2965,6 +2987,7 @@ O CSS é o do protótipo, com cada regra dentro de `.editor` (e `.app` virou `.e
 /* A região viva das faixas fica montada mesmo vazia; vazia, não abre o espaço do gap. */
 .editor .cabeca-editor > .vivo { display: grid; gap: 8px; }
 .editor .cabeca-editor > .vivo:empty { margin-bottom: -8px; }
+.editor .grupo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 ```
 
 - [ ] **Passo 2: peças, notas, grupos e o rótulo do cano**
@@ -3064,7 +3087,16 @@ export const NotaNoQuadro = memo(function NotaNoQuadro({ nota: n, selecionada }:
 
 export const GrupoNoQuadro = memo(function GrupoNoQuadro({ grupo: g, selecionado }: { grupo: Grupo; selecionado: boolean }) {
   return (
-    <div className={`grupo${selecionado ? ' sel' : ''}`} data-grupo={g.id} style={{ left: g.x, top: g.y, width: g.w, height: g.h, ...(g.cor && { ['--gc' as string]: g.cor }) }}>
+    <div
+      className={`grupo${selecionado ? ' sel' : ''}`}
+      data-grupo={g.id}
+      style={{ left: g.x, top: g.y, width: g.w, height: g.h, ...(g.cor && { ['--gc' as string]: g.cor }) }}
+      // No Tab como as peças: Enter ou espaço seleciona, Enter no selecionado renomeia (tratado no quadro).
+      role="button"
+      tabIndex={0}
+      aria-label={`Grupo: ${g.nome}`}
+      aria-pressed={selecionado}
+    >
       <span className="g-titulo">{g.nome}</span>
       <span className="alca" data-alca={g.id} />
     </div>
@@ -3211,7 +3243,7 @@ export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string;
 import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { Documento, TipoPeca } from '@journey/fluxo';
 import { Icone } from '@/componentes/Icone';
-import { conteudoDoGrupo, moverGrupo, moverNota, moverPeca, redimensionarGrupo, type Selecao } from '@/editor/documento';
+import { conteudoDoGrupo, moverGrupoEm, moverNota, moverPeca, redimensionarGrupo, type Selecao } from '@/editor/documento';
 import { corDoCanal, type CanalEditor, type Estilo } from '@/editor/estilo';
 import { ancora, caminho, envolvente, geometriaCano } from '@/editor/geometria';
 import { FORMAS, caixaDe } from '@/editor/pecas';
@@ -3228,16 +3260,18 @@ interface Vista {
   k: number;
 }
 
-/** O que o editor pede ao quadro: enquadrar, converter coordenadas, zoom. */
+/** O que o editor pede ao quadro: enquadrar, converter coordenadas, o meio da tela, encerrar um arrasto. */
 export interface QuadroApi {
   enquadrar(ids: string[] | null, animar?: boolean): void;
   paraMundo(cx: number, cy: number): { x: number; y: number };
   contem(cx: number, cy: number): boolean;
   /** O meio da parte visível do quadro, em coordenadas do mundo. */
   centro(): { x: number; y: number };
-  zoom(fator: number): void;
-  /** Abre o menu de formas num ponto da tela. */
-  menu(cx: number, cy: number, titulo: string, aoEscolher: (t: TipoPeca) => void): void;
+  /**
+   * Termina o gesto em andamento onde está (sem ligar nem abrir menu). Desfazer ou apagar no meio de um arrasto
+   * encerra o arrasto: senão o quadro seguinte reaplicaria a posição em cima do que acabou de ser desfeito.
+   */
+  encerrarGesto(): void;
 }
 
 /** O que o quadro pede ao editor. Mexer no documento é sempre pelo editor (histórico e salvamento). */
@@ -3246,8 +3280,12 @@ export interface AcoesQuadro {
   criar(f: TipoPeca | 'grupo' | 'nota', x: number, y: number): void;
   criarLigada(origem: string, tipo: TipoPeca, onde?: { x: number; y: number }): void;
   ligar(de: string, para: string): void;
-  /** Um quadro de arrasto: o primeiro entra no histórico, os seguintes substituem. */
-  mudar(doc: Documento, primeiro: boolean): void;
+  /**
+   * Um quadro de arrasto, como função do documento de AGORA (não de uma cópia do começo do arrasto): o que chega no
+   * meio (um responsável vindo do servidor) não some no quadro seguinte. O primeiro entra no histórico, os seguintes
+   * substituem.
+   */
+  mudar(f: (d: Documento) => Documento, primeiro: boolean): void;
   renomear(id: string | null): void;
   gravarNome(id: string, texto: string): void;
   escolher(conexao: string): void;
@@ -3273,14 +3311,14 @@ export interface PropsQuadro {
 }
 
 /**
- * Um gesto é de um ponteiro só (`ponteiro`): um segundo dedo não mexe no arrasto do primeiro. O documento de partida
- * (`inicio`) é tirado no primeiro movimento de verdade, não no pointerdown: o texto do painel que grava ao perder o
- * foco chega depois do pointerdown, e o arrasto não pode partir de antes dele.
+ * Um gesto é de um ponteiro só (`ponteiro`): um segundo dedo não mexe no arrasto do primeiro. Cada quadro é aplicado
+ * no documento de agora; o grupo guarda só as posições de partida (`inicio`, tirado no primeiro movimento de verdade,
+ * depois do texto do painel que grava ao perder o foco), pra o arredondamento na grade não acumular erro.
  */
 type Gesto = { ponteiro: number } & (
   | { tipo: 'pan'; x0: number; y0: number; vx: number; vy: number }
   | { tipo: 'ligar'; de: string }
-  | { tipo: 'mover'; qual: 'peca' | 'nota'; id: string; dx: number; dy: number; x0: number; y0: number; inicio: Documento | null }
+  | { tipo: 'mover'; qual: 'peca' | 'nota'; id: string; dx: number; dy: number; x0: number; y0: number; moveu: boolean }
   | { tipo: 'grupo'; id: string; wx: number; wy: number; inicio: Documento | null; levar: { pecas: string[]; notas: string[] } | null }
   | { tipo: 'redim'; id: string; moveu: boolean }
 );
@@ -3371,11 +3409,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       return !!r && cx > r.left && cx < r.right && cy > r.top && cy < r.bottom;
     },
     centro: () => paraMundo(...centroTela(palco.current)),
-    zoom: (f) => {
-      const r = palco.current!.getBoundingClientRect();
-      zoomEm((k) => k * f, r.left + r.width / 2, r.top + r.height / 2);
-    },
-    menu: abrirMenu,
+    encerrarGesto: () => cancelar(),
   }));
 
   // Começa mostrando o fluxo inteiro.
@@ -3461,7 +3495,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       if (!(sel?.tipo === qual && sel.id === id)) acoes.selecionar({ tipo: qual, id });
       if (play || soLeitura) return;
       const item = qual === 'peca' ? doc.pecas.find((p) => p.id === id)! : doc.notas.find((n) => n.id === id)!;
-      gesto.current = { ponteiro, tipo: 'mover', qual, id, dx: w.x - item.x, dy: w.y - item.y, x0: e.clientX, y0: e.clientY, inicio: null };
+      gesto.current = { ponteiro, tipo: 'mover', qual, id, dx: w.x - item.x, dy: w.y - item.y, x0: e.clientX, y0: e.clientY, moveu: false };
       return capturar();
     }
     if (rot || alvo) return acoes.selecionar({ tipo: 'conexao', id: (rot ?? alvo)!.dataset.rotulo ?? alvo!.dataset.alvo! });
@@ -3508,27 +3542,32 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     if (g.tipo === 'pan') return setVista((v) => ({ ...v, x: g.vx + e.clientX - g.x0, y: g.vy + e.clientY - g.y0 }));
     if (g.tipo === 'ligar') return moverLigacao(e.clientX, e.clientY);
     if (g.tipo === 'mover') {
-      if (!g.inicio && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 4) return;
-      const primeiro = !g.inicio;
-      g.inicio ??= docRef.current;
+      if (!g.moveu && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 4) return;
+      const primeiro = !g.moveu;
+      g.moveu = true;
+      // Posição absoluta: aplicar no documento de agora não perde nada do que mudou no meio.
       const mover = g.qual === 'peca' ? moverPeca : moverNota;
-      return acoes.mudar(mover(g.inicio, g.id, w.x - g.dx, w.y - g.dy), primeiro);
+      const [id, x, y] = [g.id, w.x - g.dx, w.y - g.dy];
+      return acoes.mudar((d) => mover(d, id, x, y), primeiro);
     }
     if (g.tipo === 'grupo') {
       const dx = w.x - g.wx;
       const dy = w.y - g.wy;
       if (!g.inicio && Math.hypot(dx, dy) < 5) return;
       const primeiro = !g.inicio;
-      g.inicio ??= docRef.current;
-      g.levar ??= conteudoDoGrupo(g.inicio, g.id);
-      return acoes.mudar(moverGrupo(g.inicio, g.id, dx, dy, g.levar), primeiro);
+      const inicio = (g.inicio ??= docRef.current);
+      const levar = (g.levar ??= conteudoDoGrupo(inicio, g.id));
+      const id = g.id;
+      return acoes.mudar((d) => moverGrupoEm(d, inicio, id, dx, dy, levar), primeiro);
     }
     if (g.tipo === 'redim') {
-      const gr = docRef.current.grupos.find((x) => x.id === g.id);
-      if (!gr) return;
       const primeiro = !g.moveu;
       g.moveu = true;
-      acoes.mudar(redimensionarGrupo(docRef.current, g.id, w.x - gr.x, w.y - gr.y), primeiro);
+      const [id, x, y] = [g.id, w.x, w.y];
+      acoes.mudar((d) => {
+        const gr = d.grupos.find((k) => k.id === id);
+        return gr ? redimensionarGrupo(d, id, x - gr.x, y - gr.y) : d;
+      }, primeiro);
     }
   };
 
@@ -3567,8 +3606,8 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
   const ativar = (el: HTMLElement, enter: boolean) => {
     const rotulo = el.dataset.rotulo;
     if (rotulo) return play && el.classList.contains('escolhivel') ? acoes.escolher(rotulo) : acoes.selecionar({ tipo: 'conexao', id: rotulo });
-    const qual = el.dataset.peca ? 'peca' : 'nota';
-    const id = (el.dataset.peca ?? el.dataset.nota)!;
+    const qual = el.dataset.peca ? 'peca' : el.dataset.nota ? 'nota' : 'grupo';
+    const id = (el.dataset.peca ?? el.dataset.nota ?? el.dataset.grupo)!;
     if (!(sel?.tipo === qual && sel.id === id)) return acoes.selecionar({ tipo: qual, id });
     if (enter && !soLeitura && !play) acoes.renomear(id);
   };
@@ -3578,10 +3617,30 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     const el = e.target as HTMLElement;
     // No + o Enter vira clique (abre o menu); não pode chegar no atalho de renomear do editor.
     if (el.dataset.mais) return e.stopPropagation();
-    if (!el.matches('[data-peca], [data-nota], [data-rotulo]')) return;
+    if (!el.matches('[data-peca], [data-nota], [data-grupo], [data-rotulo]')) return;
     e.preventDefault();
     e.stopPropagation();
     ativar(el, e.key === 'Enter');
+  };
+
+  /**
+   * Foco pelo teclado (Tab) numa peça, nota, grupo ou rótulo fora da parte visível: anda o quadro até ele, sem mudar o
+   * zoom. Só no foco de teclado (`:focus-visible`): o foco de um clique não pode mexer o quadro no meio de um arrasto.
+   * Mede no quadro seguinte, depois que o onScroll devolveu o palco a (0, 0) (o navegador rola pra mostrar o foco).
+   */
+  const aoFocar = (e: React.FocusEvent) => {
+    const el = e.target as HTMLElement;
+    if (!el.matches('[data-peca], [data-nota], [data-grupo], [data-rotulo]') || !el.matches(':focus-visible')) return;
+    requestAnimationFrame(() => {
+      const p = palco.current;
+      if (!p || !el.isConnected) return;
+      const r = p.getBoundingClientRect();
+      const b = el.getBoundingClientRect();
+      const m = 40;
+      if (b.left >= r.left + m && b.right <= r.right - m && b.top >= r.top + m && b.bottom <= r.bottom - m) return;
+      const v = vistaRef.current;
+      animar({ k: v.k, x: v.x + r.left + r.width / 2 - (b.left + b.width / 2), y: v.y + r.top + r.height / 2 - (b.top + b.height / 2) }, true);
+    });
   };
 
   // Clique sem ponteiro (o leitor de tela ativando o botão, Enter no +): `detail` 0. O de mouse o pointerdown já tratou.
@@ -3594,7 +3653,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       const r = mais.getBoundingClientRect();
       return abrirMenu(r.right + 6, r.top - 8, 'Próxima peça', (t) => acoes.criarLigada(id, t));
     }
-    const alvo = fim(e.target, '[data-peca], [data-nota], [data-rotulo]');
+    const alvo = fim(e.target, '[data-peca], [data-nota], [data-grupo], [data-rotulo]');
     if (alvo) ativar(alvo, false);
   };
 
@@ -3616,6 +3675,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       onDoubleClick={aoDoisCliques}
       onKeyDown={aoTeclar}
       onClick={aoClicar}
+      onFocus={aoFocar}
       // O palco tem overflow hidden, mas o navegador ainda rola ele pra mostrar um elemento com foco: volta pro lugar.
       onScroll={(e) => {
         e.currentTarget.scrollLeft = 0;
@@ -3762,7 +3822,17 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
       <path d="M0,0 L10,5 L0,10 z" style={{ fill: cor }} />
     </marker>
   );
-  const renomeado = renomeando ? (doc.pecas.find((p) => p.id === renomeando) ?? doc.notas.find((n) => n.id === renomeando)) : undefined;
+  // O campo de nome por cima do que está sendo renomeado: peça (no título), nota (o texto todo) ou grupo (na etiqueta).
+  const campo = ((): { id: string; valor: string; nota: boolean; rotulo: string; x: number; y: number; w: number; h: number | undefined } | null => {
+    if (!renomeando) return null;
+    const p = doc.pecas.find((x) => x.id === renomeando);
+    if (p) return { id: p.id, valor: p.nome, nota: false, rotulo: 'Nome da peça', x: p.x, y: p.tipo === 'decisao' ? p.y + FORMAS.decisao.h / 2 - 18 : p.y + 2, w: FORMAS[p.tipo].w, h: undefined };
+    const n = doc.notas.find((x) => x.id === renomeando);
+    if (n) return { id: n.id, valor: n.texto, nota: true, rotulo: 'Texto da nota', x: n.x, y: n.y + 2, w: n.w, h: n.h };
+    const g = doc.grupos.find((x) => x.id === renomeando);
+    if (g) return { id: g.id, valor: g.nome, nota: false, rotulo: 'Nome do grupo', x: g.x + 10, y: g.y - 18, w: Math.max(140, Math.min(g.w - 20, 280)), h: undefined };
+    return null;
+  })();
 
   return (
     <>
@@ -3846,16 +3916,17 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
             {...(play && { corAgua: cor(play.canal) })}
           />
         ))}
-        {renomeado && (
+        {campo && (
           <CampoNome
-            key={renomeado.id}
-            valor={'nome' in renomeado ? renomeado.nome : renomeado.texto}
-            nota={!('nome' in renomeado)}
-            x={renomeado.x}
-            y={'tipo' in renomeado && renomeado.tipo === 'decisao' ? renomeado.y + FORMAS.decisao.h / 2 - 18 : renomeado.y + 2}
-            w={'tipo' in renomeado ? FORMAS[renomeado.tipo].w : renomeado.w}
-            h={'tipo' in renomeado ? undefined : renomeado.h}
-            aoTerminar={(texto) => (texto === null ? acoes.renomear(null) : acoes.gravarNome(renomeado.id, texto))}
+            key={campo.id}
+            valor={campo.valor}
+            nota={campo.nota}
+            rotulo={campo.rotulo}
+            x={campo.x}
+            y={campo.y}
+            w={campo.w}
+            h={campo.h}
+            aoTerminar={(texto) => (texto === null ? acoes.renomear(null) : acoes.gravarNome(campo.id, texto))}
           />
         )}
       </div>
@@ -3869,7 +3940,25 @@ const centroTela = (el: HTMLElement | null): [number, number] => {
 };
 
 /** O campo de nome em cima da peça (ou o texto da nota). Enter grava, Esc desiste; sair do campo grava. */
-function CampoNome({ valor, nota, x, y, w, h, aoTerminar }: { valor: string; nota: boolean; x: number; y: number; w: number; h: number | undefined; aoTerminar: (texto: string | null) => void }) {
+function CampoNome({
+  valor,
+  nota,
+  rotulo,
+  x,
+  y,
+  w,
+  h,
+  aoTerminar,
+}: {
+  valor: string;
+  nota: boolean;
+  rotulo: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number | undefined;
+  aoTerminar: (texto: string | null) => void;
+}) {
   const feito = useRef(false);
   const fim = (texto: string | null) => {
     if (feito.current) return;
@@ -3880,7 +3969,7 @@ function CampoNome({ valor, nota, x, y, w, h, aoTerminar }: { valor: string; not
     className: 'renomear',
     defaultValue: valor,
     autoFocus: true,
-    'aria-label': nota ? 'Texto da nota' : 'Nome da peça',
+    'aria-label': rotulo,
     style: { left: x, top: y, width: w, height: h ?? 'auto' },
     onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => e.currentTarget.select(),
     onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => fim(e.currentTarget.value),
@@ -5340,6 +5429,8 @@ const RENOVAR_TRAVA = 4 * 60 * 1000;
 const TRAVA_VALE = 9 * 60 * 1000;
 /** Pedido de trava que falhou (rede, 5xx, login): tenta de novo nesse tempo, não só na próxima renovação. */
 const DE_NOVO_TRAVA = 20 * 1000;
+/** Quanto espera a resposta do pegar_trava antes de desistir (e tratar como sem rede). */
+const LIMITE_TRAVA = 15 * 1000;
 
 /**
  * pegando: abrindo; minha: edita; outra: alguém editando (o banco disse); incerta: não deu pra confirmar com o banco
@@ -5366,18 +5457,23 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const estiloVisto = useMemo(() => (velocidadeVista === null ? estilo : { ...estilo, velocidade: velocidadeVista }), [estilo, velocidadeVista]);
   const [dados, setDados] = useState<DadosFluxo>({ nome: fluxo.nome, descricao: fluxo.descricao, canal: fluxo.canal, meta_s: fluxo.meta_s });
   // O mais recente, sem esperar o próximo desenho: uma ação chamada depois de um await (ou de um menu aberto antes)
-  // traz o `doc` do desenho em que nasceu, e gravar em cima dele apagaria o que mudou nesse meio-tempo.
+  // traz o `doc` do desenho em que nasceu, e gravar em cima dele apagaria o que mudou nesse meio-tempo. Os refs só
+  // mudam junto com o estado (mudarHist, mudarEstilo, mudarDados), nunca no desenho: um desenho atrasado não volta
+  // o ref pra trás.
   const histRef = useRef(hist);
-  histRef.current = hist;
   const estiloRef = useRef(estilo);
-  estiloRef.current = estilo;
   const dadosRef = useRef(dados);
-  dadosRef.current = dados;
   const docAtual = () => histRef.current.atual;
   const mudarHist = (h: Historico) => {
     histRef.current = h;
     setHist(h);
   };
+  const trocarEstilo = (e: Estilo) => {
+    estiloRef.current = e;
+    setEstilo(e);
+  };
+  /** O último histórico que um quadro de arrasto escreveu: se a cabeça mudou depois dele, o próximo quadro é passo novo. */
+  const ultimoQuadro = useRef<Historico | null>(null);
   const [cadastros, setCadastros] = useState<readonly Cadastro[]>(cadastrosIniciais);
   const [sel, setSel] = useState<D.Selecao>(null);
   const [ferramenta, setFerramenta] = useState<Ferramenta>('selecionar');
@@ -5447,11 +5543,17 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       pedindo = true;
       clearTimeout(deNovo);
       let r: { data: unknown; error: unknown };
+      // Um pedido que nunca responde (conexão morta) seguraria o `pedindo` pra sempre e nenhuma renovação sairia mais:
+      // em 15 s desiste e conta como falha de rede. Com setTimeout (e não AbortSignal.timeout) pra seguir o mesmo
+      // relógio dos outros temporizadores.
+      const ctl = new AbortController();
+      const limite = setTimeout(() => ctl.abort(), LIMITE_TRAVA);
       try {
-        r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id });
+        r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id }).abortSignal(ctl.signal);
       } catch (erro) {
         r = { data: null, error: erro };
       } finally {
+        clearTimeout(limite);
         pedindo = false;
       }
       if (!vivo) return;
@@ -5556,7 +5658,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     const orfas = documento.pecas.filter((p) => p.responsavel && !existem.has(p.responsavel));
     for (const p of orfas) documento = D.mudarPeca(documento, p.id, { responsavel: undefined });
     mudarHist(comecar(documento));
-    setEstilo(lerEstilo(copia.estilo));
+    trocarEstilo(lerEstilo(copia.estilo));
     salv.current!.mudou(documento, lerEstilo(copia.estilo));
     avisar(
       orfas.length
@@ -5585,8 +5687,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   // Em só leitura o estilo não muda: mudaria aqui e iria junto no primeiro salvamento depois de pegar a trava.
   const mudarEstilo = (e: Estilo) => {
     if (vivo.current.soLeitura) return;
-    estiloRef.current = e;
-    setEstilo(e);
+    trocarEstilo(e);
     setVelocidadeVista(null);
     salv.current!.mudou(docAtual(), e);
   };
@@ -5788,12 +5889,16 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     if ((e.target as Element | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    // Desfazer, refazer e apagar no meio de um arrasto encerram o arrasto (a peça fica onde está): senão o quadro
+    // seguinte reaplicaria a posição em cima do que acabou de ser desfeito ou apagado.
     if (mod && k === 'z') {
       e.preventDefault();
+      quadro.current?.encerrarGesto();
       return historia(e.shiftKey ? refazer : desfazer);
     }
     if (mod && k === 'y') {
       e.preventDefault();
+      quadro.current?.encerrarGesto();
       return historia(refazer);
     }
     if (mod && k === 'd' && sel?.tipo === 'peca') {
@@ -5810,6 +5915,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !play) {
       e.preventDefault();
+      quadro.current?.encerrarGesto();
       return apagarSelecao();
     }
     if (e.key === 'Escape') {
@@ -6024,9 +6130,17 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             criar,
             criarLigada,
             ligar,
-            mudar: (d, primeiro) => {
-              if (soLeitura) return;
-              mudarHist(primeiro ? registrar(histRef.current, d) : substituir(histRef.current, d));
+            mudar: (f, primeiro) => {
+              if (vivo.current.soLeitura) return;
+              const h = histRef.current;
+              const d = f(h.atual);
+              if (d === h.atual) return;
+              // Um passo por arrasto: o primeiro quadro registra, os seguintes substituem a cabeça. Mas se algo entrou
+              // no histórico no meio (um responsável que chegou do servidor), a cabeça não é mais deste arrasto:
+              // substituir apagaria esse passo do desfazer, então o quadro vira passo novo.
+              const novo = primeiro || ultimoQuadro.current !== h ? registrar(h, d) : substituir(h, d);
+              ultimoQuadro.current = novo;
+              mudarHist(novo);
               salv.current!.mudou(d, estiloRef.current);
             },
             renomear: setRenomeando,
@@ -6037,7 +6151,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
               if (!t) return;
               if (d.pecas.some((p) => p.id === id)) {
                 if (d.pecas.find((p) => p.id === id)!.nome !== t) editar(D.mudarPeca(d, id, { nome: t }));
-              } else if (d.notas.find((n) => n.id === id)?.texto !== t) editar(D.mudarNota(d, id, { texto: t }));
+              } else if (d.grupos.some((g) => g.id === id)) {
+                if (d.grupos.find((g) => g.id === id)!.nome !== t) editar(D.mudarGrupo(d, id, { nome: t }));
+              } else if (d.notas.some((n) => n.id === id) && d.notas.find((n) => n.id === id)!.texto !== t) editar(D.mudarNota(d, id, { texto: t }));
             },
             escolher,
             usarFerramenta: setFerramenta,
@@ -6146,6 +6262,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
 
 ```tsx
 import type { Metadata } from 'next';
+import { unstable_rethrow } from 'next/navigation';
 import { cache } from 'react';
 import { Editor } from '@/componentes/editor/Editor';
 import { cadastros, canais, fluxoParaEditar, tiposCadastro } from '@/lib/dados';
@@ -6158,8 +6275,15 @@ const fluxoDoPedido = cache(fluxoParaEditar);
 /** O nome do fluxo no título da aba (no editor, ele acompanha quando renomeia). */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { empresa, fluxo } = await params;
-  const f = await fluxoDoPedido(empresa, fluxo);
-  return { title: `${f.nome} · Journey` };
+  try {
+    const f = await fluxoDoPedido(empresa, fluxo);
+    return { title: `${f.nome} · Journey` };
+  } catch (erro) {
+    // notFound e redirect (login vencido) seguem pro Next; um documento que não abre fica com o título genérico e a
+    // página de erro do fluxo aparece pelo erro da própria página (aqui ele deixava a aba sem título).
+    unstable_rethrow(erro);
+    return { title: 'Editor · Journey' };
+  }
 }
 
 export default async function PaginaEditor({ params }: Props) {
@@ -6639,6 +6763,10 @@ export function TabelaCadastros({
                         className="entrada-texto"
                         defaultValue={k.nome}
                         aria-label={`Nome de ${k.nome}`}
+                        // Enquanto o renomear desta linha está no ar, o campo não aceita outro: um segundo nome seria
+                        // descartado calado (o `fazer` ignora a chave ocupada).
+                        readOnly={!!ocupados[`renomear:${k.id}`]}
+                        aria-busy={ocupados[`renomear:${k.id}`] ? true : undefined}
                         onBlur={(e) => {
                           const campo = e.currentTarget;
                           const v = campo.value.trim();

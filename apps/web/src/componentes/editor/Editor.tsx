@@ -37,6 +37,8 @@ const RENOVAR_TRAVA = 4 * 60 * 1000;
 const TRAVA_VALE = 9 * 60 * 1000;
 /** Pedido de trava que falhou (rede, 5xx, login): tenta de novo nesse tempo, não só na próxima renovação. */
 const DE_NOVO_TRAVA = 20 * 1000;
+/** Quanto espera a resposta do pegar_trava antes de desistir (e tratar como sem rede). */
+const LIMITE_TRAVA = 15 * 1000;
 
 /**
  * pegando: abrindo; minha: edita; outra: alguém editando (o banco disse); incerta: não deu pra confirmar com o banco
@@ -63,18 +65,23 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const estiloVisto = useMemo(() => (velocidadeVista === null ? estilo : { ...estilo, velocidade: velocidadeVista }), [estilo, velocidadeVista]);
   const [dados, setDados] = useState<DadosFluxo>({ nome: fluxo.nome, descricao: fluxo.descricao, canal: fluxo.canal, meta_s: fluxo.meta_s });
   // O mais recente, sem esperar o próximo desenho: uma ação chamada depois de um await (ou de um menu aberto antes)
-  // traz o `doc` do desenho em que nasceu, e gravar em cima dele apagaria o que mudou nesse meio-tempo.
+  // traz o `doc` do desenho em que nasceu, e gravar em cima dele apagaria o que mudou nesse meio-tempo. Os refs só
+  // mudam junto com o estado (mudarHist, mudarEstilo, mudarDados), nunca no desenho: um desenho atrasado não volta
+  // o ref pra trás.
   const histRef = useRef(hist);
-  histRef.current = hist;
   const estiloRef = useRef(estilo);
-  estiloRef.current = estilo;
   const dadosRef = useRef(dados);
-  dadosRef.current = dados;
   const docAtual = () => histRef.current.atual;
   const mudarHist = (h: Historico) => {
     histRef.current = h;
     setHist(h);
   };
+  const trocarEstilo = (e: Estilo) => {
+    estiloRef.current = e;
+    setEstilo(e);
+  };
+  /** O último histórico que um quadro de arrasto escreveu: se a cabeça mudou depois dele, o próximo quadro é passo novo. */
+  const ultimoQuadro = useRef<Historico | null>(null);
   const [cadastros, setCadastros] = useState<readonly Cadastro[]>(cadastrosIniciais);
   const [sel, setSel] = useState<D.Selecao>(null);
   const [ferramenta, setFerramenta] = useState<Ferramenta>('selecionar');
@@ -144,11 +151,17 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       pedindo = true;
       clearTimeout(deNovo);
       let r: { data: unknown; error: unknown };
+      // Um pedido que nunca responde (conexão morta) seguraria o `pedindo` pra sempre e nenhuma renovação sairia mais:
+      // em 15 s desiste e conta como falha de rede. Com setTimeout (e não AbortSignal.timeout) pra seguir o mesmo
+      // relógio dos outros temporizadores.
+      const ctl = new AbortController();
+      const limite = setTimeout(() => ctl.abort(), LIMITE_TRAVA);
       try {
-        r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id });
+        r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id }).abortSignal(ctl.signal);
       } catch (erro) {
         r = { data: null, error: erro };
       } finally {
+        clearTimeout(limite);
         pedindo = false;
       }
       if (!vivo) return;
@@ -253,7 +266,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     const orfas = documento.pecas.filter((p) => p.responsavel && !existem.has(p.responsavel));
     for (const p of orfas) documento = D.mudarPeca(documento, p.id, { responsavel: undefined });
     mudarHist(comecar(documento));
-    setEstilo(lerEstilo(copia.estilo));
+    trocarEstilo(lerEstilo(copia.estilo));
     salv.current!.mudou(documento, lerEstilo(copia.estilo));
     avisar(
       orfas.length
@@ -282,8 +295,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   // Em só leitura o estilo não muda: mudaria aqui e iria junto no primeiro salvamento depois de pegar a trava.
   const mudarEstilo = (e: Estilo) => {
     if (vivo.current.soLeitura) return;
-    estiloRef.current = e;
-    setEstilo(e);
+    trocarEstilo(e);
     setVelocidadeVista(null);
     salv.current!.mudou(docAtual(), e);
   };
@@ -485,12 +497,16 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     if ((e.target as Element | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    // Desfazer, refazer e apagar no meio de um arrasto encerram o arrasto (a peça fica onde está): senão o quadro
+    // seguinte reaplicaria a posição em cima do que acabou de ser desfeito ou apagado.
     if (mod && k === 'z') {
       e.preventDefault();
+      quadro.current?.encerrarGesto();
       return historia(e.shiftKey ? refazer : desfazer);
     }
     if (mod && k === 'y') {
       e.preventDefault();
+      quadro.current?.encerrarGesto();
       return historia(refazer);
     }
     if (mod && k === 'd' && sel?.tipo === 'peca') {
@@ -507,6 +523,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !play) {
       e.preventDefault();
+      quadro.current?.encerrarGesto();
       return apagarSelecao();
     }
     if (e.key === 'Escape') {
@@ -721,9 +738,17 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             criar,
             criarLigada,
             ligar,
-            mudar: (d, primeiro) => {
-              if (soLeitura) return;
-              mudarHist(primeiro ? registrar(histRef.current, d) : substituir(histRef.current, d));
+            mudar: (f, primeiro) => {
+              if (vivo.current.soLeitura) return;
+              const h = histRef.current;
+              const d = f(h.atual);
+              if (d === h.atual) return;
+              // Um passo por arrasto: o primeiro quadro registra, os seguintes substituem a cabeça. Mas se algo entrou
+              // no histórico no meio (um responsável que chegou do servidor), a cabeça não é mais deste arrasto:
+              // substituir apagaria esse passo do desfazer, então o quadro vira passo novo.
+              const novo = primeiro || ultimoQuadro.current !== h ? registrar(h, d) : substituir(h, d);
+              ultimoQuadro.current = novo;
+              mudarHist(novo);
               salv.current!.mudou(d, estiloRef.current);
             },
             renomear: setRenomeando,
@@ -734,7 +759,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
               if (!t) return;
               if (d.pecas.some((p) => p.id === id)) {
                 if (d.pecas.find((p) => p.id === id)!.nome !== t) editar(D.mudarPeca(d, id, { nome: t }));
-              } else if (d.notas.find((n) => n.id === id)?.texto !== t) editar(D.mudarNota(d, id, { texto: t }));
+              } else if (d.grupos.some((g) => g.id === id)) {
+                if (d.grupos.find((g) => g.id === id)!.nome !== t) editar(D.mudarGrupo(d, id, { nome: t }));
+              } else if (d.notas.some((n) => n.id === id) && d.notas.find((n) => n.id === id)!.texto !== t) editar(D.mudarNota(d, id, { texto: t }));
             },
             escolher,
             usarFerramenta: setFerramenta,

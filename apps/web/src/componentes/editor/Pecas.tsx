@@ -90,7 +90,16 @@ export const NotaNoQuadro = memo(function NotaNoQuadro({ nota: n, selecionada }:
 
 export const GrupoNoQuadro = memo(function GrupoNoQuadro({ grupo: g, selecionado }: { grupo: Grupo; selecionado: boolean }) {
   return (
-    <div className={`grupo${selecionado ? ' sel' : ''}`} data-grupo={g.id} style={{ left: g.x, top: g.y, width: g.w, height: g.h, ...(g.cor && { ['--gc' as string]: g.cor }) }}>
+    <div
+      className={`grupo${selecionado ? ' sel' : ''}`}
+      data-grupo={g.id}
+      style={{ left: g.x, top: g.y, width: g.w, height: g.h, ...(g.cor && { ['--gc' as string]: g.cor }) }}
+      // No Tab como as peças: Enter ou espaço seleciona, Enter no selecionado renomeia (tratado no quadro).
+      role="button"
+      tabIndex={0}
+      aria-label={`Grupo: ${g.nome}`}
+      aria-pressed={selecionado}
+    >
       <span className="g-titulo">{g.nome}</span>
       <span className="alca" data-alca={g.id} />
     </div>

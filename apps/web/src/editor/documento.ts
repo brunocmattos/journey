@@ -117,17 +117,33 @@ export function conteudoDoGrupo(doc: Documento, id: string): { pecas: string[]; 
  * (o documento de quando o arrasto começou), pra o arredondamento na grade não acumular erro.
  */
 export function moverGrupo(inicio: Documento, id: string, dx: number, dy: number, levar: { pecas: string[]; notas: string[] }): Documento {
+  return moverGrupoEm(inicio, inicio, id, dx, dy, levar);
+}
+
+/**
+ * O mesmo, aplicado em cima de `doc` (o documento de agora): só as posições do grupo e do que ele leva mudam, e
+ * vêm de `inicio` mais o deslocamento. O que mudou no meio do arrasto (um responsável que chegou do servidor, um
+ * nome) fica. Sem mudança, devolve o próprio `doc`.
+ */
+export function moverGrupoEm(doc: Documento, inicio: Documento, id: string, dx: number, dy: number, levar: { pecas: string[]; notas: string[] }): Documento {
   const mx = naGrade(dx);
   const my = naGrade(dy);
-  if (!mx && !my) return inicio;
-  const pecas = new Set(levar.pecas);
-  const notas = new Set(levar.notas);
-  return {
-    ...inicio,
-    grupos: trocar(inicio.grupos, id, (g) => ({ ...g, x: g.x + mx, y: g.y + my })),
-    pecas: inicio.pecas.map((p) => (pecas.has(p.id) ? { ...p, x: p.x + mx, y: p.y + my } : p)),
-    notas: inicio.notas.map((n) => (notas.has(n.id) ? { ...n, x: n.x + mx, y: n.y + my } : n)),
+  const partida = new Map<string, { x: number; y: number }>();
+  const g0 = inicio.grupos.find((g) => g.id === id);
+  if (g0) partida.set(`g:${id}`, g0);
+  for (const p of inicio.pecas) if (levar.pecas.includes(p.id)) partida.set(`p:${p.id}`, p);
+  for (const n of inicio.notas) if (levar.notas.includes(n.id)) partida.set(`n:${n.id}`, n);
+  const levar1 = <T extends { id: string; x: number; y: number }>(lista: T[], pre: string): T[] => {
+    let mudou = false;
+    const nova = lista.map((x) => {
+      const o = partida.get(`${pre}:${x.id}`);
+      if (!o || (x.x === o.x + mx && x.y === o.y + my)) return x;
+      mudou = true;
+      return { ...x, x: o.x + mx, y: o.y + my };
+    });
+    return mudou ? nova : lista;
   };
+  return com(com(com(doc, 'grupos', levar1(doc.grupos, 'g')), 'pecas', levar1(doc.pecas, 'p')), 'notas', levar1(doc.notas, 'n'));
 }
 
 export function redimensionarGrupo(doc: Documento, id: string, w: number, h: number): Documento {

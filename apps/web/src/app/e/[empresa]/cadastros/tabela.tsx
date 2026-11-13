@@ -98,6 +98,10 @@ export function TabelaCadastros({
                         className="entrada-texto"
                         defaultValue={k.nome}
                         aria-label={`Nome de ${k.nome}`}
+                        // Enquanto o renomear desta linha está no ar, o campo não aceita outro: um segundo nome seria
+                        // descartado calado (o `fazer` ignora a chave ocupada).
+                        readOnly={!!ocupados[`renomear:${k.id}`]}
+                        aria-busy={ocupados[`renomear:${k.id}`] ? true : undefined}
                         onBlur={(e) => {
                           const campo = e.currentTarget;
                           const v = campo.value.trim();

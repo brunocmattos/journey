@@ -3,7 +3,7 @@
 import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { Documento, TipoPeca } from '@journey/fluxo';
 import { Icone } from '@/componentes/Icone';
-import { conteudoDoGrupo, moverGrupo, moverNota, moverPeca, redimensionarGrupo, type Selecao } from '@/editor/documento';
+import { conteudoDoGrupo, moverGrupoEm, moverNota, moverPeca, redimensionarGrupo, type Selecao } from '@/editor/documento';
 import { corDoCanal, type CanalEditor, type Estilo } from '@/editor/estilo';
 import { ancora, caminho, envolvente, geometriaCano } from '@/editor/geometria';
 import { FORMAS, caixaDe } from '@/editor/pecas';
@@ -20,16 +20,18 @@ interface Vista {
   k: number;
 }
 
-/** O que o editor pede ao quadro: enquadrar, converter coordenadas, zoom. */
+/** O que o editor pede ao quadro: enquadrar, converter coordenadas, o meio da tela, encerrar um arrasto. */
 export interface QuadroApi {
   enquadrar(ids: string[] | null, animar?: boolean): void;
   paraMundo(cx: number, cy: number): { x: number; y: number };
   contem(cx: number, cy: number): boolean;
   /** O meio da parte visível do quadro, em coordenadas do mundo. */
   centro(): { x: number; y: number };
-  zoom(fator: number): void;
-  /** Abre o menu de formas num ponto da tela. */
-  menu(cx: number, cy: number, titulo: string, aoEscolher: (t: TipoPeca) => void): void;
+  /**
+   * Termina o gesto em andamento onde está (sem ligar nem abrir menu). Desfazer ou apagar no meio de um arrasto
+   * encerra o arrasto: senão o quadro seguinte reaplicaria a posição em cima do que acabou de ser desfeito.
+   */
+  encerrarGesto(): void;
 }
 
 /** O que o quadro pede ao editor. Mexer no documento é sempre pelo editor (histórico e salvamento). */
@@ -38,8 +40,12 @@ export interface AcoesQuadro {
   criar(f: TipoPeca | 'grupo' | 'nota', x: number, y: number): void;
   criarLigada(origem: string, tipo: TipoPeca, onde?: { x: number; y: number }): void;
   ligar(de: string, para: string): void;
-  /** Um quadro de arrasto: o primeiro entra no histórico, os seguintes substituem. */
-  mudar(doc: Documento, primeiro: boolean): void;
+  /**
+   * Um quadro de arrasto, como função do documento de AGORA (não de uma cópia do começo do arrasto): o que chega no
+   * meio (um responsável vindo do servidor) não some no quadro seguinte. O primeiro entra no histórico, os seguintes
+   * substituem.
+   */
+  mudar(f: (d: Documento) => Documento, primeiro: boolean): void;
   renomear(id: string | null): void;
   gravarNome(id: string, texto: string): void;
   escolher(conexao: string): void;
@@ -65,14 +71,14 @@ export interface PropsQuadro {
 }
 
 /**
- * Um gesto é de um ponteiro só (`ponteiro`): um segundo dedo não mexe no arrasto do primeiro. O documento de partida
- * (`inicio`) é tirado no primeiro movimento de verdade, não no pointerdown: o texto do painel que grava ao perder o
- * foco chega depois do pointerdown, e o arrasto não pode partir de antes dele.
+ * Um gesto é de um ponteiro só (`ponteiro`): um segundo dedo não mexe no arrasto do primeiro. Cada quadro é aplicado
+ * no documento de agora; o grupo guarda só as posições de partida (`inicio`, tirado no primeiro movimento de verdade,
+ * depois do texto do painel que grava ao perder o foco), pra o arredondamento na grade não acumular erro.
  */
 type Gesto = { ponteiro: number } & (
   | { tipo: 'pan'; x0: number; y0: number; vx: number; vy: number }
   | { tipo: 'ligar'; de: string }
-  | { tipo: 'mover'; qual: 'peca' | 'nota'; id: string; dx: number; dy: number; x0: number; y0: number; inicio: Documento | null }
+  | { tipo: 'mover'; qual: 'peca' | 'nota'; id: string; dx: number; dy: number; x0: number; y0: number; moveu: boolean }
   | { tipo: 'grupo'; id: string; wx: number; wy: number; inicio: Documento | null; levar: { pecas: string[]; notas: string[] } | null }
   | { tipo: 'redim'; id: string; moveu: boolean }
 );
@@ -163,11 +169,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       return !!r && cx > r.left && cx < r.right && cy > r.top && cy < r.bottom;
     },
     centro: () => paraMundo(...centroTela(palco.current)),
-    zoom: (f) => {
-      const r = palco.current!.getBoundingClientRect();
-      zoomEm((k) => k * f, r.left + r.width / 2, r.top + r.height / 2);
-    },
-    menu: abrirMenu,
+    encerrarGesto: () => cancelar(),
   }));
 
   // Começa mostrando o fluxo inteiro.
@@ -253,7 +255,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       if (!(sel?.tipo === qual && sel.id === id)) acoes.selecionar({ tipo: qual, id });
       if (play || soLeitura) return;
       const item = qual === 'peca' ? doc.pecas.find((p) => p.id === id)! : doc.notas.find((n) => n.id === id)!;
-      gesto.current = { ponteiro, tipo: 'mover', qual, id, dx: w.x - item.x, dy: w.y - item.y, x0: e.clientX, y0: e.clientY, inicio: null };
+      gesto.current = { ponteiro, tipo: 'mover', qual, id, dx: w.x - item.x, dy: w.y - item.y, x0: e.clientX, y0: e.clientY, moveu: false };
       return capturar();
     }
     if (rot || alvo) return acoes.selecionar({ tipo: 'conexao', id: (rot ?? alvo)!.dataset.rotulo ?? alvo!.dataset.alvo! });
@@ -300,27 +302,32 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     if (g.tipo === 'pan') return setVista((v) => ({ ...v, x: g.vx + e.clientX - g.x0, y: g.vy + e.clientY - g.y0 }));
     if (g.tipo === 'ligar') return moverLigacao(e.clientX, e.clientY);
     if (g.tipo === 'mover') {
-      if (!g.inicio && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 4) return;
-      const primeiro = !g.inicio;
-      g.inicio ??= docRef.current;
+      if (!g.moveu && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 4) return;
+      const primeiro = !g.moveu;
+      g.moveu = true;
+      // Posição absoluta: aplicar no documento de agora não perde nada do que mudou no meio.
       const mover = g.qual === 'peca' ? moverPeca : moverNota;
-      return acoes.mudar(mover(g.inicio, g.id, w.x - g.dx, w.y - g.dy), primeiro);
+      const [id, x, y] = [g.id, w.x - g.dx, w.y - g.dy];
+      return acoes.mudar((d) => mover(d, id, x, y), primeiro);
     }
     if (g.tipo === 'grupo') {
       const dx = w.x - g.wx;
       const dy = w.y - g.wy;
       if (!g.inicio && Math.hypot(dx, dy) < 5) return;
       const primeiro = !g.inicio;
-      g.inicio ??= docRef.current;
-      g.levar ??= conteudoDoGrupo(g.inicio, g.id);
-      return acoes.mudar(moverGrupo(g.inicio, g.id, dx, dy, g.levar), primeiro);
+      const inicio = (g.inicio ??= docRef.current);
+      const levar = (g.levar ??= conteudoDoGrupo(inicio, g.id));
+      const id = g.id;
+      return acoes.mudar((d) => moverGrupoEm(d, inicio, id, dx, dy, levar), primeiro);
     }
     if (g.tipo === 'redim') {
-      const gr = docRef.current.grupos.find((x) => x.id === g.id);
-      if (!gr) return;
       const primeiro = !g.moveu;
       g.moveu = true;
-      acoes.mudar(redimensionarGrupo(docRef.current, g.id, w.x - gr.x, w.y - gr.y), primeiro);
+      const [id, x, y] = [g.id, w.x, w.y];
+      acoes.mudar((d) => {
+        const gr = d.grupos.find((k) => k.id === id);
+        return gr ? redimensionarGrupo(d, id, x - gr.x, y - gr.y) : d;
+      }, primeiro);
     }
   };
 
@@ -359,8 +366,8 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
   const ativar = (el: HTMLElement, enter: boolean) => {
     const rotulo = el.dataset.rotulo;
     if (rotulo) return play && el.classList.contains('escolhivel') ? acoes.escolher(rotulo) : acoes.selecionar({ tipo: 'conexao', id: rotulo });
-    const qual = el.dataset.peca ? 'peca' : 'nota';
-    const id = (el.dataset.peca ?? el.dataset.nota)!;
+    const qual = el.dataset.peca ? 'peca' : el.dataset.nota ? 'nota' : 'grupo';
+    const id = (el.dataset.peca ?? el.dataset.nota ?? el.dataset.grupo)!;
     if (!(sel?.tipo === qual && sel.id === id)) return acoes.selecionar({ tipo: qual, id });
     if (enter && !soLeitura && !play) acoes.renomear(id);
   };
@@ -370,10 +377,30 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     const el = e.target as HTMLElement;
     // No + o Enter vira clique (abre o menu); não pode chegar no atalho de renomear do editor.
     if (el.dataset.mais) return e.stopPropagation();
-    if (!el.matches('[data-peca], [data-nota], [data-rotulo]')) return;
+    if (!el.matches('[data-peca], [data-nota], [data-grupo], [data-rotulo]')) return;
     e.preventDefault();
     e.stopPropagation();
     ativar(el, e.key === 'Enter');
+  };
+
+  /**
+   * Foco pelo teclado (Tab) numa peça, nota, grupo ou rótulo fora da parte visível: anda o quadro até ele, sem mudar o
+   * zoom. Só no foco de teclado (`:focus-visible`): o foco de um clique não pode mexer o quadro no meio de um arrasto.
+   * Mede no quadro seguinte, depois que o onScroll devolveu o palco a (0, 0) (o navegador rola pra mostrar o foco).
+   */
+  const aoFocar = (e: React.FocusEvent) => {
+    const el = e.target as HTMLElement;
+    if (!el.matches('[data-peca], [data-nota], [data-grupo], [data-rotulo]') || !el.matches(':focus-visible')) return;
+    requestAnimationFrame(() => {
+      const p = palco.current;
+      if (!p || !el.isConnected) return;
+      const r = p.getBoundingClientRect();
+      const b = el.getBoundingClientRect();
+      const m = 40;
+      if (b.left >= r.left + m && b.right <= r.right - m && b.top >= r.top + m && b.bottom <= r.bottom - m) return;
+      const v = vistaRef.current;
+      animar({ k: v.k, x: v.x + r.left + r.width / 2 - (b.left + b.width / 2), y: v.y + r.top + r.height / 2 - (b.top + b.height / 2) }, true);
+    });
   };
 
   // Clique sem ponteiro (o leitor de tela ativando o botão, Enter no +): `detail` 0. O de mouse o pointerdown já tratou.
@@ -386,7 +413,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       const r = mais.getBoundingClientRect();
       return abrirMenu(r.right + 6, r.top - 8, 'Próxima peça', (t) => acoes.criarLigada(id, t));
     }
-    const alvo = fim(e.target, '[data-peca], [data-nota], [data-rotulo]');
+    const alvo = fim(e.target, '[data-peca], [data-nota], [data-grupo], [data-rotulo]');
     if (alvo) ativar(alvo, false);
   };
 
@@ -408,6 +435,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       onDoubleClick={aoDoisCliques}
       onKeyDown={aoTeclar}
       onClick={aoClicar}
+      onFocus={aoFocar}
       // O palco tem overflow hidden, mas o navegador ainda rola ele pra mostrar um elemento com foco: volta pro lugar.
       onScroll={(e) => {
         e.currentTarget.scrollLeft = 0;
@@ -554,7 +582,17 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
       <path d="M0,0 L10,5 L0,10 z" style={{ fill: cor }} />
     </marker>
   );
-  const renomeado = renomeando ? (doc.pecas.find((p) => p.id === renomeando) ?? doc.notas.find((n) => n.id === renomeando)) : undefined;
+  // O campo de nome por cima do que está sendo renomeado: peça (no título), nota (o texto todo) ou grupo (na etiqueta).
+  const campo = ((): { id: string; valor: string; nota: boolean; rotulo: string; x: number; y: number; w: number; h: number | undefined } | null => {
+    if (!renomeando) return null;
+    const p = doc.pecas.find((x) => x.id === renomeando);
+    if (p) return { id: p.id, valor: p.nome, nota: false, rotulo: 'Nome da peça', x: p.x, y: p.tipo === 'decisao' ? p.y + FORMAS.decisao.h / 2 - 18 : p.y + 2, w: FORMAS[p.tipo].w, h: undefined };
+    const n = doc.notas.find((x) => x.id === renomeando);
+    if (n) return { id: n.id, valor: n.texto, nota: true, rotulo: 'Texto da nota', x: n.x, y: n.y + 2, w: n.w, h: n.h };
+    const g = doc.grupos.find((x) => x.id === renomeando);
+    if (g) return { id: g.id, valor: g.nome, nota: false, rotulo: 'Nome do grupo', x: g.x + 10, y: g.y - 18, w: Math.max(140, Math.min(g.w - 20, 280)), h: undefined };
+    return null;
+  })();
 
   return (
     <>
@@ -638,16 +676,17 @@ const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadast
             {...(play && { corAgua: cor(play.canal) })}
           />
         ))}
-        {renomeado && (
+        {campo && (
           <CampoNome
-            key={renomeado.id}
-            valor={'nome' in renomeado ? renomeado.nome : renomeado.texto}
-            nota={!('nome' in renomeado)}
-            x={renomeado.x}
-            y={'tipo' in renomeado && renomeado.tipo === 'decisao' ? renomeado.y + FORMAS.decisao.h / 2 - 18 : renomeado.y + 2}
-            w={'tipo' in renomeado ? FORMAS[renomeado.tipo].w : renomeado.w}
-            h={'tipo' in renomeado ? undefined : renomeado.h}
-            aoTerminar={(texto) => (texto === null ? acoes.renomear(null) : acoes.gravarNome(renomeado.id, texto))}
+            key={campo.id}
+            valor={campo.valor}
+            nota={campo.nota}
+            rotulo={campo.rotulo}
+            x={campo.x}
+            y={campo.y}
+            w={campo.w}
+            h={campo.h}
+            aoTerminar={(texto) => (texto === null ? acoes.renomear(null) : acoes.gravarNome(campo.id, texto))}
           />
         )}
       </div>
@@ -661,7 +700,25 @@ const centroTela = (el: HTMLElement | null): [number, number] => {
 };
 
 /** O campo de nome em cima da peça (ou o texto da nota). Enter grava, Esc desiste; sair do campo grava. */
-function CampoNome({ valor, nota, x, y, w, h, aoTerminar }: { valor: string; nota: boolean; x: number; y: number; w: number; h: number | undefined; aoTerminar: (texto: string | null) => void }) {
+function CampoNome({
+  valor,
+  nota,
+  rotulo,
+  x,
+  y,
+  w,
+  h,
+  aoTerminar,
+}: {
+  valor: string;
+  nota: boolean;
+  rotulo: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number | undefined;
+  aoTerminar: (texto: string | null) => void;
+}) {
   const feito = useRef(false);
   const fim = (texto: string | null) => {
     if (feito.current) return;
@@ -672,7 +729,7 @@ function CampoNome({ valor, nota, x, y, w, h, aoTerminar }: { valor: string; not
     className: 'renomear',
     defaultValue: valor,
     autoFocus: true,
-    'aria-label': nota ? 'Texto da nota' : 'Nome da peça',
+    'aria-label': rotulo,
     style: { left: x, top: y, width: w, height: h ?? 'auto' },
     onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => e.currentTarget.select(),
     onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => fim(e.currentTarget.value),

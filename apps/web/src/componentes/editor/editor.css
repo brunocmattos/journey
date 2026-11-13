@@ -236,3 +236,4 @@
 /* A região viva das faixas fica montada mesmo vazia; vazia, não abre o espaço do gap. */
 .editor .cabeca-editor > .vivo { display: grid; gap: 8px; }
 .editor .cabeca-editor > .vivo:empty { margin-bottom: -8px; }
+.editor .grupo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
