@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 76 testes, núcleo 253 e app 184 (sem mudança), pgTAP 136 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 78 testes, núcleo 253 e app 184 (sem mudança), pgTAP 136 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -48,7 +48,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Modelos congelados; um fluxo novo nasce de `instanciarModelo`**, que copia o documento e troca os responsáveis (ids locais do modelo) pelos cadastros da empresa | Editar um fluxo não pode mudar o modelo pra quem vier depois, e o banco só aceita responsável que seja cadastro da empresa | Usar o documento do modelo direto: muda o modelo na mesma sessão e o `salvar_fluxo` recusa |
 | **No banco, o documento é `jsonb` numa coluna só, com `check` da forma** (`formato` `journey/2` e as quatro listas) | O editor salva o documento inteiro; o servidor confere só a forma e os responsáveis. A validação completa é a do pacote, no app | Tabelas de peças e conexões: cada arrasto viraria dezenas de linhas |
 | **Salvar só pela função `salvar_fluxo`**, com a revisão que o editor abriu (40001 se outra pessoa salvou), a trava (P0001) e responsáveis que sejam cadastros da empresa (22023) | Sem edição simultânea na v1 (spec 16): a trava avisa, a revisão garante que ninguém sobrescreve sem saber | Update direto da coluna: sobrescreve calado |
-| **O banco repete os limites do app** (2.000 peças, 6.000 conexões, documento de até 8 MB, estilo de até 20 KB) e guarda a contagem de peças numa coluna (`total_pecas`) | Quem chama a API direto não passa pelo `lerDocumento`; e a lista de fluxos não precisa abrir cada documento | Confiar só no app: um documento de 200 mil peças entraria e deixaria a lista lenta |
+| **O banco repete os limites do app** (2.000 peças, 6.000 conexões, documento de até 6 MB no app e 10 MB no banco, estilo de até 20 KB) e guarda a contagem de peças numa coluna (`total_pecas`) | Quem chama a API direto não passa pelo `lerDocumento`; e a lista de fluxos não precisa abrir cada documento | Confiar só no app: um documento de 200 mil peças entraria e deixaria a lista lenta |
 | **Revisão nula é recusada** (`is distinct from`) | `2 <> null` é null e deixaria sobrescrever calado | Comparar com `<>` |
 | **Trava com validade** (`pegar_trava` renova; vencida passa pra quem pede) | Fechar a aba sem soltar não pode prender o fluxo | Trava sem validade |
 | **"Onde é usado" (`fluxo_cadastros`) refeito a cada salvamento**, com `on delete restrict` no cadastro | Apagar um cadastro em uso quebraria os fluxos calado | Procurar no `jsonb` na hora de apagar |
@@ -76,7 +76,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | `packages/fluxo/src/validar.ts` | `lerDocumento`: confere um documento vindo de fora e devolve uma cópia limpa |
 | `packages/fluxo/src/indice.ts` | Saídas e entradas de cada peça; o texto de cada regra |
 | `packages/fluxo/src/motor.ts` | `Execucao`, `executar`, `simular` e os eventos |
-| `packages/fluxo/src/diagnostico.ts` | `diagnosticar`: os quinze tipos de achado |
+| `packages/fluxo/src/diagnostico.ts` | `diagnosticar`: os dezesseis tipos de achado |
 | `packages/fluxo/src/modelos.ts` | Suporte no WhatsApp, Esteira de crédito, SAC por e-mail e URA telefônica |
 | `packages/fluxo/src/index.ts` | O que o pacote exporta |
 | `packages/fluxo/test/*.ts` | Testes (Vitest) e os construtores `peca`, `liga`, `doc` |
@@ -546,6 +546,14 @@ describe('lerDocumento', () => {
     expect(codigos(doc([peca('a', 'etapa', { tempo_s: 366 * 86400 })]))).toEqual(['tempo']);
     expect(codigos(doc([peca('a', 'etapa', { tempo_s: Infinity })]))).toEqual(['tempo']);
     expect(codigos(doc([peca('a', 'inicio'), peca('b', 'fim')], [liga('a', 'b', { regra: 'tempo', tempo_s: 8.7e12 })]))).toEqual(['tempo']);
+    const grande = doc(Array.from({ length: 1500 }, (_, k) => peca(`p${k}`, 'etapa', { descricao: 'x'.repeat(4500) })));
+    expect(codigos(grande)).toEqual(['tamanho']);
+  });
+
+  it('id de cadastro em maiúsculas vira minúsculas', () => {
+    const u = '6ADA6878-0000-4000-8000-00000000000A';
+    expect(lerDocumento(doc([peca('a', 'etapa', { responsavel: u })])).documento!.pecas[0]!.responsavel).toBe(u.toLowerCase());
+    expect(lerDocumento(doc([peca('a', 'etapa', { responsavel: 'Fila-X' })])).documento!.pecas[0]!.responsavel).toBe('Fila-X');
   });
 
   it('a cópia guarda os campos de cada coisa e não depende da entrada', () => {
@@ -638,7 +646,8 @@ const LISTAS = ['pecas', 'conexoes', 'grupos', 'notas'] as const;
  * Limites do documento. O spec mira 500 peças; os limites deixam folga e protegem o motor e o diagnóstico
  * (e o banco) de um documento que só serve pra travar.
  */
-export const LIMITES = { pecas: 2000, conexoes: 6000, grupos: 500, notas: 500, texto: 5000, tempo_s: 365 * 86400 } as const;
+export const LIMITES = { pecas: 2000, conexoes: 6000, grupos: 500, notas: 500, texto: 5000, tempo_s: 365 * 86400, bytes: 6_000_000 } as const;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ehNumero = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const ehTexto = (v: unknown): v is string => typeof v === 'string';
 /** Texto opcional: aparado, e número vira texto (um importador pode escrever a opção 1 como número). */
@@ -667,6 +676,9 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
     const v = bruto[lista];
     if (!Array.isArray(v)) erro('forma', `Falta a lista "${lista}".`);
     else if (v.length > LIMITES[lista]) erro('tamanho', `"${lista}" passa do limite de ${LIMITES[lista]}.`);
+  }
+  if (!problemas.length && new TextEncoder().encode(JSON.stringify(entrada)).length > LIMITES.bytes) {
+    erro('tamanho', `O documento passa de ${LIMITES.bytes / 1_000_000} MB.`);
   }
   if (problemas.length) return { documento: null, problemas };
 
@@ -708,7 +720,8 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
     const nome = p.nome || id;
     const canal = opcional(item.canal);
     if (canal) { p.canal = canal; if (canais && !canais.has(canal)) aviso('canal', `A peça "${nome}" usa o canal "${canal}", que a empresa não tem.`, id); }
-    const resp = opcional(item.responsavel);
+    // Id de cadastro do banco é uuid em minúsculas: o mesmo id em maiúsculas é o mesmo cadastro.
+    const resp = opcional(item.responsavel)?.replace(UUID, (u) => u.toLowerCase());
     if (resp) { p.responsavel = resp; if (cadastros && !cadastros.has(resp)) aviso('responsavel', `A peça "${nome}" aponta pra um cadastro que não existe.`, id); }
     if (item.tempo_s !== undefined && item.tempo_s !== null) {
       if (!tempo(item.tempo_s)) erro('tempo', `O tempo da peça "${nome}" tem que ser um número de segundos, de zero a um ano.`, id);
@@ -778,7 +791,7 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  15 passed (15)` e o `tsc` sem saída.
+Expected: `Tests  16 passed (16)` e o `tsc` sem saída.
 
 - [ ] **Passo 5: commit**
 
@@ -1240,7 +1253,7 @@ export function simular(doc: Documento, contexto: Contexto, opcoes: OpcoesExecuc
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  38 passed (38)` e o `tsc` sem saída.
+Expected: `Tests  39 passed (39)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -1356,6 +1369,16 @@ describe('diagnóstico', () => {
     expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' }), liga('h', 'b', { regra: 'senao' })]), { cadastros: [HORARIO] })).toEqual([]);
     expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' }), liga('h', 'b', { regra: 'horario', horario: 'fora' })]))).toEqual([]);
     expect(chaves(doc([peca('i', 'inicio'), peca('h', 'decisao'), peca('a', 'fim')], [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' })]))).toEqual(['horario_sem_cadastro:h', 'horario_sem_lado:h:fora']);
+  });
+
+  it('"fechado, tenta de novo" sem tempo de espera é ciclo sem espera', () => {
+    const pecas = [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('w', 'espera'), peca('ok', 'fim')];
+    const conexoes = [liga('i', 'h'), liga('h', 'ok', { regra: 'horario', horario: 'dentro' }), liga('h', 'w', { regra: 'horario', horario: 'fora' }), liga('w', 'h')];
+    expect(chaves(doc(pecas, conexoes), { cadastros: [HORARIO] })).toEqual(['ciclo_sem_tempo:h+w']);
+    const comTempo = conexoes.map((c) => (c.de === 'w' ? { ...c, regra: 'tempo' as const, tempo_s: 3600 } : c));
+    expect(chaves(doc(pecas, comTempo), { cadastros: [HORARIO] })).toEqual([]);
+    const comEscolha = [...conexoes, liga('w', 'ok', { regra: 'opcao', valor: '1' })];
+    expect(chaves(doc(pecas, comEscolha), { cadastros: [HORARIO] }).filter((k) => k.startsWith('ciclo'))).toEqual([]);
   });
 
   it('saídas iguais: um achado por grupo, inclusive "senão" repetido', () => {
@@ -1661,9 +1684,24 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
     if (vazia) achado('regra_vazia', 'observacao', c.id, `Saída de ${nome(c.de)} sem regra preenchida`, `A ligação de ${nome(c.de)} pra ${nome(c.para)} tem a regra pela metade.`, [c.de, c.id]);
   }
 
+  // O relógio decide sozinho numa peça só com saídas de horário (e "senão") e um responsável Horário.
+  const doRelogio = (id: string) => {
+    const p = idx.pecas.get(id)!;
+    const s = proximas(idx, id);
+    const k = opcoes.cadastros?.find((x) => x.id === p.responsavel);
+    return s.some((c) => c.regra === 'horario') && s.every((c) => c.regra === 'horario' || c.regra === 'senao') && (opcoes.cadastros ? k?.tipo === 'horario' : !!p.responsavel);
+  };
   const comps = ciclos(idx);
   for (const comp of comps) {
-    if (comp.some((id) => chegaNoFim.has(id))) continue;
+    if (comp.some((id) => chegaNoFim.has(id))) {
+      // Tem saída, mas ninguém escolhe e o tempo não anda: se o relógio mandar pra dentro do ciclo, ele manda de novo.
+      const dentro = new Set(comp);
+      const sozinho = comp.every((id) => proximas(idx, id).length === 1 || doRelogio(id));
+      const semTempo = comp.every((id) => !idx.pecas.get(id)!.tempo_s && proximas(idx, id).every((c) => !dentro.has(c.para) || tempoDa(c) === 0));
+      if (sozinho && semTempo && comp.some(doRelogio))
+        achado('ciclo_sem_tempo', 'alerta', comp.join('+'), `Ciclo sem espera: ${comp.map(nome).join(', ')}`, 'O relógio manda a jornada de volta pras mesmas peças sem o tempo andar, então ele decide igual de novo e ela não sai. Põe um tempo na espera (uma peça com tempo ou uma ligação "depois de um tempo").', comp);
+      continue;
+    }
     achado('ciclo_sem_saida', 'grave', comp.join('+'), `Ciclo sem saída: ${comp.map(nome).join(', ')}`, 'Essas peças levam umas às outras e nenhuma chega num Fim: quem entra aqui não termina a jornada.', comp);
   }
 
@@ -1684,7 +1722,7 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  59 passed (59)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
+Expected: `Tests  61 passed (61)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
 
 - [ ] **Passo 5: commit**
 
@@ -2025,7 +2063,7 @@ export { MODELOS, instanciarModelo, type Modelo } from './modelos';
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  76 passed (76)` e o `tsc` sem saída.
+Expected: `Tests  78 passed (78)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2294,7 +2332,8 @@ create table public.fluxos (
     and case when jsonb_typeof(documento -> 'conexoes') = 'array' then jsonb_array_length(documento -> 'conexoes') <= 6000 else false end
     and case when jsonb_typeof(documento -> 'grupos') = 'array' then jsonb_array_length(documento -> 'grupos') <= 500 else false end
     and case when jsonb_typeof(documento -> 'notas') = 'array' then jsonb_array_length(documento -> 'notas') <= 500 else false end, false)),
-  constraint fluxos_documento_tamanho check (octet_length(documento::text) <= 8000000),
+  -- O app limita a 6 MB em JSON compacto; o texto do jsonb tem espaços a mais, daí a folga.
+  constraint fluxos_documento_tamanho check (octet_length(documento::text) <= 10000000),
   constraint fluxos_estilo_tamanho check (octet_length(estilo::text) <= 20000)
 );
 create index fluxos_empresa on public.fluxos (empresa_id, editado_em desc);
@@ -2515,7 +2554,7 @@ Expected: `Files=3, Tests=136` e `Result: PASS`.
 - [ ] **Passo 5: a v1 continua de pé**
 
 Run: `npm test && npm run typecheck`
-Expected: `@journey/fluxo` 76, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
+Expected: `@journey/fluxo` 78, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
 
 - [ ] **Passo 6: commit**
 
@@ -2607,7 +2646,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 76, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=136`, `Result: PASS`.
+Expected: fluxo 78, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=136`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
@@ -2635,3 +2674,26 @@ git push -u origin claude/journey-etapa-3-public-links-5wx03t
 Fica pra etapa B: a tela, o salvamento com espera curta, os cadastros que nascem do uso. Fica pra C: links e cenários sobre o fluxo genérico. A migração não apaga nada da v1; as tabelas antigas saem quando a etapa E trouxer o importador.
 
 **Produção:** a migração é só de acréscimo. Depois do merge, aplica-se no Supabase de produção pelo MCP (`apply_migration`, nome `journey_v2_fluxos`), como as etapas 2 e 3. O app publicado não muda nesta etapa.
+
+## Depois das revisões
+
+Cada tarefa passou por uma revisão de qualidade com sondas (scripts que tentam quebrar o código) e uma revisão final da etapa inteira, que gerou 110 mil documentos aleatórios e comparou o diagnóstico com o que o motor faz. Tudo o que foi corrigido já está nos blocos acima; o ensaio foi refeito a cada correção e os blocos conferem com ele. Em resumo:
+
+| Revisão | O que achou | O que mudou |
+|---|---|---|
+| Tarefa 1 | Janela de horário invertida e data de feriado impossível aceitas caladas; `24:00` recusado; `lerQuando` aceitava 30 de fevereiro | Horário mais rígido, `24:00` como fim, datas conferidas pela volta do `toISOString` |
+| Tarefa 2 | Tempo enorme, listas e textos sem limite e fluxo comprido derrubavam motor e diagnóstico; id repetido entre listas | `LIMITES`, id único no documento, motor e caminho mais longo sem recursão |
+| Tarefa 3 | Saída única de horário passava fora do horário; "fechado, tenta de novo" virava ciclo; refazer seguia depois de divergir | O relógio decide quando todas as saídas são de horário; o tempo andando zera as voltas; `simular` para na divergência e a `Execucao` guarda as escolhas; motivo `limite` |
+| Tarefa 4 | Diagnóstico não seguia o motor (Fim com saída, decisão só de horário); caminho mais longo dependia da ordem do documento; chaves repetidas | `fim_com_saida`, `horario_sem_lado`, um achado por grupo de saídas iguais, caminho exato sem ciclo e "estimativa" com ciclo |
+| Tarefa 5 | Modelos mutáveis e compartilhados; responsáveis com ids que o banco recusa | Modelos congelados, `instanciarModelo`, ids únicos entre modelos, todos os caminhos de cada modelo testados |
+| Tarefa 6 | Revisão nula sobrescrevia; empresa com cadastro em uso não se apagava; banco sem limite de tamanho | `is distinct from`, gatilho que limpa o "onde é usado", limites no `check`, `total_pecas`, a lista só se lê, trava de quem saiu não vale |
+| Final | Laço que o relógio repete sem o tempo andar passava calado; uuid em maiúsculas; teto de tamanho só no banco | `ciclo_sem_tempo`, uuid em minúsculas e 6 MB no `lerDocumento` |
+
+**Fica pras próximas etapas** (anotado pela revisão final, nada disso quebra a etapa A):
+- **Versões e cadastros apagados (etapa C):** o "onde é usado" só olha o documento atual. Apagar um cadastro que só uma versão antiga usa deixa essa versão com `responsavel_inexistente`, e restaurá-la é recusado pelo `salvar_fluxo`. Antes de construir as versões, decidir entre contar as versões no "onde é usado" ou trocar o responsável ao restaurar.
+- **Espera curta num fim de semana longo:** um "tenta de novo" de 30 s de sexta às 19h até segunda passa da trava de passos e termina como `limite`. É a trava funcionando; a tela da etapa B deve explicar esse fim.
+- **Etapa B, ao ligar o pacote no app:**
+  - `apps/web` precisa depender de `@journey/fluxo` e incluí-lo no `transpilePackages`.
+  - Criar um fluxo a partir de um modelo são três passos (achar ou criar os cadastros, criar o fluxo, salvar o documento). Uma função no banco (`criar_fluxo_de_modelo`) evita o fluxo vazio se um passo falhar.
+  - `fluxos_resumo.editando_por` é o id; pra mostrar "Fulano está editando", juntar com `membros`.
+
