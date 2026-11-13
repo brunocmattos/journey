@@ -27,9 +27,25 @@ const TRACOS: Record<string, string> = {
   legenda: 'M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z M8 9h8 M8 13h8 M8 17h5',
   robo: 'M8 8h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3z M12 4.5V8 M9.5 16h5',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2',
+  // Peças e ferramentas do editor (v2).
+  inicio: 'M8 5.2v13.6L19 12z',
+  mensagem: 'M4 5h16v11H9.5L5 19.5V16H4z M8 9.5h8 M8 12.5h5',
+  etapa: 'M5 5h14v14H5z M8.5 12l2.5 2.5L16 9.5',
+  decisao: 'M12 3l9 9-9 9-9-9z',
+  espera: 'M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17z M12 7.5V12l3 2',
+  atendimento: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8z M4.5 20.5a7.5 7.5 0 0 1 15 0',
+  sistema: 'M9 3v5 M15 3v5 M6.5 8h11v3a5.5 5.5 0 0 1-11 0z M12 16.5V21',
+  fim: 'M5 21V4 M5 4h11l-2 4 2 4H5',
+  nota: 'M5 4h14v11l-5 5H5z M14 20v-5h5',
+  grupo: 'M4 7V4h3 M17 4h3v3 M20 17v3h-3 M7 20H4v-3 M9 4h6 M9 20h6 M4 9v6 M20 9v6',
+  selecionar: 'M5 3l13 8-6 1.5L9.5 19z',
+  mao: 'M8 13V6.5a1.5 1.5 0 0 1 3 0V12 M11 11V5a1.5 1.5 0 0 1 3 0v6 M14 11V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-.5a6 6 0 0 1-5-2.7L3.6 14a1.5 1.5 0 0 1 2.4-1.8L8 14',
+  refazer: 'M15 14l5-5-5-5 M20 9H10a6 6 0 0 0 0 12h3',
+  parar: 'M6 6h12v12H6z',
+  voltar: 'M11 6 5 12l6 6 M5 12h14',
 };
 
-const CHEIOS = new Set(['play', 'pausa']);
+const CHEIOS = new Set(['play', 'pausa', 'inicio', 'parar']);
 
 export function Icone({ nome, className = 'icone' }: { nome: keyof typeof TRACOS | string; className?: string }) {
   const d = TRACOS[nome] ?? TRACOS.seta!;

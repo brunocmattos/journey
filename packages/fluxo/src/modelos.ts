@@ -158,9 +158,9 @@ export const MODELOS: readonly Modelo[] = congelar([
         peca('suporte', 'atendimento', 840, 20, 'Atende suporte', { responsavel: 'fila-suporte', tempo_s: 240 }),
         peca('atendido', 'fim', 1180, -70, 'Atendido'),
         peca('caixa', 'mensagem', 1160, 120, 'Caixa postal', { tempo_s: 30 }),
-        peca('desliga', 'fim', 1440, 123, 'Desliga'),
-        peca('fechado', 'mensagem', 300, 240, 'Fora do horário', { tempo_s: 9 }),
-        peca('invalida', 'mensagem', 840, 240, 'Opção inválida', { tempo_s: 4 }),
+        peca('desliga', 'fim', 1440, 300, 'Desliga'),
+        peca('fechado', 'mensagem', 560, 380, 'Fora do horário', { tempo_s: 9 }),
+        peca('invalida', 'mensagem', 840, 220, 'Opção inválida', { tempo_s: 4 }),
       ],
       [
         liga('c1', 'liga', 'horario'),
