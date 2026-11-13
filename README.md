@@ -1,0 +1,30 @@
+# Journey
+
+O fluxo de atendimento como um encanamento: dá play numa entrada e a água anda pelos canos. Serve pra entender e explicar um fluxo, testar cenários ("e se…") sem ligar pra central e encontrar problemas sozinho.
+
+- Spec: [docs/superpowers/specs/2026-11-12-journey-design.md](docs/superpowers/specs/2026-11-12-journey-design.md)
+- `packages/nucleo`: formato, importação, modelos, motor e diagnóstico, sem tela ([README](packages/nucleo/README.md))
+- `apps/web`: o app (Next.js + Supabase) ([README](apps/web/README.md))
+- `supabase/`: migração, regras de acesso e testes do banco
+
+## Rodar
+
+```bash
+npm install
+npm run banco      # Supabase local (Docker)
+cp apps/web/.env.example apps/web/.env.local
+npm run dev        # http://127.0.0.1:3000
+```
+
+Testes: `npm test`, `npm run banco:testes`, `npm run e2e`, `npm run typecheck` e `npm run build` (detalhes no [README do app](apps/web/README.md)).
+
+## Publicar
+
+Uma vez, com as contas da empresa:
+
+1. **Supabase:** criar o projeto (região São Paulo). Em Authentication → URL Configuration, pôr o domínio de produção do app em Site URL e `https://<domínio de produção>/auth/callback` em Redirect URLs. Em Authentication → Providers → Email, deixar **Confirm email** ligado: o convite só vale pra e-mail confirmado, e sem a confirmação alguém entraria com o e-mail de outra pessoa. Pra entrar com Google, ligar o provedor Google com o cliente OAuth da empresa.
+2. **E-mail do login:** em Authentication → SMTP Settings, ligar o SMTP próprio (ex.: o SMTP relay do Google Workspace da empresa, `smtp-relay.gmail.com`, com o remetente de um domínio dela) e, em Authentication → Rate Limits, subir o limite de e-mails por hora. O carteiro que vem com o Supabase só entrega pra quem é da equipe do projeto e manda pouquíssimos e-mails por hora: sem SMTP próprio, o link mágico não chega pra ninguém de fora.
+3. **Banco:** `npx supabase link --project-ref <ref>` e `npx supabase db push` (aplica `supabase/migrations`).
+4. **Vercel:** importar o repositório com Root Directory `apps/web`. Variáveis: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (do projeto) e, se o Google estiver ligado, `NEXT_PUBLIC_LOGIN_GOOGLE=sim`. `APP_URL` vai **só no ambiente Production**, com o domínio de produção (ex.: `https://journey.exemplo.com`), e o app passa a ser usado só por esse domínio: os redirecionamentos e a conferência do Sair usam ela, então num preview com a `APP_URL` de produção o login voltaria pra produção e o Sair recusaria o pedido. Sem `APP_URL` (os previews), o app confia nos cabeçalhos do pedido.
+5. **Previews (se quiser entrar neles):** pôr também `https://*-<time>.vercel.app/**` em Redirect URLs no Supabase; sem isso o link mágico de um preview cai na Site URL.
+6. Entrar, criar a empresa e importar a planilha da central (até 4 MB somando os arquivos: a Vercel corta o corpo do pedido em 4,5 MB; mais que isso pede upload direto pro Storage, que fica pra depois).

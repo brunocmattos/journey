@@ -2,12 +2,22 @@
   "name": "journey",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "modelos": "npm run modelos -w packages/nucleo",
-    "fixture": "npm run fixture -w packages/nucleo --"
+    "fixture": "npm run fixture -w packages/nucleo --",
+    "dev": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/web",
+    "e2e": "npm run e2e -w apps/web",
+    "banco": "supabase start -x imgproxy,vector,logflare,postgres-meta,supavisor,studio,realtime,edge-runtime",
+    "banco:parar": "supabase stop",
+    "banco:testes": "supabase test db"
+  },
+  "devDependencies": {
+    "supabase": "2.122.1"
   }
 }

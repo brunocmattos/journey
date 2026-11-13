@@ -1,5 +1,6 @@
 import { existe, nomeDe, type Indice } from '../formato/indice';
 import { lerRef } from '../formato/refs';
+import { toqueDoGrupo } from '../motor/toque';
 import { achado, type Achado } from './tipos';
 
 /** Campos em que a lista só toca: o que não existe ali não é caminho (ver alcance.ts). */
@@ -137,7 +138,7 @@ export function gruposQueDesligam(idx: Indice): Achado[] {
         'grupo_desliga',
         `grupo:${g.id}`,
         `${nomeDe(idx, `grupo:${g.id}`)} desliga se ninguém atende`,
-        `Todos do grupo tocam por ${g.toque_s ?? 20} s. Se ninguém atende, a central desliga a ligação${g.ao_esgotar === undefined ? ': não há destino em ao_esgotar' : ''}.`,
+        `Todos do grupo tocam por ${toqueDoGrupo(g)} s. Se ninguém atende, a central desliga a ligação${g.ao_esgotar === undefined ? ': não há destino em ao_esgotar' : ''}.`,
         [`grupo:${g.id}`],
         ['ao_esgotar'],
       ),

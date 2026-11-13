@@ -3,6 +3,7 @@ import type { Canal, Documento, Expressao, Peca } from '../formato/documento';
 import { existe, indexar, type Indice } from '../formato/indice';
 import { lerRef } from '../formato/refs';
 import { dentroDoHorario, ehFeriado, lerInicio, somar } from './relogio';
+import { toqueDoGrupo, toqueDoRamal } from './toque';
 
 export type QuemDecide = 'quem_liga' | 'relogio' | 'sistema' | 'fila' | 'grupo' | 'ramal';
 export type Motivo = 'fim' | 'atendido' | 'desistiu' | 'beco' | 'destino_inexistente' | 'ciclo' | 'saiu_da_central' | 'incompleta';
@@ -275,7 +276,7 @@ export class Execucao {
     }
     if (r.tipo === 'grupo') {
       const g = this.idx.grupos.get(r.id)!;
-      const toque = g.toque_s ?? 20;
+      const toque = toqueDoGrupo(g);
       return [
         { opcao: 'atende', rotulo: 'Alguém atende', termina: 'atendido', disponivel: true, segundos: Math.min(toque, 10), exemplo: true },
         { opcao: 'nao_atende', rotulo: rotuloSemTransbordo(`Ninguém atende em ${toque} s`, g.ao_esgotar), para: g.ao_esgotar ?? 'fim:desliga', disponivel: true, segundos: toque },
@@ -283,7 +284,7 @@ export class Execucao {
     }
     if (r.tipo === 'ramal') {
       const x = this.idx.ramais.get(r.id)!;
-      const toque = x.siga_me_so_ramal_s !== undefined && x.siga_me_com_lista_s !== undefined ? x.siga_me_so_ramal_s + x.siga_me_com_lista_s : (x.toque_s ?? 20);
+      const toque = toqueDoRamal(x);
       return [
         { opcao: 'atende', rotulo: 'Atende', termina: 'atendido', disponivel: true, segundos: Math.min(toque, 8), exemplo: true },
         { opcao: 'nao_atende', rotulo: rotuloSemTransbordo(`Não atende em ${toque} s`, x.ao_nao_atender), para: x.ao_nao_atender ?? 'fim:desliga', disponivel: true, segundos: toque },

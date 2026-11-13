@@ -10,7 +10,7 @@ Nada aqui conhece React, Next.js ou Supabase. Tudo recebe dados e devolve dados.
 | `src/formato` | O formato `journey/1`: abas, colunas, referências (`fila:90011`), leitura de células e índice |
 | `src/importacao` | Lê `.xlsx`, `.csv` e `.json`; valida; junta com a base anterior; aplica ajustes manuais |
 | `src/modelos` | Gera a planilha modelo `.xlsx`, o exemplo `.json` e o esquema JSON |
-| `src/motor` | Simula uma ligação: relógio, decisões, variáveis, ciclos |
+| `src/motor` | Simula uma ligação: relógio, decisões, variáveis, ciclos, quanto cada ramal e grupo toca |
 | `src/diagnostico` | Encontra becos sem saída, ciclos, redundâncias, buracos de horário e o resto da seção 12 do spec |
 
 ## Comandos
@@ -78,6 +78,8 @@ import { lerRef } from '@journey/nucleo/formato';
 import { importar } from '@journey/nucleo/importacao';   // puxa exceljs
 import { gerarModeloXlsx } from '@journey/nucleo/modelos'; // puxa exceljs
 ```
+
+`@journey/nucleo/teste` exporta os construtores de documento dos testes (`doc`, `entrada`, `peca`, `saida`, `ramal`, `fila`, `grupo`, `janela`), pra outros pacotes testarem com documentos pequenos.
 
 `formato`, `motor` e `diagnostico` não importam `exceljs`, nem direta nem indiretamente (um teste confere). Assim um componente de tela que só simula ou diagnostica não leva a biblioteca de planilhas no bundle.
 
