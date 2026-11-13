@@ -1,11 +1,11 @@
 # Journey
 
-O fluxo de atendimento como um encanamento: dá play numa entrada e a água anda pelos canos. Serve pra entender e explicar um fluxo, testar cenários ("e se…") sem ligar pra central e encontrar problemas sozinho.
+O fluxo de atendimento, de qualquer canal, como um encanamento: desenha o fluxo, dá play e a água anda pelos canos. Serve pra desenhar, entender e explicar um fluxo, testar cenários ("e se…") e encontrar problemas sozinho. White label: cada empresa tem os seus fluxos, cadastros e canais.
 
 - Spec: [v2, o editor no centro](docs/superpowers/specs/2026-11-13-journey-v2-editor.md) (substitui a [v1](docs/superpowers/specs/2026-11-12-journey-design.md))
 - `packages/fluxo`: o modelo genérico da v2 (documento, motor, diagnóstico e modelos), sem tela ([README](packages/fluxo/README.md))
 - `packages/nucleo`: formato, importação, modelos, motor e diagnóstico, de telefonia, sem tela; na v2 vira o importador de central ([README](packages/nucleo/README.md))
-- `apps/web`: o app (Next.js + Supabase) ([README](apps/web/README.md))
+- `apps/web`: o app (Next.js + Supabase): fluxos, editor, cadastros ([README](apps/web/README.md))
 - `supabase/`: migração, regras de acesso e testes do banco
 
 ## Rodar
