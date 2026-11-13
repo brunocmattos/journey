@@ -40,13 +40,25 @@ describe('motor', () => {
     expect(executar(d, {}, { inicio: 'i' }).pendente!.opcoes.map((o) => o.texto)).toEqual(['A', 'B']);
   });
 
-  it('resposta que não é opção vira escolha_ignorada e a pergunta continua', () => {
+  it('resposta que não é opção vira escolha_ignorada e não muda nada', () => {
     const d = doc([peca('i', 'inicio'), peca('a', 'fim'), peca('b', 'fim')], [liga('i', 'a'), liga('i', 'b')]);
     const x = executar(d, {}, { inicio: 'i' });
+    const antes = x.eventos.length;
     expect(x.avancar('nao-existe')).toEqual([{ tipo: 'escolha_ignorada', resposta: 'nao-existe' }]);
     expect(x.pendente).not.toBeNull();
+    expect(x.eventos).toHaveLength(antes);
     x.avancar('i>a');
     expect(x.avancar('i>b')).toEqual([{ tipo: 'escolha_ignorada', resposta: 'i>b' }]);
+    expect(ultimo(x.eventos).tipo).toBe('terminou'); // depois do fim, nada entra
+    expect(x.escolhas).toEqual(['i>a']);
+  });
+
+  it('a simulação não muda se o documento mudar depois', () => {
+    const d = doc([peca('i', 'inicio'), peca('a', 'fim'), peca('b', 'fim')], [liga('i', 'a'), liga('i', 'b')]);
+    const x = executar(d, {}, { inicio: 'i' });
+    d.conexoes.splice(0, 1);
+    x.avancar('i>a');
+    expect(ultimo(x.eventos)).toMatchObject({ motivo: 'fim', peca: 'a' });
   });
 
   it('conexão "depois de um tempo" soma no relógio', () => {
@@ -75,6 +87,29 @@ describe('motor', () => {
     it('no modo livre pergunta, com a escolha do relógio sugerida', () => {
       const x = executar(d, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T10:00', modo: 'livre' });
       expect(x.pendente!.opcoes.map((o) => [o.conexao, o.sugerida])).toEqual([['dentro', true], ['fora', false]]);
+    });
+    it('saída única de horário: o relógio decide; fora dela, não tem pra onde ir', () => {
+      const so = doc([peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('aberto', 'fim')], [liga('i', 'h'), liga('h', 'aberto', { id: 'dentro', regra: 'horario', horario: 'dentro' })]);
+      expect(ultimo(executar(so, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T10:00' }).eventos)).toMatchObject({ motivo: 'fim', peca: 'aberto' });
+      expect(ultimo(executar(so, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-22T03:00' }).eventos)).toMatchObject({ motivo: 'beco', peca: 'h' });
+    });
+    it('"senão" vale quando o lado da hora não tem saída', () => {
+      const comSenao = { ...d, conexoes: [d.conexoes[0]!, d.conexoes[1]!, liga('h', 'fechado', { id: 'senao', regra: 'senao' })] };
+      const x = executar(comSenao, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-22T10:00' });
+      expect(x.eventos.find((e) => e.tipo === 'escolheu' && e.peca === 'h')).toMatchObject({ quem: 'relogio', conexao: 'senao' });
+    });
+    it('peça com saída de horário e opção de pessoa: pergunta', () => {
+      const misto = { ...d, conexoes: [...d.conexoes, liga('h', 'fechado', { id: 'op', regra: 'opcao', valor: '1' })] };
+      expect(executar(misto, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-22T10:00' }).pendente!.peca).toBe('h');
+    });
+    it('fechado, espera e tenta de novo: não é ciclo enquanto o tempo anda', () => {
+      const tenta = doc(
+        [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('w', 'espera'), peca('ok', 'fim')],
+        [liga('i', 'h'), liga('h', 'ok', { regra: 'horario', horario: 'dentro' }), liga('h', 'w', { regra: 'horario', horario: 'fora' }), liga('w', 'h', { regra: 'tempo', tempo_s: 3600 })],
+      );
+      expect(ultimo(executar(tenta, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T06:00' }).eventos)).toMatchObject({ motivo: 'fim', peca: 'ok', relogio_s: 7200 });
+      const semTempo = { ...tenta, conexoes: tenta.conexoes.map((c) => (c.regra === 'tempo' ? { ...c, regra: 'sempre' as const, tempo_s: undefined } : c)) };
+      expect(ultimo(executar(semTempo, { cadastros: [HORARIO] }, { inicio: 'i', quando: '2026-11-23T06:00' }).eventos)).toMatchObject({ motivo: 'ciclo', peca: 'h' });
     });
     it('sem hora ou sem o cadastro de horário, pergunta', () => {
       expect(executar(d, { cadastros: [HORARIO] }, { inicio: 'i' }).pendente).not.toBeNull();
@@ -108,11 +143,21 @@ describe('motor', () => {
   it('fluxo comprido não estoura a pilha', () => {
     const n = 20_000;
     const d = doc([peca('i', 'inicio'), ...Array.from({ length: n }, (_, k) => peca(`p${k}`, 'etapa')), peca('f', 'fim')], [liga('i', 'p0'), ...Array.from({ length: n - 1 }, (_, k) => liga(`p${k}`, `p${k + 1}`)), liga(`p${n - 1}`, 'f')]);
-    expect(ultimo(executar(d, {}, { inicio: 'i' }).eventos)).toMatchObject({ tipo: 'terminou', motivo: 'ciclo' }); // a trava de passos
+    expect(ultimo(executar(d, {}, { inicio: 'i' }).eventos)).toMatchObject({ tipo: 'terminou', motivo: 'limite' }); // a trava de passos
   });
 
   it('início que não existe termina na hora', () => {
     expect(executar(doc([]), {}, { inicio: 'x' }).eventos).toEqual([{ tipo: 'terminou', motivo: 'inexistente', peca: null, relogio_s: 0 }]);
+  });
+
+  it('refazer para na primeira escolha que não serve mais', () => {
+    const d = doc(
+      [peca('i', 'inicio'), peca('m', 'decisao'), peca('n', 'decisao'), peca('f', 'fim')],
+      [liga('i', 'm'), liga('m', 'n', { id: 'vai_novo', regra: 'opcao', valor: '2' }), liga('n', 'm', { id: 'volta' }), liga('n', 'f', { id: 'fica', regra: 'opcao', valor: '9' }), liga('m', 'f', { id: 'sai', regra: 'opcao', valor: '1' })],
+    );
+    const x = simular(d, {}, { inicio: 'i', escolhas: ['vai', 'volta', 'sai'] }); // "vai" não existe mais
+    expect(x.escolhas).toEqual([]);
+    expect(x.pendente!.peca).toBe('m');
   });
 
   it('previsível: as mesmas escolhas dão os mesmos eventos', () => {
