@@ -251,3 +251,15 @@ export function existe(doc: Documento, sel: Selecao): boolean {
   const lista = { peca: doc.pecas, conexao: doc.conexoes, grupo: doc.grupos, nota: doc.notas }[sel.tipo] as readonly { id: string }[];
   return lista.some((x) => x.id === sel.id);
 }
+
+/**
+ * Tira das peças o responsável que não é mais cadastro da empresa (apagado depois): uma cópia guardada no navegador
+ * ou uma versão marcada antiga voltando pro editor seria recusada pelo banco no salvamento seguinte. Devolve o
+ * documento e quantas peças perderam o responsável (o aviso conta).
+ */
+export function semResponsaveisQueSumiram(doc: Documento, existem: ReadonlySet<string>): { documento: Documento; orfas: number } {
+  const orfas = doc.pecas.filter((p) => p.responsavel && !existem.has(p.responsavel));
+  let documento = doc;
+  for (const p of orfas) documento = mudarPeca(documento, p.id, { responsavel: undefined });
+  return { documento, orfas: orfas.length };
+}
