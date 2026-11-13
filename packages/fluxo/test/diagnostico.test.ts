@@ -77,6 +77,63 @@ describe('diagnóstico', () => {
     expect(a!.texto).toContain('3 h');
   });
 
+  it('Fim encerra: as saídas dele não levam ninguém', () => {
+    const d = doc([peca('i', 'inicio'), peca('f', 'fim'), peca('x', 'etapa'), peca('g', 'fim')], [liga('i', 'f'), liga('f', 'x'), liga('x', 'g')]);
+    expect(chaves(d)).toEqual(['inalcancavel:g', 'inalcancavel:x', 'fim_com_saida:f']);
+  });
+
+  it('Início sem saída é um achado só', () => {
+    expect(chaves(doc([peca('i', 'inicio')]))).toEqual(['beco_sem_saida:i']);
+  });
+
+  it('decisão só de horário precisa dos dois lados (ou de um senão)', () => {
+    const pecas = [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('a', 'fim'), peca('b', 'fim')];
+    expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' })]), { cadastros: [HORARIO] })).toEqual(['horario_sem_lado:h:fora', 'inalcancavel:b']);
+    expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' }), liga('h', 'b', { regra: 'senao' })]), { cadastros: [HORARIO] })).toEqual([]);
+    expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' }), liga('h', 'b', { regra: 'horario', horario: 'fora' })]))).toEqual([]);
+    expect(chaves(doc([peca('i', 'inicio'), peca('h', 'decisao'), peca('a', 'fim')], [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' })]))).toEqual(['horario_sem_cadastro:h', 'horario_sem_lado:h:fora']);
+  });
+
+  it('saídas iguais: um achado por grupo, inclusive "senão" repetido', () => {
+    const pecas = [peca('i', 'inicio'), peca('d', 'decisao'), peca('a', 'fim'), peca('b', 'fim'), peca('c', 'fim')];
+    const tres = doc(pecas, [liga('i', 'd'), ...['a', 'b', 'c'].map((x) => liga('d', x, { regra: 'opcao', valor: '1' }))]);
+    expect(diagnosticar(tres)).toEqual([expect.objectContaining({ chave: 'opcoes_repetidas:d:opcao:1', refs: ['d', 'd>a', 'd>b', 'd>c'] })]);
+    const senoes = doc(pecas, [liga('i', 'd'), liga('d', 'a', { regra: 'condicao', valor: 'pago' }), liga('d', 'b', { regra: 'senao' }), liga('d', 'c', { regra: 'senao' })]);
+    expect(chaves(senoes)).toEqual(['opcoes_repetidas:d:senao']);
+  });
+
+  describe('caminho mais longo com muitos caminhos', () => {
+    // De A, 20 decisões em losango (2^20 caminhos, todos rápidos); de B, um atendimento de 10 dias.
+    const losangos = (comVolta: boolean) => {
+      const pecas = [peca('A', 'inicio'), peca('B', 'inicio'), peca('lento', 'atendimento', { responsavel: 'k', tempo_s: 10 * 86400 }), peca('f', 'fim')];
+      const conexoes = [liga('B', 'lento'), liga('lento', 'f'), liga('A', 's0')];
+      for (let k = 0; k < 20; k++) {
+        pecas.push(peca(`s${k}`, 'decisao'), peca(`a${k}`, 'etapa'), peca(`b${k}`, 'etapa'));
+        const prox = k === 19 ? 'f' : `s${k + 1}`;
+        conexoes.push(liga(`s${k}`, `a${k}`, { regra: 'opcao', valor: '1' }), liga(`s${k}`, `b${k}`, { regra: 'opcao', valor: '2' }), liga(`a${k}`, prox), liga(`b${k}`, prox));
+      }
+      if (comVolta) conexoes.push(liga('a19', 's0', { regra: 'opcao', valor: '9' }));
+      return doc(pecas, conexoes);
+    };
+    const invertido = (d: ReturnType<typeof doc>) => ({ ...d, pecas: [...d.pecas].reverse(), conexoes: [...d.conexoes].reverse() });
+    it('sem ciclo é exato e não depende da ordem do documento', () => {
+      const d = losangos(false);
+      for (const x of [d, invertido(d)]) {
+        const a = diagnosticar(x, { meta_s: 86400 }).find((y) => y.tipo === 'passou_do_prazo')!;
+        expect(a.refs).toEqual(['B', 'lento', 'f']);
+        expect(a.texto).not.toContain('estimativa');
+      }
+    });
+    it('com ciclo, cada Início tem sua busca; no teto, avisa que é estimativa', () => {
+      const d = losangos(true);
+      for (const x of [d, invertido(d)]) {
+        const a = diagnosticar(x, { meta_s: 86400 }).find((y) => y.tipo === 'passou_do_prazo')!;
+        expect(a.refs).toEqual(['B', 'lento', 'f']);
+        expect(a.texto).toContain('estimativa');
+      }
+    });
+  });
+
   it('ordem: grave, alerta, observação; a chave não depende do nome', () => {
     const d = doc([peca('i', 'inicio'), peca('e', 'etapa', { nome: 'X' }), peca('s', 'atendimento'), peca('f', 'fim')], [liga('i', 'e')]);
     const g = diagnosticar(d).map((a) => a.gravidade);
