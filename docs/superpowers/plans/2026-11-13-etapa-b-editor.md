@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, com a `main` (etapa A) mesclada. Este plano, o código e o PR da etapa B saem dele.
-- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 255 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio** sobre esse branch: app 258 testes (eram 184), `@journey/fluxo` 78, núcleo 253, pgTAP 136 (sem mudança: a etapa B não mexe no banco), ponta a ponta 30 passando e 1 pulado (eram 24 + 1), `typecheck` e `next build` limpos. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Sem migração nova.** A etapa B usa as tabelas e funções da etapa A (`fluxos`, `cadastros`, `canais`, `tipos_cadastro`, `salvar_fluxo`, `pegar_trava`, `soltar_trava`), que já estão em produção.
 - **Docker e Supabase local:** se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`. O `.env.local` do app é o das etapas anteriores (`apps/web/README.md`, "Rodar").
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
@@ -42,7 +42,10 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Login vencido (PGRST301/PGRST303/401) não é "sem rede" nem recusa:** tenta de novo, com "entre de novo pra salvar"; erro passageiro (sem código, 5xx, 429, 57014, 40P01) tenta de novo; o motivo vem do código e do status, nunca do texto da mensagem | O cliente do Supabase renova o login sozinho na maioria das vezes; parar de vez por isso perderia o trabalho | Tratar tudo que não é 40001/P0001 como recusa |
 | **Conflito (40001), trava perdida (P0001) ou recusa param o salvamento** e a tela pede pra recarregar; a cópia de uma recusa não fica | Salvar por cima do que outra pessoa salvou é exatamente o que a revisão impede. Uma cópia recusada voltaria a cada abertura e seria recusada de novo | Mesclar documentos: fora da v1 (spec 4) |
 | **Trava ao abrir, renovada a cada 4 minutos, solta ao sair** (`fetch` com `keepalive`); sem trava, só leitura com "Fulano está editando" | Spec 4: sem edição simultânea, mas quem abre depois vê e dá play | Abrir pra editar e descobrir o conflito no primeiro salvamento |
-| **O responsável é uma busca nos cadastros com "Criar" no fim**, com o tipo sugerido pelo nome ("Fila …", "Equipe …", "Horário …") ou pela peça (Sistema, Decisão); a peça guarda o id | Critério 2: o cadastro nasce do desenho e renomear muda em todos os fluxos sem tocar nos documentos | Guardar o nome na peça, como o protótipo: renomear teria que varrer os fluxos |
+| **Falha ao renovar a trava não é "outra pessoa"**: só `ok: false` do banco quer dizer que outra pessoa tem a trava; erro de rede ou de login mantém a edição enquanto a última trava confirmada vale (9 dos 10 minutos), tenta de novo em 20 s e na volta da rede (`online`), da aba (`visibilitychange`) e do cache (`pageshow`); passado isso, só leitura com "não deu pra confirmar a edição" | Editar sem rede é do spec (7.1); culpar outra pessoa por uma falha de rede é mentira e trava a pessoa por até 4 minutos | Tratar todo erro como trava de outra pessoa |
+| **Quem estava em só leitura e pega a trava depois não edita: recarrega** (faixa "A edição deste fluxo liberou… Recarregar", e a trava é solta) | O documento e a revisão na tela são de quando a página abriu; quem tinha a trava quase sempre salvou depois, e a primeira edição daria conflito | Reler o fluxo no lugar: mais estado pra acertar sem ganho |
+| **O token do `soltar_trava` acompanha a sessão** (`onAuthStateChange`) | O `fetch` com `keepalive` não passa pelo cliente do Supabase; com o token de quando a página abriu, depois de uma hora o pedido dava 401 e a trava ficava presa 10 minutos | Ler o token uma vez |
+| **O responsável é uma busca nos cadastros com "Criar" no fim** (o cadastro só nasce com Enter ou clicando em "Criar"; sair do campo com um nome que não existe volta pro que era; Esc também), com o tipo sugerido pelo nome ("Fila …", "Equipe …", "Horário …") ou pela peça (Sistema, Decisão); a peça guarda o id | Critério 2: o cadastro nasce do desenho e renomear muda em todos os fluxos sem tocar nos documentos | Guardar o nome na peça, como o protótipo: renomear teria que varrer os fluxos |
 | **Horário nasce de segunda a sexta, 8h às 18h**, e a tela Cadastros edita janelas e feriados | Uma decisão de horário funciona no play desde o primeiro minuto | Horário vazio: o relógio diria "fora" sempre |
 | **Fluxo a partir de modelo: os cadastros do modelo viram os da empresa** (reaproveitando o que já existe com o mesmo tipo e nome: tenta criar e, se o nome já existe, acha o igual) e o documento é salvo com `instanciarModelo`; se algo falha, o fluxo e os cadastros que esta chamada criou são apagados | O banco só aceita responsável que seja cadastro da empresa; e não sobra fluxo vazio | Uma função nova no banco (`criar_fluxo_de_modelo`): mais uma migração pra uma coisa que três chamadas resolvem |
 | **Play: o motor roda tudo de uma vez a partir das escolhas; a tela mostra os eventos um a um** | Voltar é tirar a última escolha e refazer; o motor já é previsível (etapa A) | Um motor passo a passo na tela |
@@ -61,6 +64,11 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **O modo estrito do React roda a limpeza do efeito uma vez ao montar:** a limpeza do editor não pode `parar()` o salvamento (ele ficaria parado de vez). Ela só espera o que falta (`agora()`) e solta a trava.
 - **A água passa de novo por um cano já cheio** (voltar ao menu, "fechado, espera e tenta de novo"): o `correu` tira o cano das cheias, senão o quadro desenha o cano cheio, a água nunca chega e o play para.
 - **O PostgREST devolve no máximo 1000 linhas por pedido, calado** (`max_rows`, aqui e no Supabase): a lista de cadastros e o "onde é usado" vêm de 1000 em 1000 (`todas`, no `dados.ts`), e criar um cadastro nunca lê a lista inteira (`acharOuCriarCadastro` tenta criar e, no 23505, busca só os parecidos).
+- **Clicar noutra peça com um campo do painel em foco:** o `pointerdown` muda a seleção antes de o navegador tirar o foco, e o `blur` do campo gravava o texto na peça nova (o React reaproveita o `<input>` quando o valor é igual). O quadro tira o foco do painel antes de selecionar, cada painel tem `key` pela seleção, e o campo grava o que ficou digitado ao desmontar, com o id de antes.
+- **Callback depois de um `await` não pode usar o documento da renderização de antes:** criar um cadastro (ação no servidor) e só então pôr o responsável na peça desfazia o que a pessoa mudou nesse meio-tempo. As mudanças partem de uma ref com o documento mais recente (`docAtual()`), e o arrasto tira a foto do documento no primeiro movimento, não no `pointerdown`.
+- **Gestos por ponteiro:** guarde o `pointerId` e ignore os outros; `pointercancel` e `lostpointercapture` encerram o gesto (o sistema pode tomar o toque e o `pointerup` nunca chega).
+- **Enter com foco num botão ou link é do botão:** o atalho de renomear (Enter) ignora `button, a, [role=button]…`; a peça trata o próprio Enter no quadro. Botão com só `onPointerDown` não funciona no teclado: o `onClick` com `e.detail === 0` cobre teclado e leitor de tela. Pelo teclado, uma forma da barra cria a peça no centro do quadro visível, já selecionada e com foco (Enter renomeia).
+- **`beforeunload` com o salvamento parado** (conflito, trava, recusa) não pede confirmação: senão "Recarregar" abria o diálogo "sair do site?".
 - **Hora da trava no fuso de São Paulo** (`timeZone: FUSO`): o servidor e o navegador de teste rodam em UTC.
 - **Um canal chamado `constructor`** acharia a função do `Object` em `estilo.canais[chave]`: a cor só vale se for própria do objeto (`Object.hasOwn`). E o `ESTILO_PADRAO` é congelado: quem quer mudar, copia.
 - **`naGrade` devolve 0, não -0:** `Math.round(-0.1) * 10` é `-0`, e o `toEqual` do Vitest diferencia.
@@ -1521,6 +1529,51 @@ describe('editor/salvamento', () => {
     expect(t.guardados.at(-1)).toBeNull();
   });
 
+  it('responsável apagado em outra tela (22023/23503): para, mas a cópia fica no navegador', async () => {
+    const t = montar([motivoDoErro({ code: '22023', message: 'responsável' })]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('recusado');
+    expect(t.s.parado).toBe(true);
+    expect(t.guardados.at(-1)).toEqual({ revisao: 3, documento: doc('a'), estilo: ESTILO_PADRAO });
+  });
+
+  it('a rede voltou (tentarJa): manda na hora, sem esperar a próxima tentativa', async () => {
+    const t = montar([{ ok: false, motivo: 'rede' }, { ok: false, motivo: 'rede' }]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    await vi.advanceTimersByTimeAsync(2000);
+    await t.responder();
+    // Agora espera 4 s; o `online` chega antes.
+    expect(t.enviados).toHaveLength(2);
+    t.s.tentarJa();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.enviados).toHaveLength(3);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('salvo');
+    // O temporizador velho não manda de novo.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(t.enviados).toHaveLength(3);
+  });
+
+  it('tentarJa sem falha antes, com envio no ar ou parado não faz nada', async () => {
+    const t = montar([{ ok: false, motivo: 'conflito' }]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    t.s.tentarJa(); // ainda esperando a pessoa parar de mexer: segue a espera normal
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.enviados).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(500);
+    t.s.tentarJa(); // no ar
+    expect(t.enviados).toHaveLength(1);
+    await t.responder();
+    t.s.mudou(doc('b'), ESTILO_PADRAO);
+    t.s.tentarJa(); // parado pelo conflito
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(t.enviados).toHaveLength(1);
+  });
+
   it('envio que ficou sem resposta mas chegou: o conflito seguinte não é conflito', async () => {
     let banco: NoBanco = { revisao: 3, documento: null, estilo: null };
     const t = montar([{ ok: false, motivo: 'rede' }, { ok: false, motivo: 'conflito' }], async () => banco);
@@ -1614,7 +1667,7 @@ describe('editor/salvamento', () => {
     expect(motivoDoErro({ code: '40001' })).toEqual({ ok: false, motivo: 'conflito' });
     expect(motivoDoErro({ code: 'P0001' })).toEqual({ ok: false, motivo: 'trava' });
     expect(motivoDoErro({ code: '', message: 'TypeError: Failed to fetch' }, 0)).toEqual({ ok: false, motivo: 'rede' });
-    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
+    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toMatchObject({ ok: false, motivo: 'recusado', manterCopia: true, mensagem: expect.stringContaining('um responsável deste fluxo foi apagado na tela Cadastros') });
     expect(motivoDoErro({ code: '23514', message: 'nome' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'nome' });
     // A mensagem não decide: código do banco com "failed" no texto continua recusa.
     expect(motivo({ code: '22023', message: 'validation failed' }, 400)).toBe('recusado');
@@ -1622,7 +1675,8 @@ describe('editor/salvamento', () => {
     expect(motivo({ code: 'PGRST303' }, 401)).toBe('sessao');
     expect(motivo({ message: 'Invalid authentication credentials' }, 401)).toBe('sessao');
     expect(motivoDoErro({ code: 'P0002', message: 'fluxo não encontrado' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' });
-    expect(motivoDoErro({ code: '23503', message: 'insert or update violates foreign key' })).toMatchObject({ motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
+    expect(motivoDoErro({ code: '23503', message: 'insert or update violates foreign key' })).toMatchObject({ motivo: 'recusado', manterCopia: true, mensagem: expect.stringContaining('guardadas neste navegador') });
+    expect(motivoDoErro({ code: '23514', message: 'nome' })).not.toHaveProperty('manterCopia');
     expect(motivo({ code: '57014' }, 500)).toBe('rede');
     expect(motivo({ code: '40P01' }, 500)).toBe('rede');
     expect(motivo({ message: 'rate limit' }, 429)).toBe('rede');
@@ -1700,8 +1754,10 @@ export type Resposta =
   /**
    * conflito: outra pessoa salvou no meio (40001); trava: outra pessoa pegou a trava (P0001); rede: não chegou ou
    * deu um erro passageiro (tenta de novo); sessao: o login venceu (tenta de novo até a pessoa entrar outra vez).
+   * `manterCopia`: recusa que não é culpa do documento daqui (um cadastro apagado em outra tela): a cópia fica no
+   * navegador, senão tudo desde o último salvamento se perderia.
    */
-  | { ok: false; motivo: 'conflito' | 'trava' | 'rede' | 'sessao' | 'recusado'; mensagem?: string };
+  | { ok: false; motivo: 'conflito' | 'trava' | 'rede' | 'sessao' | 'recusado'; mensagem?: string; manterCopia?: boolean };
 
 export type Situacao = 'salvo' | 'esperando' | 'salvando' | 'sem_rede' | 'sem_sessao' | 'conflito' | 'sem_trava' | 'recusado';
 
@@ -1747,7 +1803,7 @@ export class Salvamento {
   revisao: number;
   private pendente: Versao | null = null;
   private voo: Promise<boolean> | null = null;
-  private parado = false;
+  private _parado = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private tentativas = 0;
   /** Versões mandadas desde a última confirmação que ficaram sem resposta: podem ter chegado (ver `conferir`). */
@@ -1759,6 +1815,11 @@ export class Salvamento {
     this.revisao = o.revisao;
   }
 
+  /** Parou (conflito, trava perdida, recusa ou `parar`): não manda mais nada sozinho. */
+  get parado(): boolean {
+    return this._parado;
+  }
+
   /** Tem mudança que ainda não chegou no banco? */
   get sujo(): boolean {
     return this.pendente !== null || this.voo !== null;
@@ -1767,14 +1828,14 @@ export class Salvamento {
   mudou(documento: Documento, estilo: Estilo): void {
     this.pendente = { documento, estilo };
     // Parado, a mudança fica na fila (sem barulho na tela) e vai se alguém chamar `retomar`.
-    if (this.parado) return;
+    if (this._parado) return;
     if (!this.voo) this.o.aoMudar('esperando');
     this.agendar(this.o.espera ?? 500);
   }
 
   /** Manda já o que estiver pendente e espera tudo chegar (ou falhar). Ao sair da página, por exemplo. */
   async agora(): Promise<void> {
-    while (!this.parado && (this.voo || this.pendente)) {
+    while (!this._parado && (this.voo || this.pendente)) {
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
       if (!(await (this.voo ?? this.enviar()))) return;
@@ -1783,14 +1844,25 @@ export class Salvamento {
 
   /** Para de mandar. O que estiver no ar termina, mas não agenda mais nada. */
   parar(): void {
-    this.parado = true;
+    this._parado = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
   }
 
+  /**
+   * A rede voltou (evento `online`): quem estava esperando a próxima tentativa (até 30 s) manda já. Fora disso
+   * (nada pendente, já no ar, parado ou sem falha antes) não faz nada.
+   */
+  tentarJa(): void {
+    if (this._parado || this.voo || !this.pendente || this.tentativas === 0) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    void this.enviar();
+  }
+
   /** Volta a mandar depois de um `parar` (por exemplo, apagar o fluxo deu errado). */
   retomar(): void {
-    this.parado = false;
+    this._parado = false;
     if (this.pendente) {
       this.o.aoMudar('esperando');
       this.agendar(0);
@@ -1807,7 +1879,7 @@ export class Salvamento {
 
   private enviar(): Promise<boolean> {
     if (this.voo) return this.voo;
-    if (this.parado || !this.pendente) return Promise.resolve(true);
+    if (this._parado || !this.pendente) return Promise.resolve(true);
     this.voo = this.mandar().finally(() => (this.voo = null));
     return this.voo;
   }
@@ -1826,7 +1898,7 @@ export class Salvamento {
       this.tentativas = 0;
       this.semResposta = [];
       if (!this.pendente) this.o.guardar(null);
-      if (this.parado) return true;
+      if (this._parado) return true;
       if (this.pendente) {
         this.o.aoMudar('esperando');
         this.agendar(0);
@@ -1835,11 +1907,11 @@ export class Salvamento {
     }
     // O que não chegou volta pra fila (a não ser que já tenha coisa mais nova).
     this.pendente ??= atual;
-    if (r.motivo === 'recusado') {
+    if (r.motivo === 'recusado' && !r.manterCopia) {
       // Uma cópia recusada voltaria a cada vez que o fluxo abrisse e seria recusada de novo: não fica.
       this.o.guardar(null);
     } else this.o.guardar({ revisao: this.revisao, ...this.pendente });
-    if (this.parado) return false;
+    if (this._parado) return false;
     if (r.motivo === 'rede' || r.motivo === 'sessao') {
       this.o.aoMudar(r.motivo === 'rede' ? 'sem_rede' : 'sem_sessao');
       this.agendar(proximaTentativa(this.tentativas++));
@@ -1918,7 +1990,15 @@ export function motivoDoErro(e: { code?: string; message?: string } | null | und
   if (c === 'P0001') return { ok: false, motivo: 'trava' };
   // O que o salvar_fluxo recusa por causa de outra tela: o fluxo ou um cadastro dele foi apagado.
   if (c === 'P0002') return { ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' };
-  if (c === '22023' || c === '23503') return { ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' };
+  // O documento daqui está certo, só aponta pra um cadastro que sumiu: a cópia fica (o editor tira esse responsável
+  // ao recuperar), senão o trabalho desde o último salvamento iria embora.
+  if (c === '22023' || c === '23503')
+    return {
+      ok: false,
+      motivo: 'recusado',
+      manterCopia: true,
+      mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros. As mudanças ficaram guardadas neste navegador: recarregue pra continuar sem esse responsável',
+    };
   if (c === 'PGRST301' || c === 'PGRST303' || status === 401) return { ok: false, motivo: 'sessao' };
   if (c === '57014' || c === '40P01' || /^(08|53)/.test(c) || status === 429 || (status !== undefined && status >= 500)) return { ok: false, motivo: 'rede' };
   if (!c && status === 413) return { ok: false, motivo: 'recusado', mensagem: 'o fluxo ficou grande demais pra salvar' };
@@ -2001,7 +2081,7 @@ export function usosNoDocumento(doc: Documento): Map<string, number> {
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `cd apps/web && npx vitest run test/editor && npx tsc --noEmit`
-Expected: `Tests  53 passed (53)`; `tsc` sem saída.
+Expected: `Tests  56 passed (56)`; `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2227,6 +2307,7 @@ describe('acoes/cadastros', () => {
 
   it('horário: confere janelas e feriados antes de gravar', async () => {
     expect((await mudarHorario('e1', 'k1', { janelas: [{ dias: ['seg'], inicio: '18:00', fim: '08:00' }] })).erro).toMatch(/Confere as janelas/);
+    expect((await mudarHorario('e1', 'k1', { janelas: [{ dias: [], inicio: '08:00', fim: '18:00' }] })).erro).toMatch(/pelo menos um dia/);
     expect(b.feitas).toEqual([]);
     b.quando('cadastros.update', { data: [{ id: 'k1' }], error: null });
     expect(await mudarHorario('e1', 'k1', { janelas: [{ dias: ['sab'], inicio: '00:00', fim: '24:00' }], feriados: [{ data: '2026-12-25', todo_ano: true, extra: 1 }] })).toEqual({});
@@ -2608,7 +2689,8 @@ export async function apagarCadastro(empresaId: string, id: string): Promise<{ e
 /** Janelas e feriados de um Horário, conferidos como o relógio confere. */
 export async function mudarHorario(empresaId: string, id: string, campos: unknown): Promise<{ erro?: string }> {
   const lidos = camposHorario({ id, tipo: 'horario', nome: 'h', campos: campos as Record<string, unknown> });
-  if (!lidos) return { erro: 'Confere as janelas (o fim depois do início, até 24:00) e as datas dos feriados.' };
+  // Janela sem dia não abre nunca: é engano de quem editou, não um horário.
+  if (!lidos || lidos.janelas.some((j) => !j.dias.length)) return { erro: 'Confere as janelas (o fim depois do início, até 24:00, com pelo menos um dia) e as datas dos feriados.' };
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('cadastros').update({ campos: lidos }).eq('empresa_id', empresaId).eq('id', id).eq('tipo', 'horario').select('id');
   if (r.error) return { erro: mensagemDoErro('mudarHorario', r.error) };
@@ -2865,6 +2947,7 @@ O CSS é o do protótipo, com cada regra dentro de `.editor` (e `.app` virou `.e
 
 /* Responsável: busca nos cadastros, com "criar" no fim. */
 .editor .combo { position: relative; }
+.editor .combo > .dica { margin-top: 5px; }
 .editor .sugestoes { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; display: grid; gap: 2px; max-height: 240px; overflow: auto; }
 .editor .sugestoes button { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 0; background: none; border-radius: 7px; padding: 6px 8px; text-align: left; cursor: pointer; font-size: 13px; color: var(--ink); }
 .editor .sugestoes button[aria-selected="true"], .editor .sugestoes button:hover { background: var(--tile); }
@@ -2874,6 +2957,13 @@ O CSS é o do protótipo, com cada regra dentro de `.editor` (e `.app` virou `.e
 .editor .cartao-sim .quando { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--ink-2); }
 .editor .cartao-sim .quando input[type="datetime-local"] { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--node); font-size: 12.5px; }
 .editor .cartao-sim .quando label { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Teclado: peças, notas e rótulos entram no Tab; o + aparece quando tem o foco. */
+.editor .no:focus-visible, .editor .rotulo-cano:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.editor .no .mais:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A região viva das faixas fica montada mesmo vazia; vazia, não abre o espaço do gap. */
+.editor .cabeca-editor > .vivo { display: grid; gap: 8px; }
+.editor .cabeca-editor > .vivo:empty { margin-bottom: -8px; }
 ```
 
 - [ ] **Passo 2: peças, notas, grupos e o rótulo do cano**
@@ -2888,48 +2978,51 @@ import { formatarTempo, textoRegra, type Conexao, type Grupo, type Nota, type Pe
 import { Icone } from '@/componentes/Icone';
 import { FORMAS } from '@/editor/pecas';
 
-/** Como a simulação marca uma peça: molhada (com a cor da água), a atual, perguntando, em foco no holofote. */
-export interface MarcaPlay {
-  agua?: string;
-  atual?: boolean;
-  perguntando?: boolean;
-  foco?: boolean;
-}
-
+/**
+ * Tudo em valores simples (nada de objeto montado a cada desenho), senão o `memo` nunca segura nada. A simulação
+ * marca a peça como molhada (`agua`, a cor), a atual, perguntando e em foco no holofote.
+ */
 export interface PropsPeca {
   peca: Peca;
   selecionada: boolean;
   /** Nome do responsável (o cadastro), se há. */
   responsavel?: string;
-  canal?: { nome: string; cor: string };
+  canalNome?: string;
+  canalCor?: string;
   /** Cor do Início: a do canal em que a água começa. */
   corInicio: string;
-  play?: MarcaPlay;
+  agua?: string;
+  atual?: boolean;
+  perguntando?: boolean;
+  foco?: boolean;
   /** Só leitura: sem a bolinha de ligar e sem o +. */
   soLeitura: boolean;
 }
 
-/** Uma peça no quadro. Memorizada: arrastar uma peça não redesenha as outras. */
-export const PecaNoQuadro = memo(function PecaNoQuadro({ peca: p, selecionada, responsavel, canal, corInicio, play, soLeitura }: PropsPeca) {
+/**
+ * Uma peça no quadro. Memorizada: arrastar uma peça não redesenha as outras. Dá pra chegar nela pelo Tab; o teclado
+ * e o clique sem ponteiro (leitor de tela) são tratados no quadro.
+ */
+export const PecaNoQuadro = memo(function PecaNoQuadro({ peca: p, selecionada, responsavel, canalNome, canalCor, corInicio, agua, atual, perguntando, foco, soLeitura }: PropsPeca) {
   const f = FORMAS[p.tipo];
   const classes = ['no', `t-${p.tipo}`];
   if (selecionada) classes.push('sel');
   if (p.cor && p.tipo !== 'decisao') classes.push('com-cor');
-  if (play?.agua) classes.push('molhado');
-  if (play?.atual) classes.push('atual');
-  if (play?.perguntando) classes.push('perguntando');
-  if (play?.foco) classes.push('foco');
+  if (agua) classes.push('molhado');
+  if (atual) classes.push('atual');
+  if (perguntando) classes.push('perguntando');
+  if (foco) classes.push('foco');
   const estilo: Record<string, string | number> = { left: p.x, top: p.y, width: f.w, height: f.h };
   if (p.tipo === 'inicio') estilo['--c'] = corInicio;
   if (p.cor && p.tipo !== 'decisao') estilo['--pc'] = p.cor;
-  if (play?.agua) estilo['--agua'] = play.agua;
+  if (agua) estilo['--agua'] = agua;
   const sub = [responsavel ?? f.nome, p.tempo_s ? formatarTempo(p.tempo_s) : null].filter(Boolean).join(' · ');
   return (
-    <div className={classes.join(' ')} data-peca={p.id} style={estilo} role="button" aria-label={`${f.nome}: ${p.nome}`} aria-pressed={selecionada}>
+    <div className={classes.join(' ')} data-peca={p.id} style={estilo} role="button" tabIndex={0} aria-label={`${f.nome}: ${p.nome}`} aria-pressed={selecionada}>
       {p.tipo !== 'decisao' && (
         <span className="etiqueta">
           {f.nome.toLowerCase()}
-          {canal ? ` · ${canal.nome.toLowerCase()}` : ''}
+          {canalNome ? ` · ${canalNome.toLowerCase()}` : ''}
         </span>
       )}
       <span className="nivel" />
@@ -2939,14 +3032,15 @@ export const PecaNoQuadro = memo(function PecaNoQuadro({ peca: p, selecionada, r
       <span className="textos">
         <span className="titulo">{p.nome}</span>
         <span className="sub">
-          {canal && <span className="ponto-canal" style={{ ['--c' as string]: canal.cor }} />}
+          {canalNome && <span className="ponto-canal" style={{ ['--c' as string]: canalCor }} />}
           <span>{sub}</span>
         </span>
       </span>
       {!soLeitura && (
         <>
           <span className="ponta" data-ponta={p.id} title="Arraste pra ligar" />
-          <button className="mais" type="button" data-mais={p.id} aria-label={`Criar a próxima etapa ligada a ${p.nome}`}>
+          {/* Só entra no Tab com a peça selecionada (fora disso ele nem aparece). */}
+          <button className="mais" type="button" data-mais={p.id} tabIndex={selecionada ? 0 : -1} aria-label={`Criar a próxima etapa ligada a ${p.nome}`}>
             <Icone nome="mais" />
           </button>
         </>
@@ -2959,7 +3053,7 @@ export const NotaNoQuadro = memo(function NotaNoQuadro({ nota: n, selecionada }:
   const estilo: Record<string, string | number> = { left: n.x, top: n.y, width: n.w, height: n.h };
   if (n.cor) estilo['--pc'] = n.cor;
   return (
-    <div className={`no t-nota${n.cor ? ' com-cor' : ''}${selecionada ? ' sel' : ''}`} data-nota={n.id} style={estilo} role="button" aria-label={`Nota: ${n.texto}`} aria-pressed={selecionada}>
+    <div className={`no t-nota${n.cor ? ' com-cor' : ''}${selecionada ? ' sel' : ''}`} data-nota={n.id} style={estilo} role="button" tabIndex={0} aria-label={`Nota: ${n.texto}`} aria-pressed={selecionada}>
       <span className="textos">
         <span className="titulo">{n.texto}</span>
       </span>
@@ -3000,6 +3094,7 @@ export const RotuloCano = memo(function RotuloCano({
       data-rotulo={c.id}
       style={{ left: x, top: y, ...(escolhivel && corAgua && { ['--agua' as string]: corAgua }) }}
       role="button"
+      tabIndex={0}
       aria-label={escolhivel ? `Escolher ${t}` : `Ligação: ${t}`}
     >
       {t}
@@ -3040,7 +3135,8 @@ export function AguaCheia({ d, cor, estilo }: { d: string; cor: string; estilo: 
 export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string; cor: string; estilo: Estilo; pausado: boolean; aoChegar: () => void }) {
   const agua = useRef<SVGPathElement>(null);
   const bolhas = useRef<(SVGCircleElement | null)[]>([]);
-  const gasto = useRef(0);
+  // Quanto do cano já tem água (0 a 1), não o tempo gasto: trocar a velocidade no meio não faz a água pular.
+  const feito = useRef(0);
   const pausa = useRef(pausado);
   pausa.current = pausado;
   const chegar = useRef(aoChegar);
@@ -3058,9 +3154,9 @@ export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string;
     let raf = 0;
     let fim = false;
     const quadro = (t: number) => {
-      if (!pausa.current) gasto.current += t - ultimo;
+      if (!pausa.current) feito.current = Math.min(1, feito.current + Math.max(0, t - ultimo) / dur);
       ultimo = t;
-      const prog = semMovimento ? 1 : Math.min(1, gasto.current / dur);
+      const prog = semMovimento ? 1 : feito.current;
       p.style.strokeDashoffset = String(L * (1 - prog));
       const cabeca = L * prog;
       bolhas.current.forEach((b, i) => {
@@ -3080,7 +3176,8 @@ export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string;
     };
     raf = requestAnimationFrame(quadro);
     return () => cancelAnimationFrame(raf);
-    // O desenho do cano pode mudar no meio (estilo): recomeça a conta do comprimento, não do tempo gasto.
+    // O desenho do cano (estilo) ou a velocidade podem mudar no meio: recomeça a conta do comprimento e da duração,
+    // não do quanto já andou.
   }, [d, estilo.velocidade]);
 
   return (
@@ -3110,7 +3207,7 @@ export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string;
 ```tsx
 'use client';
 
-import { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { Documento, TipoPeca } from '@journey/fluxo';
 import { Icone } from '@/componentes/Icone';
 import { conteudoDoGrupo, moverGrupo, moverNota, moverPeca, redimensionarGrupo, type Selecao } from '@/editor/documento';
@@ -3135,6 +3232,8 @@ export interface QuadroApi {
   enquadrar(ids: string[] | null, animar?: boolean): void;
   paraMundo(cx: number, cy: number): { x: number; y: number };
   contem(cx: number, cy: number): boolean;
+  /** O meio da parte visível do quadro, em coordenadas do mundo. */
+  centro(): { x: number; y: number };
   zoom(fator: number): void;
   /** Abre o menu de formas num ponto da tela. */
   menu(cx: number, cy: number, titulo: string, aoEscolher: (t: TipoPeca) => void): void;
@@ -3172,12 +3271,18 @@ export interface PropsQuadro {
   children?: React.ReactNode;
 }
 
-type Gesto =
+/**
+ * Um gesto é de um ponteiro só (`ponteiro`): um segundo dedo não mexe no arrasto do primeiro. O documento de partida
+ * (`inicio`) é tirado no primeiro movimento de verdade, não no pointerdown: o texto do painel que grava ao perder o
+ * foco chega depois do pointerdown, e o arrasto não pode partir de antes dele.
+ */
+type Gesto = { ponteiro: number } & (
   | { tipo: 'pan'; x0: number; y0: number; vx: number; vy: number }
   | { tipo: 'ligar'; de: string }
-  | { tipo: 'mover'; qual: 'peca' | 'nota'; id: string; dx: number; dy: number; x0: number; y0: number; moveu: boolean; inicio: Documento }
-  | { tipo: 'grupo'; id: string; wx: number; wy: number; moveu: boolean; inicio: Documento; levar: { pecas: string[]; notas: string[] } }
-  | { tipo: 'redim'; id: string; moveu: boolean };
+  | { tipo: 'mover'; qual: 'peca' | 'nota'; id: string; dx: number; dy: number; x0: number; y0: number; inicio: Documento | null }
+  | { tipo: 'grupo'; id: string; wx: number; wy: number; inicio: Documento | null; levar: { pecas: string[]; notas: string[] } | null }
+  | { tipo: 'redim'; id: string; moveu: boolean }
+);
 
 interface Menu {
   x: number;
@@ -3188,6 +3293,7 @@ interface Menu {
 
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 2.5;
+const limitar = (v: number, m: number) => Math.max(-m, Math.min(m, v));
 
 export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, ferramenta, soLeitura, play, pausado, aoAguaChegar, renomeando, acoes, ref, children }: PropsQuadro) {
   const palco = useRef<HTMLElement>(null);
@@ -3208,13 +3314,17 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k };
   };
 
-  const zoomEm = (k: number, cx: number, cy: number) => {
+  /** Zoom em volta de um ponto da tela. Funcional: vários eventos de roda no mesmo quadro se somam. */
+  const zoomEm = (k: (atual: number) => number, cx: number, cy: number) => {
     const r = palco.current!.getBoundingClientRect();
-    const v = vistaRef.current;
-    const kk = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k));
     const px = cx - r.left;
     const py = cy - r.top;
-    setVista({ x: px - ((px - v.x) * kk) / v.k, y: py - ((py - v.y) * kk) / v.k, k: kk });
+    // A pessoa pegou a câmera: a animação (enquadrar, seguir a água) para aqui.
+    cancelAnimationFrame(raf.current);
+    setVista((v) => {
+      const kk = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k(v.k)));
+      return { x: px - ((px - v.x) * kk) / v.k, y: py - ((py - v.y) * kk) / v.k, k: kk };
+    });
   };
 
   const animar = (alvo: Vista, comMovimento: boolean) => {
@@ -3259,9 +3369,10 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       const r = palco.current?.getBoundingClientRect();
       return !!r && cx > r.left && cx < r.right && cy > r.top && cy < r.bottom;
     },
+    centro: () => paraMundo(...centroTela(palco.current)),
     zoom: (f) => {
       const r = palco.current!.getBoundingClientRect();
-      zoomEm(vistaRef.current.k * f, r.left + r.width / 2, r.top + r.height / 2);
+      zoomEm((k) => k * f, r.left + r.width / 2, r.top + r.height / 2);
     },
     menu: abrirMenu,
   }));
@@ -3279,31 +3390,28 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     const el = palco.current!;
     const roda = (e: WheelEvent) => {
       e.preventDefault();
-      if (e.ctrlKey || e.metaKey) zoomEm(vistaRef.current.k * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
-      else setVista((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+      // Em linhas ou páginas (Firefox), vira pixels. O zoom é limitado por evento: um dente da roda (100 px) não
+      // pode dividir o zoom por 2,7; na pinça os passos são pequenos e nem chegam no limite.
+      const escala = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const dx = e.deltaX * escala;
+      const dy = e.deltaY * escala;
+      if (e.ctrlKey || e.metaKey) return zoomEm((k) => k * Math.exp(-limitar(dy, 25) * 0.01), e.clientX, e.clientY);
+      cancelAnimationFrame(raf.current);
+      setVista((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
     };
     el.addEventListener('wheel', roda, { passive: false });
     return () => el.removeEventListener('wheel', roda);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const pecas = useMemo(() => new Map(doc.pecas.map((p) => [p.id, p])), [doc.pecas]);
-  const canos = useMemo(() => {
-    // Ida e volta entre as mesmas peças: cada cano vai pra um lado, senão ficam um em cima do outro.
-    const pares = new Set(doc.conexoes.map((c) => `${c.de}>${c.para}`));
-    return doc.conexoes.flatMap((c) => {
-      const a = pecas.get(c.de);
-      const b = pecas.get(c.para);
-      if (!a || !b) return [];
-      const desvio = a.id !== b.id && pares.has(`${c.para}>${c.de}`) ? (c.de < c.para ? -9 : 9) : 0;
-      return [{ c, geo: geometriaCano(caixaDe(a), caixaDe(b), estilo.curva, a.id === b.id, desvio) }];
-    });
-  }, [doc.conexoes, pecas, estilo.curva]);
-
-  const fim = (alvo: EventTarget | null, seletor: string) => (alvo as Element | null)?.closest?.(seletor) as HTMLElement | null;
-
   const aoApertar = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.button !== 1) return;
+    // Outro ponteiro já está num gesto (o segundo dedo): fica de fora.
+    if (gesto.current && gesto.current.ponteiro !== e.pointerId) return;
+    // Um campo do painel com texto ainda não gravado grava agora, contra a seleção de antes. Senão o navegador só
+    // tira o foco depois deste pointerdown, com a outra peça já selecionada (e o arrasto já partindo sem o texto).
+    const ativo = document.activeElement;
+    if (ativo instanceof HTMLElement && ativo.closest('.painel')) ativo.blur();
     if (fim(e.target, '.zoom, .cartao-sim, .menu-rapido, .renomear')) return;
     setMenu(null);
     const w = paraMundo(e.clientX, e.clientY);
@@ -3315,13 +3423,19 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     const alvo = fim(e.target, '[data-alvo]');
     const alca = fim(e.target, '[data-alca]');
     const grupoEl = fim(e.target, '[data-grupo]');
-    const capturar = () => palco.current!.setPointerCapture(e.pointerId);
+    const ponteiro = e.pointerId;
+    const capturar = () => palco.current!.setPointerCapture(ponteiro);
     const pan = () => {
-      gesto.current = { tipo: 'pan', x0: e.clientX, y0: e.clientY, vx: vistaRef.current.x, vy: vistaRef.current.y };
+      cancelAnimationFrame(raf.current);
+      gesto.current = { ponteiro, tipo: 'pan', x0: e.clientX, y0: e.clientY, vx: vistaRef.current.x, vy: vistaRef.current.y };
       setArrastandoQuadro(true);
       capturar();
     };
-    if (e.button === 1 || ferramenta === 'mao') return pan();
+    if (e.button === 1) {
+      e.preventDefault(); // sem a rolagem automática do botão do meio
+      return pan();
+    }
+    if (ferramenta === 'mao') return pan();
     if (play && rot?.classList.contains('escolhivel')) return acoes.escolher(rot.dataset.rotulo!);
     if (mais && !soLeitura) {
       e.preventDefault();
@@ -3331,7 +3445,7 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     }
     if (ponta && !soLeitura) {
       e.preventDefault();
-      gesto.current = { tipo: 'ligar', de: ponta.dataset.ponta! };
+      gesto.current = { ponteiro, tipo: 'ligar', de: ponta.dataset.ponta! };
       capturar();
       return moverLigacao(e.clientX, e.clientY);
     }
@@ -3346,19 +3460,19 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       if (!(sel?.tipo === qual && sel.id === id)) acoes.selecionar({ tipo: qual, id });
       if (play || soLeitura) return;
       const item = qual === 'peca' ? doc.pecas.find((p) => p.id === id)! : doc.notas.find((n) => n.id === id)!;
-      gesto.current = { tipo: 'mover', qual, id, dx: w.x - item.x, dy: w.y - item.y, x0: e.clientX, y0: e.clientY, moveu: false, inicio: doc };
+      gesto.current = { ponteiro, tipo: 'mover', qual, id, dx: w.x - item.x, dy: w.y - item.y, x0: e.clientX, y0: e.clientY, inicio: null };
       return capturar();
     }
     if (rot || alvo) return acoes.selecionar({ tipo: 'conexao', id: (rot ?? alvo)!.dataset.rotulo ?? alvo!.dataset.alvo! });
     if (alca && !soLeitura && !play) {
-      gesto.current = { tipo: 'redim', id: alca.dataset.alca!, moveu: false };
+      gesto.current = { ponteiro, tipo: 'redim', id: alca.dataset.alca!, moveu: false };
       return capturar();
     }
     if (grupoEl) {
       const id = grupoEl.dataset.grupo!;
       acoes.selecionar({ tipo: 'grupo', id });
       if (play || soLeitura) return;
-      gesto.current = { tipo: 'grupo', id, wx: w.x, wy: w.y, moveu: false, inicio: doc, levar: conteudoDoGrupo(doc, id) };
+      gesto.current = { ponteiro, tipo: 'grupo', id, wx: w.x, wy: w.y, inicio: null, levar: null };
       return capturar();
     }
     if (sel) acoes.selecionar(null);
@@ -3376,25 +3490,36 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     setTemp({ d: caminho(ancora(caixaDe(a), 'd'), { x: w.x, y: w.y, nx: -1, ny: 0 }, 'suave'), alvo });
   };
 
+  /** Acaba o gesto sem ligar nem abrir menu (o sistema tomou o ponteiro, ou o botão já estava solto). */
+  const cancelar = () => {
+    gesto.current = null;
+    setTemp(null);
+    setArrastandoQuadro(false);
+  };
+  const doGesto = (e: React.PointerEvent) => gesto.current?.ponteiro === e.pointerId;
+
   const aoMover = (e: React.PointerEvent) => {
     const g = gesto.current;
-    if (!g) return;
+    if (!g || g.ponteiro !== e.pointerId) return;
+    // O botão foi solto sem o pointerup chegar aqui (fora da janela, alerta do sistema): o gesto acabou.
+    if (e.pointerType === 'mouse' && e.buttons === 0) return cancelar();
     const w = paraMundo(e.clientX, e.clientY);
     if (g.tipo === 'pan') return setVista((v) => ({ ...v, x: g.vx + e.clientX - g.x0, y: g.vy + e.clientY - g.y0 }));
     if (g.tipo === 'ligar') return moverLigacao(e.clientX, e.clientY);
     if (g.tipo === 'mover') {
-      if (!g.moveu && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 4) return;
-      const primeiro = !g.moveu;
-      g.moveu = true;
+      if (!g.inicio && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 4) return;
+      const primeiro = !g.inicio;
+      g.inicio ??= docRef.current;
       const mover = g.qual === 'peca' ? moverPeca : moverNota;
       return acoes.mudar(mover(g.inicio, g.id, w.x - g.dx, w.y - g.dy), primeiro);
     }
     if (g.tipo === 'grupo') {
       const dx = w.x - g.wx;
       const dy = w.y - g.wy;
-      if (!g.moveu && Math.hypot(dx, dy) < 5) return;
-      const primeiro = !g.moveu;
-      g.moveu = true;
+      if (!g.inicio && Math.hypot(dx, dy) < 5) return;
+      const primeiro = !g.inicio;
+      g.inicio ??= docRef.current;
+      g.levar ??= conteudoDoGrupo(g.inicio, g.id);
       return acoes.mudar(moverGrupo(g.inicio, g.id, dx, dy, g.levar), primeiro);
     }
     if (g.tipo === 'redim') {
@@ -3408,9 +3533,10 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
 
   const aoSoltar = (e: React.PointerEvent) => {
     const g = gesto.current;
+    if (!g || g.ponteiro !== e.pointerId) return;
     gesto.current = null;
     setArrastandoQuadro(false);
-    if (g?.tipo !== 'ligar') return;
+    if (g.tipo !== 'ligar') return;
     setTemp(null);
     const sob = (document.elementFromPoint(e.clientX, e.clientY) as Element | null)?.closest('[data-peca]') as HTMLElement | null;
     if (sob && sob.dataset.peca !== g.de) return acoes.ligar(g.de, sob.dataset.peca!);
@@ -3432,6 +3558,185 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
     const w = paraMundo(e.clientX, e.clientY);
     abrirMenu(e.clientX + 4, e.clientY - 8, 'Criar aqui', (t) => acoes.criar(t, w.x, w.y));
   };
+
+  /**
+   * Peça, nota ou rótulo ativados sem ponteiro (teclado, leitor de tela): seleciona; Enter na já selecionada renomeia,
+   * como os dois cliques. Na pergunta do play, o rótulo da opção escolhe.
+   */
+  const ativar = (el: HTMLElement, enter: boolean) => {
+    const rotulo = el.dataset.rotulo;
+    if (rotulo) return play && el.classList.contains('escolhivel') ? acoes.escolher(rotulo) : acoes.selecionar({ tipo: 'conexao', id: rotulo });
+    const qual = el.dataset.peca ? 'peca' : 'nota';
+    const id = (el.dataset.peca ?? el.dataset.nota)!;
+    if (!(sel?.tipo === qual && sel.id === id)) return acoes.selecionar({ tipo: qual, id });
+    if (enter && !soLeitura && !play) acoes.renomear(id);
+  };
+
+  const aoTeclar = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target as HTMLElement;
+    // No + o Enter vira clique (abre o menu); não pode chegar no atalho de renomear do editor.
+    if (el.dataset.mais) return e.stopPropagation();
+    if (!el.matches('[data-peca], [data-nota], [data-rotulo]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ativar(el, e.key === 'Enter');
+  };
+
+  // Clique sem ponteiro (o leitor de tela ativando o botão, Enter no +): `detail` 0. O de mouse o pointerdown já tratou.
+  const aoClicar = (e: React.MouseEvent) => {
+    if (e.detail !== 0) return;
+    const mais = fim(e.target, '[data-mais]');
+    if (mais) {
+      if (soLeitura || play) return;
+      const id = mais.dataset.mais!;
+      const r = mais.getBoundingClientRect();
+      return abrirMenu(r.right + 6, r.top - 8, 'Próxima peça', (t) => acoes.criarLigada(id, t));
+    }
+    const alvo = fim(e.target, '[data-peca], [data-nota], [data-rotulo]');
+    if (alvo) ativar(alvo, false);
+  };
+
+  const cor = (canal: string | null | undefined) => corDoCanal(estilo, canais, canal ?? canalFluxo);
+  const canalPrincipal = canais.find((c) => c.chave === canalFluxo);
+  const semInicio = doc.pecas.length > 0 && !doc.pecas.some((p) => p.tipo === 'inicio');
+
+  return (
+    <section
+      ref={palco}
+      className={`palco${ferramenta === 'mao' ? ' mao' : ''}${arrastandoQuadro ? ' arrastando-quadro' : ''}${criaAlgo(ferramenta) ? ' criando' : ''}`}
+      aria-label="Quadro do fluxo"
+      style={{ backgroundSize: `${24 * vista.k}px ${24 * vista.k}px`, backgroundPosition: `${vista.x}px ${vista.y}px` }}
+      onPointerDown={aoApertar}
+      onPointerMove={aoMover}
+      onPointerUp={aoSoltar}
+      onPointerCancel={(e) => doGesto(e) && cancelar()}
+      onLostPointerCapture={(e) => doGesto(e) && cancelar()}
+      onDoubleClick={aoDoisCliques}
+      onKeyDown={aoTeclar}
+      onClick={aoClicar}
+      // O palco tem overflow hidden, mas o navegador ainda rola ele pra mostrar um elemento com foco: volta pro lugar.
+      onScroll={(e) => {
+        e.currentTarget.scrollLeft = 0;
+        e.currentTarget.scrollTop = 0;
+      }}
+      data-testid="quadro"
+    >
+      <div className="mundo" style={{ transform: `translate(${vista.x}px, ${vista.y}px) scale(${vista.k})` }}>
+        <Mundo
+          doc={doc}
+          estilo={estilo}
+          canais={canais}
+          canalFluxo={canalFluxo}
+          nomesCadastros={nomesCadastros}
+          sel={sel}
+          soLeitura={soLeitura}
+          play={play}
+          pausado={pausado}
+          aoAguaChegar={aoAguaChegar}
+          renomeando={renomeando}
+          temp={temp}
+          acoes={acoes}
+        />
+      </div>
+
+      {doc.pecas.length === 0 && doc.notas.length === 0 && (
+        <div className="vazio-quadro">
+          <div>
+            <b>Quadro em branco</b>
+            <span>{soLeitura ? 'Este fluxo ainda não tem peças.' : 'Arraste uma forma da barra da esquerda, ou dê dois cliques aqui pra criar.'}</span>
+          </div>
+        </div>
+      )}
+      <div className="hud">
+        <span className="pilula" style={{ ['--c' as string]: cor(canalFluxo) }} data-testid="canal-principal">
+          <span className="ponto-cor" />
+          {canalPrincipal?.nome ?? 'sem canal'}
+        </span>
+        <span className="pilula">
+          {doc.pecas.length} peças · {doc.conexoes.length} ligações
+        </span>
+        {semInicio && <span className="pilula">sem Início: o play precisa de um</span>}
+      </div>
+      {!soLeitura && <div className="atalhos">Dois cliques no quadro cria · puxe a bolinha pra ligar · Del apaga · Ctrl+Z desfaz · Ctrl+roda dá zoom</div>}
+      <div className="zoom">
+        <button className="bi" type="button" aria-label="Diminuir zoom" onClick={() => zoomEm((k) => k / 1.2, ...centroTela(palco.current))}>
+          <Icone nome="menos" />
+        </button>
+        <span>{Math.round(vista.k * 100)}%</span>
+        <button className="bi" type="button" aria-label="Aumentar zoom" onClick={() => zoomEm((k) => k * 1.2, ...centroTela(palco.current))}>
+          <Icone nome="mais" />
+        </button>
+        <button className="bi" type="button" aria-label="Ver o fluxo inteiro" title="Ver o fluxo inteiro" onClick={() => enquadrar(null)}>
+          <Icone nome="enquadrar" />
+        </button>
+      </div>
+      {menu && (
+        <div className="menu-rapido" style={{ left: menu.x, top: menu.y }} role="menu" aria-label={menu.titulo} onPointerDown={(e) => e.stopPropagation()}>
+          <div className="titulo-menu">{menu.titulo}</div>
+          {(Object.keys(FORMAS) as TipoPeca[]).map((t, i) => (
+            <button
+              key={t}
+              type="button"
+              role="menuitem"
+              autoFocus={i === 0}
+              onClick={() => {
+                setMenu(null);
+                menu.aoEscolher(t);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return;
+                // Fecha só o menu: o Esc do editor tiraria também a seleção.
+                e.stopPropagation();
+                setMenu(null);
+              }}
+            >
+              <Icone nome={t} />
+              {FORMAS[t].nome}
+            </button>
+          ))}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+const fim = (alvo: EventTarget | null, seletor: string) => (alvo as Element | null)?.closest?.(seletor) as HTMLElement | null;
+
+interface PropsMundo {
+  doc: Documento;
+  estilo: Estilo;
+  canais: readonly CanalEditor[];
+  canalFluxo: string | null;
+  nomesCadastros: ReadonlyMap<string, string>;
+  sel: Selecao;
+  soLeitura: boolean;
+  play: Visual | null;
+  pausado: boolean;
+  aoAguaChegar: () => void;
+  renomeando: string | null;
+  temp: { d: string; alvo: string | null } | null;
+  acoes: AcoesQuadro;
+}
+
+/**
+ * O que está dentro do mundo (grupos, canos, peças, rótulos). Memorizado e sem a vista: andar e dar zoom só mudam o
+ * transform do `.mundo`, sem redesenhar os canos a cada quadro.
+ */
+const Mundo = memo(function Mundo({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, soLeitura, play, pausado, aoAguaChegar, renomeando, temp, acoes }: PropsMundo) {
+  const pecas = useMemo(() => new Map(doc.pecas.map((p) => [p.id, p])), [doc.pecas]);
+  const canos = useMemo(() => {
+    // Ida e volta entre as mesmas peças: cada cano vai pra um lado, senão ficam um em cima do outro.
+    const pares = new Set(doc.conexoes.map((c) => `${c.de}>${c.para}`));
+    return doc.conexoes.flatMap((c) => {
+      const a = pecas.get(c.de);
+      const b = pecas.get(c.para);
+      if (!a || !b) return [];
+      const desvio = a.id !== b.id && pares.has(`${c.para}>${c.de}`) ? (c.de < c.para ? -9 : 9) : 0;
+      return [{ c, geo: geometriaCano(caixaDe(a), caixaDe(b), estilo.curva, a.id === b.id, desvio) }];
+    });
+  }, [doc.conexoes, pecas, estilo.curva]);
 
   // A simulação: o que está molhado, a pergunta (holofote) e a água.
   const foco = new Set<string>();
@@ -3456,182 +3761,106 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
       <path d="M0,0 L10,5 L0,10 z" style={{ fill: cor }} />
     </marker>
   );
-  const canalPrincipal = canais.find((c) => c.chave === canalFluxo);
-  const semInicio = doc.pecas.length > 0 && !doc.pecas.some((p) => p.tipo === 'inicio');
   const renomeado = renomeando ? (doc.pecas.find((p) => p.id === renomeando) ?? doc.notas.find((n) => n.id === renomeando)) : undefined;
 
   return (
-    <section
-      ref={palco}
-      className={`palco${ferramenta === 'mao' ? ' mao' : ''}${arrastandoQuadro ? ' arrastando-quadro' : ''}${criaAlgo(ferramenta) ? ' criando' : ''}`}
-      aria-label="Quadro do fluxo"
-      style={{ backgroundSize: `${24 * vista.k}px ${24 * vista.k}px`, backgroundPosition: `${vista.x}px ${vista.y}px` }}
-      onPointerDown={aoApertar}
-      onPointerMove={aoMover}
-      onPointerUp={aoSoltar}
-      onDoubleClick={aoDoisCliques}
-      // O palco tem overflow hidden, mas o navegador ainda rola ele pra mostrar um elemento com foco: volta pro lugar.
-      onScroll={(e) => {
-        e.currentTarget.scrollLeft = 0;
-        e.currentTarget.scrollTop = 0;
-      }}
-      data-testid="quadro"
-    >
-      <div className="mundo" style={{ transform: `translate(${vista.x}px, ${vista.y}px) scale(${vista.k})` }}>
-        <div className="camada">
-          {doc.grupos.map((g) => (
-            <GrupoNoQuadro key={g.id} grupo={g} selecionado={sel?.tipo === 'grupo' && sel.id === g.id} />
-          ))}
-        </div>
-        <svg className="canos" aria-hidden="true">
-          <defs>
-            {marcador('seta', 'var(--pipe-wall)')}
-            {marcador('seta-sel', 'var(--accent)')}
-          </defs>
-          <g transform="translate(20000 20000)">
-            {canos.map(({ c, geo }) => {
-              const selecionado = sel?.tipo === 'conexao' && sel.id === c.id;
-              const seta = `url(#${selecionado ? 'seta-sel' : 'seta'})`;
-              return (
-                <g key={c.id} className={`cano${selecionado ? ' sel' : ''}${escolhiveis.has(c.id) ? ' foco' : ''}`} data-cano={c.id}>
-                  {estilo.cano === 'cano' ? (
-                    <>
-                      <path className="parede" d={geo.d} strokeWidth={esp} markerEnd={seta} />
-                      <path className="nucleo" d={geo.d} strokeWidth={Math.max(1, esp - 4)} />
-                      <path className="reflexo" d={geo.d} strokeWidth={Math.max(0.6, esp / 6)} transform={`translate(0 ${-esp / 5})`} />
-                    </>
-                  ) : (
-                    <path className="linha" d={geo.d} strokeWidth={Math.max(1.4, esp / 3.2)} markerEnd={seta} strokeDasharray={estilo.cano === 'tracejado' ? `${esp * 0.9} ${esp * 0.7}` : undefined} />
-                  )}
-                  <path className="alvo" d={geo.d} data-alvo={c.id} />
-                </g>
-              );
-            })}
-            {temp && (
-              <g className="cano temp">
-                <path className="linha" d={temp.d} strokeWidth={2.5} />
-              </g>
-            )}
-          </g>
-          <g transform="translate(20000 20000)">
-            {play &&
-              canos.map(({ c, geo }) => {
-                if (play.cheias.has(c.id)) return <AguaCheia key={c.id} d={geo.d} cor={cor(play.cheias.get(c.id))} estilo={estilo} />;
-                if (play.correndo?.conexao === c.id)
-                  return <AguaCorrendo key={`${c.id}:correndo`} d={geo.d} cor={cor(play.correndo.canal)} estilo={estilo} pausado={pausado} aoChegar={aoAguaChegar} />;
-                return null;
-              })}
-          </g>
-        </svg>
-        <div className="camada">
-          {doc.notas.map((n) => (
-            <NotaNoQuadro key={n.id} nota={n} selecionada={sel?.tipo === 'nota' && sel.id === n.id} />
-          ))}
-          {doc.pecas.map((p) => {
-            const molhada = play?.molhadas.has(p.id);
-            const canal = p.canal ? canais.find((c) => c.chave === p.canal) : undefined;
+    <>
+      <div className="camada">
+        {doc.grupos.map((g) => (
+          <GrupoNoQuadro key={g.id} grupo={g} selecionado={sel?.tipo === 'grupo' && sel.id === g.id} />
+        ))}
+      </div>
+      <svg className="canos" aria-hidden="true">
+        <defs>
+          {marcador('seta', 'var(--pipe-wall)')}
+          {marcador('seta-sel', 'var(--accent)')}
+        </defs>
+        <g transform="translate(20000 20000)">
+          {canos.map(({ c, geo }) => {
+            const selecionado = sel?.tipo === 'conexao' && sel.id === c.id;
+            const seta = `url(#${selecionado ? 'seta-sel' : 'seta'})`;
             return (
-              <PecaNoQuadro
-                key={p.id}
-                peca={p}
-                selecionada={(sel?.tipo === 'peca' && sel.id === p.id) || temp?.alvo === p.id}
-                {...(p.responsavel && nomesCadastros.has(p.responsavel) && { responsavel: nomesCadastros.get(p.responsavel)! })}
-                {...(canal && { canal: { nome: canal.nome, cor: cor(canal.chave) } })}
-                corInicio={cor(p.canal)}
-                {...(play && {
-                  play: {
-                    ...(molhada && { agua: cor(play.molhadas.get(p.id)) }),
-                    atual: play.atual === p.id,
-                    perguntando: play.pergunta?.peca === p.id,
-                    foco: foco.has(p.id),
-                  },
-                })}
-                soLeitura={soLeitura || !!play}
-              />
+              <g key={c.id} className={`cano${selecionado ? ' sel' : ''}${escolhiveis.has(c.id) ? ' foco' : ''}`} data-cano={c.id}>
+                {estilo.cano === 'cano' ? (
+                  <>
+                    <path className="parede" d={geo.d} strokeWidth={esp} markerEnd={seta} />
+                    <path className="nucleo" d={geo.d} strokeWidth={Math.max(1, esp - 4)} />
+                    <path className="reflexo" d={geo.d} strokeWidth={Math.max(0.6, esp / 6)} transform={`translate(0 ${-esp / 5})`} />
+                  </>
+                ) : (
+                  <path className="linha" d={geo.d} strokeWidth={Math.max(1.4, esp / 3.2)} markerEnd={seta} strokeDasharray={estilo.cano === 'tracejado' ? `${esp * 0.9} ${esp * 0.7}` : undefined} />
+                )}
+                <path className="alvo" d={geo.d} data-alvo={c.id} />
+              </g>
             );
           })}
-          {canos.map(({ c, geo }) => (
-            <RotuloCano
-              key={c.id}
-              conexao={c}
-              x={geo.meio.x}
-              y={geo.meio.y}
-              selecionado={sel?.tipo === 'conexao' && sel.id === c.id}
-              escolhivel={escolhiveis.has(c.id)}
-              {...(play && { corAgua: cor(play.canal) })}
-            />
-          ))}
-          {renomeado && (
-            <CampoNome
-              key={renomeado.id}
-              valor={'nome' in renomeado ? renomeado.nome : renomeado.texto}
-              nota={!('nome' in renomeado)}
-              x={renomeado.x}
-              y={'tipo' in renomeado && renomeado.tipo === 'decisao' ? renomeado.y + FORMAS.decisao.h / 2 - 18 : renomeado.y + 2}
-              w={'tipo' in renomeado ? FORMAS[renomeado.tipo].w : renomeado.w}
-              h={'tipo' in renomeado ? undefined : renomeado.h}
-              aoTerminar={(texto) => (texto === null ? acoes.renomear(null) : acoes.gravarNome(renomeado.id, texto))}
-            />
+          {temp && (
+            <g className="cano temp">
+              <path className="linha" d={temp.d} strokeWidth={2.5} />
+            </g>
           )}
-        </div>
+        </g>
+        <g transform="translate(20000 20000)">
+          {play &&
+            canos.map(({ c, geo }) => {
+              if (play.cheias.has(c.id)) return <AguaCheia key={c.id} d={geo.d} cor={cor(play.cheias.get(c.id))} estilo={estilo} />;
+              if (play.correndo?.conexao === c.id)
+                return <AguaCorrendo key={`${c.id}:correndo`} d={geo.d} cor={cor(play.correndo.canal)} estilo={estilo} pausado={pausado} aoChegar={aoAguaChegar} />;
+              return null;
+            })}
+        </g>
+      </svg>
+      <div className="camada">
+        {doc.notas.map((n) => (
+          <NotaNoQuadro key={n.id} nota={n} selecionada={sel?.tipo === 'nota' && sel.id === n.id} />
+        ))}
+        {doc.pecas.map((p) => {
+          const canal = p.canal ? canais.find((c) => c.chave === p.canal) : undefined;
+          return (
+            <PecaNoQuadro
+              key={p.id}
+              peca={p}
+              selecionada={(sel?.tipo === 'peca' && sel.id === p.id) || temp?.alvo === p.id}
+              {...(p.responsavel && nomesCadastros.has(p.responsavel) && { responsavel: nomesCadastros.get(p.responsavel)! })}
+              {...(canal && { canalNome: canal.nome, canalCor: cor(canal.chave) })}
+              corInicio={cor(p.canal)}
+              {...(play && {
+                ...(play.molhadas.has(p.id) && { agua: cor(play.molhadas.get(p.id)) }),
+                atual: play.atual === p.id,
+                perguntando: play.pergunta?.peca === p.id,
+                foco: foco.has(p.id),
+              })}
+              soLeitura={soLeitura || !!play}
+            />
+          );
+        })}
+        {canos.map(({ c, geo }) => (
+          <RotuloCano
+            key={c.id}
+            conexao={c}
+            x={geo.meio.x}
+            y={geo.meio.y}
+            selecionado={sel?.tipo === 'conexao' && sel.id === c.id}
+            escolhivel={escolhiveis.has(c.id)}
+            {...(play && { corAgua: cor(play.canal) })}
+          />
+        ))}
+        {renomeado && (
+          <CampoNome
+            key={renomeado.id}
+            valor={'nome' in renomeado ? renomeado.nome : renomeado.texto}
+            nota={!('nome' in renomeado)}
+            x={renomeado.x}
+            y={'tipo' in renomeado && renomeado.tipo === 'decisao' ? renomeado.y + FORMAS.decisao.h / 2 - 18 : renomeado.y + 2}
+            w={'tipo' in renomeado ? FORMAS[renomeado.tipo].w : renomeado.w}
+            h={'tipo' in renomeado ? undefined : renomeado.h}
+            aoTerminar={(texto) => (texto === null ? acoes.renomear(null) : acoes.gravarNome(renomeado.id, texto))}
+          />
+        )}
       </div>
-
-      {doc.pecas.length === 0 && doc.notas.length === 0 && (
-        <div className="vazio-quadro">
-          <div>
-            <b>Quadro em branco</b>
-            <span>{soLeitura ? 'Este fluxo ainda não tem peças.' : 'Arraste uma forma da barra da esquerda, ou dê dois cliques aqui pra criar.'}</span>
-          </div>
-        </div>
-      )}
-      <div className="hud">
-        <span className="pilula" style={{ ['--c' as string]: cor(canalFluxo) }} data-testid="canal-principal">
-          <span className="ponto-cor" />
-          {canalPrincipal?.nome ?? 'sem canal'}
-        </span>
-        <span className="pilula">
-          {doc.pecas.length} peças · {doc.conexoes.length} ligações
-        </span>
-        {semInicio && <span className="pilula">sem Início: o play precisa de um</span>}
-      </div>
-      {!soLeitura && <div className="atalhos">Dois cliques no quadro cria · puxe a bolinha pra ligar · Del apaga · Ctrl+Z desfaz · Ctrl+roda dá zoom</div>}
-      <div className="zoom">
-        <button className="bi" type="button" aria-label="Diminuir zoom" onClick={() => zoomEm(vista.k / 1.2, ...centroTela(palco.current))}>
-          <Icone nome="menos" />
-        </button>
-        <span>{Math.round(vista.k * 100)}%</span>
-        <button className="bi" type="button" aria-label="Aumentar zoom" onClick={() => zoomEm(vista.k * 1.2, ...centroTela(palco.current))}>
-          <Icone nome="mais" />
-        </button>
-        <button className="bi" type="button" aria-label="Ver o fluxo inteiro" title="Ver o fluxo inteiro" onClick={() => enquadrar(null)}>
-          <Icone nome="enquadrar" />
-        </button>
-      </div>
-      {menu && (
-        <div className="menu-rapido" style={{ left: menu.x, top: menu.y }} role="menu" aria-label={menu.titulo} onPointerDown={(e) => e.stopPropagation()}>
-          <div className="titulo-menu">{menu.titulo}</div>
-          {(Object.keys(FORMAS) as TipoPeca[]).map((t, i) => (
-            <button
-              key={t}
-              type="button"
-              role="menuitem"
-              autoFocus={i === 0}
-              onClick={() => {
-                setMenu(null);
-                menu.aoEscolher(t);
-              }}
-              onKeyDown={(e) => e.key === 'Escape' && setMenu(null)}
-            >
-              <Icone nome={t} />
-              {FORMAS[t].nome}
-            </button>
-          ))}
-        </div>
-      )}
-      {children}
-    </section>
+    </>
   );
-}
+});
 
 const centroTela = (el: HTMLElement | null): [number, number] => {
   const r = el?.getBoundingClientRect();
@@ -3694,9 +3923,29 @@ git commit -m "editor: o quadro (peças, canos, água, gestos)" -m "$(cat .git/a
 ```tsx
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Cadastro, TipoPeca } from '@journey/fluxo';
 import { buscar, comNome, tipoSugerido, type TipoCadastro } from '@/editor/cadastros';
+
+/**
+ * Grava, ao desmontar, o que foi digitado e não chegou a sair do campo (a seleção mudou com o foco aqui dentro). Usa
+ * o `aoMudar` do último desenho deste campo: o da peça que ele mostrava, não o da que foi selecionada agora.
+ */
+function useGravaAoSair<T>(aoMudar: (v: T) => void) {
+  const pendente = useRef<{ v: T } | null>(null);
+  const ultimo = useRef(aoMudar);
+  ultimo.current = aoMudar;
+  useEffect(
+    () => () => {
+      // No modo estrito esta limpeza roda uma vez ao montar: aí não há nada pendente.
+      const p = pendente.current;
+      pendente.current = null;
+      if (p) ultimo.current(p.v);
+    },
+    [],
+  );
+  return pendente;
+}
 
 /**
  * Campo de texto que grava ao sair (ou no Enter), como no protótipo: digitar não cria um passo no histórico por
@@ -3715,10 +3964,15 @@ export function CampoTexto({
   multilinha?: boolean;
   placeholder?: string;
 }) {
+  const pendente = useGravaAoSair(aoMudar);
   const props = {
     defaultValue: valor,
     placeholder,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      pendente.current = e.currentTarget.value !== valor ? { v: e.currentTarget.value } : null;
+    },
     onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      pendente.current = null;
       if (e.currentTarget.value !== valor) aoMudar(e.currentTarget.value);
     },
     onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -3749,11 +4003,17 @@ export function partesTempo(s: number | undefined): [number, Unidade] {
 export function CampoTempo({ rotulo, valor, aoMudar }: { rotulo: string; valor: number | undefined; aoMudar: (s: number | undefined) => void }) {
   const [n, u] = partesTempo(valor);
   const id = useId();
+  const segundos = (num: string, uni: Unidade) => {
+    const s = Math.round((parseFloat(num) || 0) * UNIDADES[uni]);
+    return s > 0 ? s : undefined;
+  };
+  const pendente = useGravaAoSair(aoMudar);
   const ler = (form: HTMLElement) => {
-    const num = parseFloat((form.querySelector(`[data-n="${id}"]`) as HTMLInputElement).value) || 0;
+    pendente.current = null;
+    const num = (form.querySelector(`[data-n="${id}"]`) as HTMLInputElement).value;
     const uni = (form.querySelector(`[data-u="${id}"]`) as HTMLSelectElement).value as Unidade;
-    const s = Math.round(num * UNIDADES[uni]);
-    aoMudar(s > 0 ? s : undefined);
+    const s = segundos(num, uni);
+    if (s !== valor) aoMudar(s);
   };
   return (
     <label className="campo">
@@ -3768,6 +4028,10 @@ export function CampoTempo({ rotulo, valor, aoMudar }: { rotulo: string; valor: 
           placeholder="0"
           style={{ flex: 1 }}
           aria-label={`${rotulo}: quantidade`}
+          onChange={(e) => {
+            const s = segundos(e.currentTarget.value, (e.currentTarget.nextElementSibling as HTMLSelectElement).value as Unidade);
+            pendente.current = s !== valor ? { v: s } : null;
+          }}
           onBlur={(e) => ler(e.currentTarget.parentElement!)}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
@@ -3809,7 +4073,8 @@ export function Cores({ rotulo, atual, cores, aoMudar }: { rotulo: string; atual
 
 /**
  * O responsável de uma peça: busca nos cadastros da empresa; um nome que não existe vira cadastro novo (com o
- * tipo sugerido, que dá pra trocar). Vazio tira o responsável.
+ * tipo sugerido, que dá pra trocar) só no Enter ou no "Criar …": sair do campo com um nome que não existe volta ao
+ * que estava (criar um cadastro da empresa sem querer é pior que redigitar). Vazio tira o responsável.
  */
 export function Responsavel({
   rotulo,
@@ -3830,9 +4095,11 @@ export function Responsavel({
 }) {
   const [texto, setTexto] = useState(atual?.nome ?? '');
   const [aberto, setAberto] = useState(false);
-  const [destaque, setDestaque] = useState(0);
+  // -1: nada destacado (o Enter num campo vazio não pega o primeiro cadastro da lista).
+  const [destaque, setDestaque] = useState(-1);
   const [tipoNovo, setTipoNovo] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
+  const caixa = useRef<HTMLDivElement>(null);
   const lista = useId();
   const achados = buscar(cadastros, texto, 6);
   const exato = comNome(cadastros, texto);
@@ -3840,6 +4107,15 @@ export function Responsavel({
   const tipo = tipoNovo ?? tipoSugerido(texto, tipoPeca, tipos);
   const nomeTipo = (k: string) => tipos.find((t) => t.chave === k)?.nome ?? k;
   const opcoes = [...achados.map((k) => ({ k })), ...(podeCriar ? [{ k: null }] : [])];
+  const mostrar = aberto && opcoes.length > 0;
+  const idOpcao = (i: number) => `${lista}-op-${i}`;
+
+  const voltar = () => {
+    setTexto(atual?.nome ?? '');
+    setTipoNovo(null);
+    setAberto(false);
+    setDestaque(-1);
+  };
 
   const escolher = async (i: number) => {
     const o = opcoes[i];
@@ -3854,9 +4130,10 @@ export function Responsavel({
     setCriando(false);
   };
 
+  /** Enter sem opção destacada: vazio tira, nome que existe vale, nome novo cria. */
   const confirmar = () => {
     const t = texto.trim();
-    if (!t) return aoEscolher(undefined);
+    if (!t) return atual && aoEscolher(undefined);
     if (exato) {
       setTexto(exato.nome);
       return exato.id !== atual?.id && aoEscolher(exato.id);
@@ -3864,16 +4141,39 @@ export function Responsavel({
     void escolher(opcoes.length - 1);
   };
 
+  /** Saiu do campo e da escolha do tipo: vazio tira, nome que existe vale, nome novo volta ao que estava. */
+  const sair = () => {
+    setAberto(false);
+    if (criando) return;
+    const t = texto.trim();
+    if (t === (atual?.nome ?? '')) return;
+    if (!t) return aoEscolher(undefined);
+    if (exato) {
+      setTexto(exato.nome);
+      return exato.id !== atual?.id && aoEscolher(exato.id);
+    }
+    voltar();
+  };
+
   return (
-    <div className="campo">
+    <div
+      className="campo"
+      ref={caixa}
+      onBlur={(e) => {
+        // O foco foi pro tipo do cadastro novo (ou voltou dele pro campo): ainda está escolhendo.
+        if (caixa.current?.contains(e.relatedTarget as Node | null)) return;
+        sair();
+      }}
+    >
       <label htmlFor={`${lista}-campo`}>{rotulo}</label>
       <div className="combo">
         <input
           id={`${lista}-campo`}
           type="text"
           role="combobox"
-          aria-expanded={aberto}
-          aria-controls={lista}
+          aria-expanded={mostrar}
+          aria-controls={mostrar ? lista : undefined}
+          aria-activedescendant={mostrar && destaque >= 0 && destaque < opcoes.length ? idOpcao(destaque) : undefined}
           aria-autocomplete="list"
           value={texto}
           placeholder="Escreva: vira cadastro"
@@ -3881,35 +4181,47 @@ export function Responsavel({
           onChange={(e) => {
             setTexto(e.target.value);
             setAberto(true);
-            setDestaque(0);
+            setDestaque(e.target.value.trim() ? 0 : -1);
           }}
           onFocus={() => setAberto(true)}
-          onBlur={() => {
-            setAberto(false);
-            // Saiu do campo com um nome diferente: vale como Enter (usa o que existe ou cria).
-            if (texto.trim() !== (atual?.nome ?? '')) confirmar();
-          }}
+          onBlur={() => setAberto(false)}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
+              setAberto(true);
               setDestaque((d) => Math.min(d + 1, opcoes.length - 1));
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               setDestaque((d) => Math.max(d - 1, 0));
             } else if (e.key === 'Enter') {
               e.preventDefault();
-              if (aberto && opcoes[destaque]) void escolher(destaque);
+              if (mostrar && destaque >= 0 && opcoes[destaque]) void escolher(destaque);
               else confirmar();
-            } else if (e.key === 'Escape') setAberto(false);
+            } else if (e.key === 'Escape') voltar();
           }}
         />
-        {aberto && opcoes.length > 0 && (
-          <div className="sugestoes" id={lista} role="listbox">
+        {/* O tipo fica entre o campo e a lista: a lista aberta não cobre a escolha. */}
+        {podeCriar && (
+          <label className="linha dica">
+            Novo cadastro do tipo
+            <select value={tipo} onChange={(e) => setTipoNovo(e.target.value)} aria-label="Tipo do cadastro novo">
+              {tipos.map((t) => (
+                <option key={t.chave} value={t.chave}>
+                  {t.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {mostrar && (
+          <div className="sugestoes" id={lista} role="listbox" aria-label={rotulo}>
             {opcoes.map((o, i) => (
               <button
                 key={o.k?.id ?? 'novo'}
+                id={idOpcao(i)}
                 type="button"
                 role="option"
+                tabIndex={-1}
                 aria-selected={i === destaque}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void escolher(i)}
@@ -3930,18 +4242,6 @@ export function Responsavel({
           </div>
         )}
       </div>
-      {podeCriar && (
-        <label className="linha dica">
-          Novo cadastro do tipo
-          <select value={tipo} onChange={(e) => setTipoNovo(e.target.value)} aria-label="Tipo do cadastro novo">
-            {tipos.map((t) => (
-              <option key={t.chave} value={t.chave}>
-                {t.nome}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
     </div>
   );
 }
@@ -4029,25 +4329,29 @@ export function Painel(p: PropsPainel) {
   );
 }
 
+/**
+ * Um painel por item selecionado (`key` pelo id): trocar de peça monta campos novos, e o que estava digitado no campo
+ * da anterior é gravado nela (ver `useGravaAoSair`, no Campos), nunca na que acabou de ser selecionada.
+ */
 function Propriedades(p: PropsPainel) {
   const { doc, sel } = p;
   if (sel?.tipo === 'peca') {
     const peca = doc.pecas.find((x) => x.id === sel.id);
-    if (peca) return <PainelPeca {...p} peca={peca} />;
+    if (peca) return <PainelPeca key={`peca:${peca.id}`} {...p} peca={peca} />;
   }
   if (sel?.tipo === 'conexao') {
     const c = doc.conexoes.find((x) => x.id === sel.id);
-    if (c) return <PainelConexao {...p} conexao={c} />;
+    if (c) return <PainelConexao key={`conexao:${c.id}`} {...p} conexao={c} />;
   }
   if (sel?.tipo === 'grupo') {
     const g = doc.grupos.find((x) => x.id === sel.id);
-    if (g) return <PainelGrupo {...p} grupo={g} />;
+    if (g) return <PainelGrupo key={`grupo:${g.id}`} {...p} grupo={g} />;
   }
   if (sel?.tipo === 'nota') {
     const n = doc.notas.find((x) => x.id === sel.id);
-    if (n) return <PainelNota {...p} nota={n} />;
+    if (n) return <PainelNota key={`nota:${n.id}`} {...p} nota={n} />;
   }
-  return <PainelFluxo {...p} />;
+  return <PainelFluxo key="fluxo" {...p} />;
 }
 
 function PainelFluxo({ fluxo, canais, acoes, soLeitura }: PropsPainel) {
@@ -4725,7 +5029,14 @@ test('critério 5: fluxos de canais diferentes convivem, cada um com a cor da á
   const cores: string[] = [];
   for (const nome of MODELOS) {
     await page.goto(casa);
-    if (!(await page.getByRole('region', { name: 'Novo fluxo' }).isVisible())) await page.getByRole('button', { name: 'Novo fluxo' }).click();
+    // Sem lista a região já vem aberta; com fluxos, abre pelo botão. Espera a página responder (o clique antes da
+    // hidratação se perde) em vez de olhar uma vez só com isVisible().
+    const novo = page.getByRole('button', { name: 'Novo fluxo' });
+    await expect(novo).toBeEnabled();
+    await expect(async () => {
+      if ((await novo.getAttribute('aria-expanded')) !== 'true') await novo.click();
+      await expect(page.getByRole('region', { name: 'Novo fluxo' })).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     await page.getByRole('button', { name: new RegExp(nome) }).click();
     await expect(page).toHaveURL(/\/f\//);
     await expect(page.getByTestId('salvamento')).toHaveText('salvo', { timeout: 20_000 });
@@ -5024,8 +5335,22 @@ const novoId = (prefixo: string) => `${prefixo}${Date.now().toString(36)}${Math.
 const chaveLocal = (id: string) => `journey:fluxo:${id}`;
 /** A trava vale 10 minutos; o editor renova antes de vencer. */
 const RENOVAR_TRAVA = 4 * 60 * 1000;
+/** Até quando conta como minha uma trava que não deu pra renovar: 9 dos 10 minutos, pelo relógio daqui. */
+const TRAVA_VALE = 9 * 60 * 1000;
+/** Pedido de trava que falhou (rede, 5xx, login): tenta de novo nesse tempo, não só na próxima renovação. */
+const DE_NOVO_TRAVA = 20 * 1000;
 
-type Trava = { estado: 'pegando' } | { estado: 'minha' } | { estado: 'outra'; por: string | null; ate: string | null };
+/**
+ * pegando: abrindo; minha: edita; outra: alguém editando (o banco disse); incerta: não deu pra confirmar com o banco
+ * (sem rede) e a trava daqui, se havia, já pode ter vencido; liberou: quem só via ganhou a trava, mas o documento
+ * na tela é o do carregamento: recarrega pra editar o que está no banco.
+ */
+type Trava =
+  | { estado: 'pegando' }
+  | { estado: 'minha' }
+  | { estado: 'outra'; por: string | null; ate: string | null }
+  | { estado: 'incerta' }
+  | { estado: 'liberou' };
 
 export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais, tipos }: PropsEditor) {
   const router = useRouter();
@@ -5035,7 +5360,23 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const [hist, setHist] = useState<Historico>(() => comecar(fluxo.documento));
   const doc = hist.atual;
   const [estilo, setEstilo] = useState<Estilo>(() => lerEstilo(fluxo.estilo));
+  const [velocidadeVista, setVelocidadeVista] = useState<number | null>(null);
+  // O que a tela mostra: o estilo, com a velocidade que quem só vê escolheu pro play dele.
+  const estiloVisto = useMemo(() => (velocidadeVista === null ? estilo : { ...estilo, velocidade: velocidadeVista }), [estilo, velocidadeVista]);
   const [dados, setDados] = useState<DadosFluxo>({ nome: fluxo.nome, descricao: fluxo.descricao, canal: fluxo.canal, meta_s: fluxo.meta_s });
+  // O mais recente, sem esperar o próximo desenho: uma ação chamada depois de um await (ou de um menu aberto antes)
+  // traz o `doc` do desenho em que nasceu, e gravar em cima dele apagaria o que mudou nesse meio-tempo.
+  const histRef = useRef(hist);
+  histRef.current = hist;
+  const estiloRef = useRef(estilo);
+  estiloRef.current = estilo;
+  const dadosRef = useRef(dados);
+  dadosRef.current = dados;
+  const docAtual = () => histRef.current.atual;
+  const mudarHist = (h: Historico) => {
+    histRef.current = h;
+    setHist(h);
+  };
   const [cadastros, setCadastros] = useState<readonly Cadastro[]>(cadastrosIniciais);
   const [sel, setSel] = useState<D.Selecao>(null);
   const [ferramenta, setFerramenta] = useState<Ferramenta>('selecionar');
@@ -5051,6 +5392,10 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const soLeitura = trava.estado !== 'minha' || parado;
 
   const avisar = (t: string) => setAviso(t);
+  // O título da aba acompanha o nome do fluxo (renomear aqui muda na hora).
+  useEffect(() => {
+    document.title = `${dados.nome} · Journey`;
+  }, [dados.nome]);
   useEffect(() => {
     if (!aviso) return;
     const t = setTimeout(() => setAviso(null), 2600);
@@ -5087,17 +5432,49 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   // Trava: pega ao abrir e renova; quem não tem a trava só vê (e dá play). Ao sair, solta.
   const token = useRef<string | null>(null);
   const minha = useRef(false);
+  /** Até quando (relógio daqui) a trava confirmada vale, mesmo sem conseguir renovar. */
+  const minhaAte = useRef(0);
+  /** O banco já disse que era de outra pessoa: o documento na tela pode estar velho. */
+  const jaFoiOutra = useRef(false);
   useEffect(() => {
     let vivo = true;
+    let pedindo = false;
+    let parou = false;
+    let deNovo: ReturnType<typeof setTimeout> | undefined;
     const pegar = async () => {
-      const r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id });
+      if (pedindo || parou) return;
+      pedindo = true;
+      clearTimeout(deNovo);
+      let r: { data: unknown; error: unknown };
+      try {
+        r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id });
+      } catch (erro) {
+        r = { data: null, error: erro };
+      } finally {
+        pedindo = false;
+      }
       if (!vivo) return;
       const d = r.data as { ok: boolean; por?: string | null; ate?: string | null } | null;
-      if (r.error || !d) return setTrava({ estado: 'outra', por: null, ate: null });
+      if (r.error || !d) {
+        // Não deu pra perguntar (rede, 5xx, login): não é "outra pessoa". Enquanto a última trava confirmada vale,
+        // segue editando; depois, fica só vendo até conseguir confirmar. Tenta de novo logo.
+        deNovo = setTimeout(() => void pegar(), DE_NOVO_TRAVA);
+        if (minha.current && Date.now() < minhaAte.current) return;
+        return setTrava({ estado: 'incerta' });
+      }
       if (!d.ok) {
         minha.current = false;
+        jaFoiOutra.current = true;
         return setTrava({ estado: 'outra', por: d.por ?? null, ate: d.ate ?? null });
       }
+      if (!minha.current && jaFoiOutra.current) {
+        // Quem só via ganhou a trava, mas a tela tem o documento (e a revisão) de quando abriu: editar daqui daria
+        // um conflito no primeiro salvamento. Solta a trava (pra não segurar à toa) e pede pra recarregar.
+        parou = true;
+        void supabase.rpc('soltar_trava', { p_fluxo: fluxo.id });
+        return setTrava({ estado: 'liberou' });
+      }
+      minhaAte.current = Date.now() + TRAVA_VALE;
       if (!minha.current) {
         minha.current = true;
         recuperarCopia();
@@ -5105,8 +5482,20 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       setTrava({ estado: 'minha' });
     };
     void pegar();
+    // O token muda (renova a cada hora): o soltar com keepalive precisa do atual, senão dá 401 ao fechar.
     void supabase.auth.getSession().then(({ data }) => (token.current = data.session?.access_token ?? null));
+    const { data: auth } = supabase.auth.onAuthStateChange((_evento, sessao) => {
+      token.current = sessao?.access_token ?? null;
+    });
     const intervalo = setInterval(() => void pegar(), RENOVAR_TRAVA);
+    // A rede voltou, a aba voltou a aparecer ou a página voltou do cache: o intervalo pode ter ficado parado (aba
+    // escondida, computador dormindo), então confirma a trava já. Com a rede de volta, o salvamento também tenta já.
+    const voltouRede = () => {
+      void pegar();
+      salv.current?.tentarJa();
+    };
+    const visivel = () => document.visibilityState === 'visible' && void pegar();
+    const voltouDoCache = (e: PageTransitionEvent) => e.persisted && void pegar();
     const soltar = () => {
       if (!minha.current || !token.current) return;
       // keepalive: o pedido segue mesmo com a página fechando.
@@ -5118,18 +5507,28 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       }).catch(() => {});
     };
     const antesDeSair = (e: BeforeUnloadEvent) => {
-      if (salv.current?.sujo) {
+      // Parado (conflito, trava perdida, recusa), não há o que esperar: o "Recarregar" da faixa não pode abrir o
+      // "sair do site?". A cópia, quando vale, já está no navegador.
+      if (salv.current?.sujo && !salv.current.parado) {
         void salv.current.agora();
         e.preventDefault();
       }
     };
     addEventListener('pagehide', soltar);
     addEventListener('beforeunload', antesDeSair);
+    addEventListener('online', voltouRede);
+    addEventListener('pageshow', voltouDoCache);
+    document.addEventListener('visibilitychange', visivel);
     return () => {
       vivo = false;
       clearInterval(intervalo);
+      clearTimeout(deNovo);
+      auth.subscription.unsubscribe();
       removeEventListener('pagehide', soltar);
       removeEventListener('beforeunload', antesDeSair);
+      removeEventListener('online', voltouRede);
+      removeEventListener('pageshow', voltouDoCache);
+      document.removeEventListener('visibilitychange', visivel);
       // Saindo pra outra tela: espera o que falta chegar e solta a trava. Sem `parar`: no modo estrito do React a
       // limpeza roda uma vez ao montar, e sem rede o salvamento segue tentando (a cópia está no navegador).
       void salv.current?.agora().finally(soltar);
@@ -5138,19 +5537,31 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fluxo.id]);
 
-  /** O que não chegou no banco da última vez (sem rede) e partiu da mesma revisão volta pro quadro. */
+  /**
+   * O que não chegou no banco da última vez (sem rede, ou recusado porque um responsável foi apagado) e partiu da
+   * revisão que o salvamento tem agora volta pro quadro. Responsável que não existe mais sai da peça: senão o banco
+   * recusaria de novo.
+   */
   function recuperarCopia() {
     let copia = null;
     try {
-      copia = copiaValida(JSON.parse(localStorage.getItem(chaveLocal(fluxo.id)) ?? 'null'), fluxo.revisao);
+      copia = copiaValida(JSON.parse(localStorage.getItem(chaveLocal(fluxo.id)) ?? 'null'), salv.current!.revisao);
     } catch {
       return;
     }
     if (!copia) return;
-    setHist(comecar(copia.documento));
+    const existem = new Set(cadastrosIniciais.map((k) => k.id));
+    let documento = copia.documento;
+    const orfas = documento.pecas.filter((p) => p.responsavel && !existem.has(p.responsavel));
+    for (const p of orfas) documento = D.mudarPeca(documento, p.id, { responsavel: undefined });
+    mudarHist(comecar(documento));
     setEstilo(lerEstilo(copia.estilo));
-    salv.current!.mudou(copia.documento, lerEstilo(copia.estilo));
-    avisar('Voltaram as mudanças que não tinham chegado ao banco.');
+    salv.current!.mudou(documento, lerEstilo(copia.estilo));
+    avisar(
+      orfas.length
+        ? `Voltaram as mudanças que não tinham chegado ao banco (sem o responsável apagado em ${orfas.length === 1 ? '1 peça' : `${orfas.length} peças`}).`
+        : 'Voltaram as mudanças que não tinham chegado ao banco.',
+    );
   }
 
   // ---------- Mudanças no documento ----------
@@ -5160,60 +5571,78 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     setEscolhendoInicio(null);
   };
 
+  /** Toda mudança no documento parte do mais recente (`docAtual()`), nunca do `doc` deste desenho. */
   const editar = (novo: Documento, selecao?: D.Selecao) => {
-    if (soLeitura || novo === doc) return;
-    if (play) parar();
-    setHist(registrar(hist, novo));
-    salv.current!.mudou(novo, estilo);
+    const v = vivo.current;
+    if (v.soLeitura || novo === docAtual()) return;
+    if (v.play) parar();
+    mudarHist(registrar(histRef.current, novo));
+    salv.current!.mudou(novo, estiloRef.current);
     if (selecao !== undefined) setSel(selecao);
   };
 
+  // Em só leitura o estilo não muda: mudaria aqui e iria junto no primeiro salvamento depois de pegar a trava.
   const mudarEstilo = (e: Estilo) => {
+    if (vivo.current.soLeitura) return;
+    estiloRef.current = e;
     setEstilo(e);
-    if (!soLeitura) salv.current!.mudou(doc, e);
+    setVelocidadeVista(null);
+    salv.current!.mudou(docAtual(), e);
   };
+  /** A velocidade do play: quem só vê também ajusta, só na tela dele (não vai pro estilo nem pro salvamento). */
+  const mudarVelocidade = (v: number) => (vivo.current.soLeitura ? setVelocidadeVista(v) : mudarEstilo({ ...estiloRef.current, velocidade: v }));
 
   const historia = (f: (h: Historico) => Historico) => {
     if (soLeitura) return;
     if (play) parar();
-    const h = f(hist);
-    if (h === hist) return;
-    setHist(h);
-    salv.current!.mudou(h.atual, estilo);
+    const antes = histRef.current;
+    const h = f(antes);
+    if (h === antes) return;
+    mudarHist(h);
+    salv.current!.mudou(h.atual, estiloRef.current);
     if (!D.existe(h.atual, sel)) setSel(null);
   };
 
-  const criar = (f: TipoPeca | 'grupo' | 'nota', x: number, y: number) => {
+  /** Cria e seleciona. `renomear`: abre o campo de nome (ponteiro); pelo teclado, a peça só ganha o foco. */
+  const criar = (f: TipoPeca | 'grupo' | 'nota', x: number, y: number, renomear = true) => {
     const id = novoId(f === 'grupo' ? 'g' : f === 'nota' ? 'n' : 'p');
-    if (f === 'grupo') return editar(D.criarGrupo(doc, id, x, y), { tipo: 'grupo', id });
+    if (f === 'grupo') return editar(D.criarGrupo(docAtual(), id, x, y), { tipo: 'grupo', id });
     if (f === 'nota') {
-      editar(D.criarNota(doc, id, x, y), { tipo: 'nota', id });
-      return setRenomeando(id);
+      editar(D.criarNota(docAtual(), id, x, y), { tipo: 'nota', id });
+      return renomear ? setRenomeando(id) : setFocar(id);
     }
-    editar(D.criarPeca(doc, id, f, x, y), { tipo: 'peca', id });
-    setRenomeando(id);
+    editar(D.criarPeca(docAtual(), id, f, x, y), { tipo: 'peca', id });
+    if (renomear) setRenomeando(id);
+    else setFocar(id);
   };
+  // A peça (ou nota) criada pelo teclado recebe o foco depois de aparecer no quadro: Enter nela renomeia.
+  const [focar, setFocar] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focar) return;
+    document.querySelector<HTMLElement>(`[data-peca="${focar}"], [data-nota="${focar}"]`)?.focus();
+    setFocar(null);
+  }, [focar]);
 
   const ligar = (de: string, para: string) => {
-    const r = D.ligar(doc, novoId('c'), de, para);
+    const r = D.ligar(docAtual(), novoId('c'), de, para);
     if ('erro' in r) return r.erro === 'repetida' && avisar('Essas duas peças já estão ligadas.');
     editar(r.doc, { tipo: 'conexao', id: r.conexao.id });
   };
 
   const criarLigada = (origem: string, tipo: TipoPeca, onde?: { x: number; y: number }) => {
     const id = novoId('p');
-    editar(D.criarLigada(doc, id, novoId('c'), origem, tipo, onde), { tipo: 'peca', id });
+    editar(D.criarLigada(docAtual(), id, novoId('c'), origem, tipo, onde), { tipo: 'peca', id });
     setRenomeando(id);
   };
 
   const apagarSelecao = () => {
     if (!sel) return;
-    editar(D.apagar(doc, sel), null);
+    editar(D.apagar(docAtual(), sel), null);
   };
 
   const duplicar = (id: string) => {
     const novo = novoId('p');
-    editar(D.duplicar(doc, id, novo), { tipo: 'peca', id: novo });
+    editar(D.duplicar(docAtual(), id, novo), { tipo: 'peca', id: novo });
   };
 
   const selecionar = (s: D.Selecao) => {
@@ -5223,12 +5652,18 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   };
 
   // ---------- Dados do fluxo (colunas) e cadastros ----------
+  // Parte do mais recente: duas mudanças seguidas (nome e descrição no mesmo desenho) não apagam uma à outra. Se o banco recusa,
+  // volta só os campos desta mudança.
   const mudarDados = async (d: DadosDoFluxo) => {
-    const antes = dados;
-    setDados({ ...dados, ...d } as DadosFluxo);
+    if (vivo.current.soLeitura) return;
+    const atual = dadosRef.current;
+    const antes = Object.fromEntries(Object.keys(d).map((k) => [k, atual[k as keyof DadosFluxo]])) as Partial<DadosFluxo>;
+    dadosRef.current = { ...atual, ...d } as DadosFluxo;
+    setDados(dadosRef.current);
     const r = await mudarFluxo(empresaId, fluxo.id, d);
     if (r.erro) {
-      setDados(antes);
+      dadosRef.current = { ...dadosRef.current, ...antes };
+      setDados(dadosRef.current);
       avisar(r.erro);
     }
   };
@@ -5267,6 +5702,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const [pausado, setPausado] = useState(false);
   const [escolhendoInicio, setEscolhendoInicio] = useState<string[] | null>(null);
   const ctx = useMemo(() => ({ cadastros, canal: dados.canal }), [cadastros, dados.canal]);
+  // Pro `editar` chamado depois de um await: a trava e o play de agora, não os de quando a ação nasceu.
+  const vivo = useRef({ soLeitura, play });
+  vivo.current = { soLeitura, play };
   const exec = useMemo(() => (play ? rodar(docPlay, ctx, play) : null), [play, docPlay, ctx]);
   const vis = useMemo(() => (exec ? verVisual(exec.eventos, mostrados) : null), [exec, mostrados]);
 
@@ -5297,11 +5735,12 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     if (mostrados === 0) return setMostrados(1);
     const e = espera(ev[mostrados - 1]!);
     if (e === 'cano') return;
-    const t = setTimeout(() => setMostrados((m) => m + 1), e / estilo.velocidade);
+    const t = setTimeout(() => setMostrados((m) => m + 1), e / estiloVisto.velocidade);
     return () => clearTimeout(t);
-  }, [exec, mostrados, pausado, estilo.velocidade]);
+  }, [exec, mostrados, pausado, estiloVisto.velocidade]);
 
-  const aguaChegou = () => setMostrados((m) => m + 1);
+  // A água que chegou é a do evento `i`: um aviso repetido (ou atrasado, de um cano que já passou) não pula evento.
+  const aguaChegou = (i: number) => setMostrados((m) => (m === i ? m + 1 : m));
 
   const escolher = (conexao: string) => {
     if (!play || !exec?.pendente?.opcoes.some((o) => o.conexao === conexao)) return;
@@ -5377,6 +5816,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       if (sel) return setSel(null);
       return;
     }
+    // Enter num botão ou link (Dar play, Desfazer, Painel, menu) é dele: ativa o botão, não renomeia. A peça focada
+    // (também role=button) trata o Enter no quadro e não deixa ele chegar aqui.
+    if (e.key === 'Enter' && (e.target as Element | null)?.closest?.('button, a, [role=button], [role=menuitem], [role=option], [role=tab], summary')) return;
     if (e.key === 'Enter' && (sel?.tipo === 'peca' || sel?.tipo === 'nota') && !soLeitura && !play) {
       e.preventDefault();
       return setRenomeando(sel.id);
@@ -5395,14 +5837,23 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     const x0 = e.clientX;
     const y0 = e.clientY;
     let arrastou = false;
+    const ponteiro = e.pointerId;
     const mover = (ev: PointerEvent) => {
+      if (ev.pointerId !== ponteiro) return;
       if (!arrastou && criaAlgo(t) && !soLeitura && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) arrastou = true;
       if (arrastou) setFantasma({ t, x: ev.clientX, y: ev.clientY });
     };
-    const soltar = (ev: PointerEvent) => {
+    const largar = () => {
       removeEventListener('pointermove', mover);
       removeEventListener('pointerup', soltar);
+      removeEventListener('pointercancel', cancelar);
       setFantasma(null);
+    };
+    // O sistema tomou o ponteiro (rolagem no toque, alerta): sem os ouvintes pendurados e sem o fantasma na tela.
+    const cancelar = (ev: PointerEvent) => ev.pointerId === ponteiro && largar();
+    const soltar = (ev: PointerEvent) => {
+      if (ev.pointerId !== ponteiro) return;
+      largar();
       if (arrastou && criaAlgo(t)) {
         if (quadro.current?.contem(ev.clientX, ev.clientY)) {
           const w = quadro.current.paraMundo(ev.clientX, ev.clientY);
@@ -5410,12 +5861,31 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
         }
         return setFerramenta('selecionar');
       }
-      const nova = ferramenta === t && criaAlgo(t) ? 'selecionar' : t;
-      setFerramenta(nova);
-      if (criaAlgo(nova)) avisar(`Clique no quadro pra pôr ${nova === 'grupo' ? 'o grupo' : nova === 'nota' ? 'a nota' : FORMAS[nova].nome}.`);
+      alternarFerramenta(t);
     };
     addEventListener('pointermove', mover);
     addEventListener('pointerup', soltar);
+    addEventListener('pointercancel', cancelar);
+  };
+
+  /**
+   * Ferramenta ativada sem ponteiro: quem não usa mouse não tem como clicar no quadro, então a forma nasce já no meio
+   * da parte visível (na grade), selecionada e com o foco; a ferramenta volta pro Selecionar. Selecionar e Mover o
+   * quadro só são escolhidos, como no clique.
+   */
+  const ativarPeloTeclado = (t: Ferramenta) => {
+    if (!criaAlgo(t)) return alternarFerramenta(t);
+    const c = quadro.current?.centro();
+    if (soLeitura || !c) return;
+    criar(t, c.x, c.y, false);
+    setFerramenta('selecionar');
+  };
+
+  /** Clique numa ferramenta: escolhe; clicar de novo numa forma já escolhida volta pro Selecionar. */
+  const alternarFerramenta = (t: Ferramenta) => {
+    const nova = ferramenta === t && criaAlgo(t) ? 'selecionar' : t;
+    setFerramenta(nova);
+    if (criaAlgo(nova)) avisar(`Clique no quadro pra pôr ${nova === 'grupo' ? 'o grupo' : nova === 'nota' ? 'a nota' : FORMAS[nova].nome}.`);
   };
 
   const botaoFerramenta = (t: Ferramenta, nome: string, icone: string, dica: string) => (
@@ -5427,6 +5897,8 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       aria-label={nome}
       disabled={soLeitura && criaAlgo(t)}
       onPointerDown={(e) => apertarFerramenta(t, e)}
+      // Teclado (Enter, espaço) e leitor de tela: clique sem ponteiro (`detail` 0). O do mouse o pointerup já tratou.
+      onClick={(e) => e.detail === 0 && ativarPeloTeclado(t)}
     >
       <Icone nome={icone} />
       <span className="dica-ferr">
@@ -5449,18 +5921,34 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
 
   return (
     <div className={`editor${estilo.ondas ? ' ondas' : ''}${estilo.holofote ? ' holofote-on' : ''}${vis?.pergunta ? ' escolhendo' : ''}`}>
+      {/* O nome do fluxo como título da página pro leitor de tela (na tela ele é o campo editável). */}
+      <h1 className="so-leitor">{dados.nome}</h1>
       <div className="cabeca-editor">
-        {trava.estado === 'outra' && !parado && (
-          <div className="faixa" role="status">
-            {trava.por ? `${trava.por} está editando este fluxo` : 'Outra pessoa está editando este fluxo'}
-            {trava.ate && ` (até ${new Date(trava.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: FUSO })}, se parar de mexer)`}. Dá pra ver e dar play; a
-            edição libera quando a trava vencer ou a pessoa fechar o fluxo.
-          </div>
-        )}
+        {/* Região viva montada vazia: o leitor de tela só anuncia o que muda dentro de uma região que já existia. */}
+        <div className="vivo" role="status">
+          {trava.estado === 'outra' && !parado && (
+            <div className="faixa">
+              {trava.por ? `${trava.por} está editando este fluxo` : 'Outra pessoa está editando este fluxo'}
+              {trava.ate && ` (até ${new Date(trava.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: FUSO })}, se parar de mexer)`}. Dá pra ver e dar play; a
+              edição libera quando a trava vencer ou a pessoa fechar o fluxo.
+            </div>
+          )}
+          {trava.estado === 'incerta' && !parado && (
+            <div className="faixa">Não deu pra confirmar a edição deste fluxo com o banco (sem conexão?). Dá pra ver e dar play; tentando de novo.</div>
+          )}
+          {trava.estado === 'liberou' && !parado && (
+            <div className="faixa">
+              A edição deste fluxo liberou. Recarregue pra editar a versão que está no banco.
+              <button className="botao pequeno" type="button" onClick={() => location.reload()}>
+                Recarregar
+              </button>
+            </div>
+          )}
+        </div>
         {parado && (
           <div className="faixa erro" role="alert">
             {situacao.s === 'conflito'
-              ? 'Outra pessoa salvou este fluxo enquanto ele estava aberto aqui. As últimas mudanças daqui não foram salvas: recarregue pra continuar da versão dela.'
+              ? 'Este fluxo foi salvo em outro lugar (outra pessoa ou outra aba) enquanto estava aberto aqui. As últimas mudanças daqui não foram salvas: recarregue pra continuar da versão que está no banco.'
               : situacao.s === 'sem_trava'
                 ? 'Outra pessoa pegou a edição deste fluxo. As últimas mudanças daqui não foram salvas: recarregue pra ver como ficou.'
                 : `O banco recusou as últimas mudanças${situacao.mensagem ? ` (${situacao.mensagem})` : ''}. Recarregue pra continuar.`}
@@ -5485,7 +5973,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
           />
           <span className={`salvo${parado ? ' erro' : ''}`} role="status" data-testid="salvamento">
-            {trava.estado === 'pegando' ? 'abrindo…' : soLeitura && !parado ? 'só leitura' : textoSituacao[situacao.s]}
+            {trava.estado === 'pegando' ? 'abrindo…' : trava.estado === 'incerta' && !parado ? 'não deu pra confirmar a edição' : soLeitura && !parado ? 'só leitura' : textoSituacao[situacao.s]}
           </span>
           <div className="empurra">
             <button className="bi" type="button" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled={soLeitura || !hist.antes.length} onClick={() => historia(desfazer)}>
@@ -5519,7 +6007,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
         <Quadro
           ref={quadro}
           doc={play ? docPlay : doc}
-          estilo={estilo}
+          estilo={estiloVisto}
           canais={canais}
           canalFluxo={dados.canal}
           nomesCadastros={nomesCadastros}
@@ -5528,7 +6016,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           soLeitura={soLeitura}
           play={vis}
           pausado={pausado}
-          aoAguaChegar={aguaChegou}
+          aoAguaChegar={() => aguaChegou(mostrados)}
           renomeando={renomeando}
           acoes={{
             selecionar,
@@ -5537,17 +6025,18 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             ligar,
             mudar: (d, primeiro) => {
               if (soLeitura) return;
-              setHist((h) => (primeiro ? registrar(h, d) : substituir(h, d)));
-              salv.current!.mudou(d, estilo);
+              mudarHist(primeiro ? registrar(histRef.current, d) : substituir(histRef.current, d));
+              salv.current!.mudou(d, estiloRef.current);
             },
             renomear: setRenomeando,
             gravarNome: (id, texto) => {
               setRenomeando(null);
               const t = texto.trim();
+              const d = docAtual();
               if (!t) return;
-              if (doc.pecas.some((p) => p.id === id)) {
-                if (doc.pecas.find((p) => p.id === id)!.nome !== t) editar(D.mudarPeca(doc, id, { nome: t }));
-              } else if (doc.notas.find((n) => n.id === id)?.texto !== t) editar(D.mudarNota(doc, id, { texto: t }));
+              if (d.pecas.some((p) => p.id === id)) {
+                if (d.pecas.find((p) => p.id === id)!.nome !== t) editar(D.mudarPeca(d, id, { nome: t }));
+              } else if (d.notas.find((n) => n.id === id)?.texto !== t) editar(D.mudarNota(d, id, { texto: t }));
             },
             escolher,
             usarFerramenta: setFerramenta,
@@ -5559,7 +6048,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
               play={play}
               visual={vis}
               pausado={pausado}
-              velocidade={estilo.velocidade}
+              velocidade={estiloVisto.velocidade}
               autoEscolha={estilo.autoEscolha}
               corAgua={corAgua}
               canais={canais}
@@ -5570,7 +6059,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
                 voltar,
                 recomecar,
                 parar,
-                velocidade: (v) => mudarEstilo({ ...estilo, velocidade: v }),
+                velocidade: mudarVelocidade,
                 quando: (q) => {
                   if (!play) return;
                   setPlay({ ...play, quando: q, escolhas: [] });
@@ -5600,11 +6089,11 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           tipos={tipos}
           soLeitura={soLeitura}
           acoes={{
-            mudarPeca: (id, patch) => editar(D.mudarPeca(doc, id, patch)),
-            mudarConexao: (id, patch) => editar(D.mudarConexao(doc, id, patch)),
-            inverter: (id) => editar(D.inverterConexao(doc, id)),
-            mudarGrupo: (id, patch) => editar(D.mudarGrupo(doc, id, patch)),
-            mudarNota: (id, patch) => editar(D.mudarNota(doc, id, patch)),
+            mudarPeca: (id, patch) => editar(D.mudarPeca(docAtual(), id, patch)),
+            mudarConexao: (id, patch) => editar(D.mudarConexao(docAtual(), id, patch)),
+            inverter: (id) => editar(D.inverterConexao(docAtual(), id)),
+            mudarGrupo: (id, patch) => editar(D.mudarGrupo(docAtual(), id, patch)),
+            mudarNota: (id, patch) => editar(D.mudarNota(docAtual(), id, patch)),
             apagar: apagarSelecao,
             duplicar,
             selecionar,
@@ -5644,11 +6133,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           )}
         </div>
       )}
-      {aviso && (
-        <div className="aviso" role="status">
-          {aviso}
-        </div>
-      )}
+      <div role="status">{aviso && <div className="aviso">{aviso}</div>}</div>
     </div>
   );
 }
@@ -5660,14 +6145,25 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
 
 ```tsx
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import { Editor } from '@/componentes/editor/Editor';
 import { cadastros, canais, fluxoParaEditar, tiposCadastro } from '@/lib/dados';
 
-export const metadata: Metadata = { title: 'Editor · Journey' };
+type Props = { params: Promise<{ empresa: string; fluxo: string }> };
 
-export default async function PaginaEditor({ params }: { params: Promise<{ empresa: string; fluxo: string }> }) {
+// Uma leitura por pedido: o título e a página usam o mesmo fluxo.
+const fluxoDoPedido = cache(fluxoParaEditar);
+
+/** O nome do fluxo no título da aba (no editor, ele acompanha quando renomeia). */
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { empresa, fluxo } = await params;
+  const f = await fluxoDoPedido(empresa, fluxo);
+  return { title: `${f.nome} · Journey` };
+}
+
+export default async function PaginaEditor({ params }: Props) {
   const { empresa: empresaId, fluxo: fluxoId } = await params;
-  const [f, cs, ks, ts] = await Promise.all([fluxoParaEditar(empresaId, fluxoId), canais(empresaId), cadastros(empresaId), tiposCadastro(empresaId)]);
+  const [f, cs, ks, ts] = await Promise.all([fluxoDoPedido(empresaId, fluxoId), canais(empresaId), cadastros(empresaId), tiposCadastro(empresaId)]);
   // Canal arquivado some da lista, a não ser que o fluxo ainda use (como principal ou numa peça).
   const usados = new Set([f.canal, ...f.documento.pecas.map((p) => p.canal)]);
   return (
@@ -5937,7 +6433,7 @@ export function Nav({ empresaId }: { empresaId: string }) {
 - [ ] **Passo 8: rodar e ver passar**
 
 Run: `npm run typecheck && npm test -w apps/web && npm run e2e -- e2e/editor.spec.ts e2e/fluxos.spec.ts e2e/membros.spec.ts e2e/aceitacao.spec.ts --trace=off`
-Expected: `tsc` sem saída; app `Tests  255 passed (255)` (com o Supabase no ar); os 6 de ponta a ponta passando.
+Expected: `tsc` sem saída; app `Tests  258 passed (258)` (com o Supabase no ar); os 6 de ponta a ponta passando.
 
 - [ ] **Passo 9: commit**
 
@@ -5980,7 +6476,8 @@ test('critério 2: o nome escrito na peça vira cadastro; renomear lá muda no f
   await resp.fill('Fila Cobrança');
   await expect(page.getByRole('option', { name: /Criar “Fila Cobrança”/ })).toContainText('Fila');
   await resp.press('Enter');
-  await expect(page.getByText('“Fila Cobrança” virou cadastro (Fila)')).toBeVisible();
+  // O aviso some em 2,6 s: confere o que fica (o campo e a peça), não o aviso.
+  await expect(resp).toHaveValue('Fila Cobrança');
   const naPeca = page.getByRole('button', { name: 'Atendimento: Cobra o cliente' });
   await expect(naPeca).toContainText('Fila Cobrança');
   await expect(page.getByTestId('salvamento')).toHaveText('salvo', { timeout: 20_000 });
@@ -6045,13 +6542,16 @@ export default async function Cadastros({ params }: { params: Promise<{ empresa:
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useId, useState, useTransition } from 'react';
 import { DIAS, camposHorario, type Cadastro, type CamposHorario, type Dia } from '@journey/fluxo';
 import { apagarCadastro, criarCadastro, mudarHorario, renomearCadastro } from '@/acoes/cadastros';
 import type { TipoCadastro } from '@/editor/cadastros';
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 const NOME_DIA: Record<Dia, string> = { dom: 'dom', seg: 'seg', ter: 'ter', qua: 'qua', qui: 'qui', sex: 'sex', sab: 'sáb' };
+const INICIO = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** O mesmo do pacote: o fim vai até 24:00. Vai no `pattern` do campo (sem as âncoras, que o navegador põe). */
+const FIM = '([01]\\d|2[0-3]):[0-5]\\d|24:00';
 
 /** Os cadastros da empresa: por tipo, com busca, onde é usado, renomear, apagar (sem uso) e o Horário. */
 export function TabelaCadastros({
@@ -6072,16 +6572,25 @@ export function TabelaCadastros({
   const [mensagem, setMensagem] = useState<{ erro: boolean; texto: string } | null>(null);
   const [nome, setNome] = useState('');
   const [tipoNovo, setTipoNovo] = useState(tipos[0]?.chave ?? 'pessoa');
-  const [ocupado, comecar] = useTransition();
+  // Ocupado por ação e linha (renomear:id, apagar:id, horario:id, criar): o blur de um renomear não desabilita o
+  // botão que a pessoa estava clicando (o clique se perdia com o botão desabilitado no meio dele).
+  const [ocupados, setOcupados] = useState<Record<string, true>>({});
+  const [, comecar] = useTransition();
   const nomeTipo = (k: string) => tipos.find((t) => t.chave === k)?.nome ?? k;
   const vistos = cadastros.filter((k) => (!tipo || k.tipo === tipo) && (!busca.trim() || semAcento(k.nome).includes(semAcento(busca.trim()))));
 
-  const fazer = (f: () => Promise<{ erro?: string }>, ok?: string) =>
-    comecar(async () => {
+  const fazer = async (chave: string, f: () => Promise<{ erro?: string }>, ok?: string, aoErrar?: () => void) => {
+    if (ocupados[chave]) return;
+    setOcupados((o) => ({ ...o, [chave]: true }));
+    try {
       const r = await f();
       setMensagem(r.erro ? { erro: true, texto: r.erro } : ok ? { erro: false, texto: ok } : null);
-      if (!r.erro) router.refresh();
-    });
+      if (r.erro) aoErrar?.();
+      else comecar(() => router.refresh());
+    } finally {
+      setOcupados(({ [chave]: _, ...resto }) => resto);
+    }
+  };
 
   return (
     <main className="pagina">
@@ -6130,9 +6639,11 @@ export function TabelaCadastros({
                         defaultValue={k.nome}
                         aria-label={`Nome de ${k.nome}`}
                         onBlur={(e) => {
-                          const v = e.currentTarget.value.trim();
-                          if (!v) e.currentTarget.value = k.nome;
-                          else if (v !== k.nome) fazer(() => renomearCadastro(empresaId, k.id, v), `Agora é “${v}” em todos os fluxos.`);
+                          const campo = e.currentTarget;
+                          const v = campo.value.trim();
+                          if (!v) campo.value = k.nome;
+                          // Recusado (nome repetido, sem permissão): o campo volta pro nome que vale, não fica o recusado.
+                          else if (v !== k.nome) void fazer(`renomear:${k.id}`, () => renomearCadastro(empresaId, k.id, v), `Agora é “${v}” em todos os fluxos.`, () => (campo.value = k.nome));
                         }}
                         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                       />
@@ -6152,25 +6663,36 @@ export function TabelaCadastros({
                     </td>
                     <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                       {k.tipo === 'horario' && (
-                        <button className="botao pequeno" type="button" aria-expanded={aberto === k.id} onClick={() => setAberto(aberto === k.id ? null : k.id)}>
+                        <button
+                          className="botao pequeno"
+                          type="button"
+                          aria-expanded={aberto === k.id}
+                          aria-controls={aberto === k.id ? `horario-${k.id}` : undefined}
+                          onClick={() => setAberto(aberto === k.id ? null : k.id)}
+                        >
                           Janelas e feriados
                         </button>
                       )}{' '}
                       <button
                         className="botao pequeno perigo"
                         type="button"
-                        disabled={ocupado || u.length > 0}
+                        disabled={!!ocupados[`apagar:${k.id}`] || u.length > 0}
+                        aria-label={`Apagar ${k.nome}`}
                         title={u.length ? 'Em uso: troque nas peças antes de apagar' : undefined}
-                        onClick={() => fazer(() => apagarCadastro(empresaId, k.id), `“${k.nome}” apagado.`)}
+                        onClick={() => void fazer(`apagar:${k.id}`, () => apagarCadastro(empresaId, k.id), `“${k.nome}” apagado.`)}
                       >
                         Apagar
                       </button>
                     </td>
                   </tr>,
                   aberto === k.id && (
-                    <tr key={`${k.id}:horario`}>
+                    <tr key={`${k.id}:horario`} id={`horario-${k.id}`}>
                       <td colSpan={4}>
-                        <EditorHorario campos={camposHorario(k) ?? { janelas: [], feriados: [] }} ocupado={ocupado} aoSalvar={(c) => fazer(() => mudarHorario(empresaId, k.id, c), 'Horário salvo.')} />
+                        <EditorHorario
+                          campos={camposHorario(k) ?? { janelas: [], feriados: [] }}
+                          ocupado={!!ocupados[`horario:${k.id}`]}
+                          aoSalvar={(c) => void fazer(`horario:${k.id}`, () => mudarHorario(empresaId, k.id, c), 'Horário salvo.')}
+                        />
                       </td>
                     </tr>
                   ),
@@ -6186,7 +6708,7 @@ export function TabelaCadastros({
         className="cartao linha-form"
         onSubmit={(e) => {
           e.preventDefault();
-          fazer(async () => {
+          void fazer('criar', async () => {
             const r = await criarCadastro(empresaId, tipoNovo, nome);
             if (!r.erro) setNome('');
             return r;
@@ -6207,7 +6729,7 @@ export function TabelaCadastros({
             ))}
           </select>
         </label>
-        <button className="botao primario" type="submit" disabled={ocupado}>
+        <button className="botao primario" type="submit" disabled={!!ocupados.criar}>
           Cadastrar
         </button>
       </form>
@@ -6215,9 +6737,26 @@ export function TabelaCadastros({
   );
 }
 
-/** Janelas da semana (dias, início e fim) e feriados de um Horário. */
+/** O que está errado numa janela (pra marcar a linha), ou null. */
+function erroJanela(j: CamposHorario['janelas'][number]): string | null {
+  if (!j.dias.length) return 'Marque pelo menos um dia.';
+  if (!INICIO.test(j.inicio)) return 'Início no formato 08:00.';
+  if (!new RegExp(`^(${FIM})$`).test(j.fim)) return 'Fim no formato 18:00 (vai até 24:00).';
+  if (j.fim <= j.inicio) return 'O fim tem que ser depois do início.';
+  return null;
+}
+
+/**
+ * Janelas da semana (dias, início e fim) e feriados de um Horário. Confere aqui antes de mandar (a mesma regra do
+ * pacote, e janela sem dia não vale): a linha errada fica marcada, com o porquê.
+ */
 function EditorHorario({ campos, ocupado, aoSalvar }: { campos: CamposHorario; ocupado: boolean; aoSalvar: (c: CamposHorario) => void }) {
   const [c, setC] = useState<CamposHorario>(campos);
+  const [conferir, setConferir] = useState(false);
+  const id = useId();
+  const errosJanelas = c.janelas.map(erroJanela);
+  const errosFeriados = c.feriados.map((f) => (camposHorario({ id: 'h', tipo: 'horario', nome: 'h', campos: { janelas: [], feriados: [f] } }) ? null : 'Data inválida.'));
+  const valido = errosJanelas.every((e) => !e) && errosFeriados.every((e) => !e) && camposHorario({ id: 'h', tipo: 'horario', nome: 'h', campos: { ...c } }) !== null;
   const janela = (i: number, patch: Partial<CamposHorario['janelas'][number]>) => setC({ ...c, janelas: c.janelas.map((j, k) => (k === i ? { ...j, ...patch } : j)) });
   const feriado = (i: number, patch: Partial<CamposHorario['feriados'][number]>) => setC({ ...c, feriados: c.feriados.map((f, k) => (k === i ? { ...f, ...patch } : f)) });
   return (
@@ -6225,31 +6764,51 @@ function EditorHorario({ campos, ocupado, aoSalvar }: { campos: CamposHorario; o
       <div className="rotulo-secao" style={{ margin: 0 }}>
         Janelas
       </div>
-      {c.janelas.map((j, i) => (
-        <div key={i} className="linha-form" role="group" aria-label={`Janela ${i + 1}`}>
+      {c.janelas.map((j, i) => {
+        const erro = conferir ? errosJanelas[i] : null;
+        return (
+        <div key={i} className="linha-form" role="group" aria-label={`Janela ${i + 1}`} aria-invalid={erro ? true : undefined} aria-describedby={erro ? `${id}-j${i}` : undefined}>
           {DIAS.map((d) => (
             <label key={d} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12.5 }}>
               <input type="checkbox" checked={j.dias.includes(d)} onChange={(e) => janela(i, { dias: e.target.checked ? DIAS.filter((x) => x === d || j.dias.includes(x)) : j.dias.filter((x) => x !== d) })} />
               {NOME_DIA[d]}
             </label>
           ))}
-          <input type="time" aria-label="Início" value={j.inicio} onChange={(e) => janela(i, { inicio: e.target.value })} />
+          <input type="time" aria-label="Início" value={j.inicio} onChange={(e) => janela(i, { inicio: e.target.value })} aria-invalid={erro ? true : undefined} />
           <span className="mudo">até</span>
-          <input type="text" aria-label="Fim" value={j.fim} onChange={(e) => janela(i, { fim: e.target.value })} style={{ width: 70 }} placeholder="18:00" />
+          <input
+            type="text"
+            aria-label="Fim"
+            value={j.fim}
+            pattern={FIM}
+            inputMode="numeric"
+            onChange={(e) => janela(i, { fim: e.target.value })}
+            style={{ width: 70 }}
+            placeholder="18:00"
+            aria-invalid={erro ? true : undefined}
+          />
           <button className="botao pequeno" type="button" onClick={() => setC({ ...c, janelas: c.janelas.filter((_, k) => k !== i) })}>
             Tirar
           </button>
+          {erro && (
+            <span id={`${id}-j${i}`} className="erro-campo" style={{ flexBasis: '100%', color: 'var(--bad)', fontSize: 12.5 }}>
+              {erro}
+            </span>
+          )}
         </div>
-      ))}
+        );
+      })}
       <button className="botao pequeno" type="button" style={{ justifySelf: 'start' }} onClick={() => setC({ ...c, janelas: [...c.janelas, { dias: ['seg', 'ter', 'qua', 'qui', 'sex'], inicio: '08:00', fim: '18:00' }] })}>
         Mais uma janela
       </button>
       <div className="rotulo-secao" style={{ margin: 0 }}>
         Feriados (fechado o dia todo)
       </div>
-      {c.feriados.map((f, i) => (
-        <div key={i} className="linha-form" role="group" aria-label={`Feriado ${i + 1}`}>
-          <input type="date" aria-label="Data" value={f.data} onChange={(e) => feriado(i, { data: e.target.value })} />
+      {c.feriados.map((f, i) => {
+        const erro = conferir ? errosFeriados[i] : null;
+        return (
+        <div key={i} className="linha-form" role="group" aria-label={`Feriado ${i + 1}`} aria-invalid={erro ? true : undefined} aria-describedby={erro ? `${id}-f${i}` : undefined}>
+          <input type="date" aria-label="Data" value={f.data} onChange={(e) => feriado(i, { data: e.target.value })} aria-invalid={erro ? true : undefined} />
           <input type="text" aria-label="Nome do feriado" value={f.nome ?? ''} placeholder="Natal" onChange={(e) => feriado(i, { nome: e.target.value })} />
           <label style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12.5 }}>
             <input type="checkbox" checked={!!f.todo_ano} onChange={(e) => feriado(i, { todo_ano: e.target.checked })} />
@@ -6258,15 +6817,35 @@ function EditorHorario({ campos, ocupado, aoSalvar }: { campos: CamposHorario; o
           <button className="botao pequeno" type="button" onClick={() => setC({ ...c, feriados: c.feriados.filter((_, k) => k !== i) })}>
             Tirar
           </button>
+          {erro && (
+            <span id={`${id}-f${i}`} className="erro-campo" style={{ flexBasis: '100%', color: 'var(--bad)', fontSize: 12.5 }}>
+              {erro}
+            </span>
+          )}
         </div>
-      ))}
+        );
+      })}
       <button className="botao pequeno" type="button" style={{ justifySelf: 'start' }} onClick={() => setC({ ...c, feriados: [...c.feriados, { data: '' }] })}>
         Mais um feriado
       </button>
       <p className="mudo" style={{ margin: 0, fontSize: 12.5 }}>
         O fim vai até 24:00. Pra passar da meia-noite, use duas janelas (22:00–24:00 num dia, 00:00–06:00 no outro).
       </p>
-      <button className="botao primario" type="button" style={{ justifySelf: 'start' }} disabled={ocupado} onClick={() => aoSalvar(c)}>
+      {conferir && !valido && (
+        <p className="aviso-caixa erro" role="alert" style={{ margin: 0 }}>
+          Confere as janelas (o fim depois do início, até 24:00, com pelo menos um dia) e as datas dos feriados.
+        </p>
+      )}
+      <button
+        className="botao primario"
+        type="button"
+        style={{ justifySelf: 'start' }}
+        disabled={ocupado}
+        onClick={() => {
+          setConferir(true);
+          if (valido) aoSalvar(c);
+        }}
+      >
         Salvar horário
       </button>
     </div>
@@ -6374,7 +6953,7 @@ index 78941d5..beaddec 100644
 - [ ] **Passo 2: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes && npm run build && npm run e2e -- --trace=off`
-Expected: fluxo 78, núcleo 253, app 255; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
+Expected: fluxo 78, núcleo 253, app 258; `tsc` limpo; pgTAP `Tests=136` e `Result: PASS`; build com `/e/[empresa]/f/[fluxo]` e `/e/[empresa]/cadastros` dinâmicas (`ƒ`); ponta a ponta `30 passed` e `1 skipped`.
 
 - [ ] **Passo 3: commit e push**
 

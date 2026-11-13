@@ -219,6 +219,7 @@
 
 /* Responsável: busca nos cadastros, com "criar" no fim. */
 .editor .combo { position: relative; }
+.editor .combo > .dica { margin-top: 5px; }
 .editor .sugestoes { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; display: grid; gap: 2px; max-height: 240px; overflow: auto; }
 .editor .sugestoes button { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 0; background: none; border-radius: 7px; padding: 6px 8px; text-align: left; cursor: pointer; font-size: 13px; color: var(--ink); }
 .editor .sugestoes button[aria-selected="true"], .editor .sugestoes button:hover { background: var(--tile); }
@@ -228,3 +229,10 @@
 .editor .cartao-sim .quando { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--ink-2); }
 .editor .cartao-sim .quando input[type="datetime-local"] { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--node); font-size: 12.5px; }
 .editor .cartao-sim .quando label { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Teclado: peças, notas e rótulos entram no Tab; o + aparece quando tem o foco. */
+.editor .no:focus-visible, .editor .rotulo-cano:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.editor .no .mais:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A região viva das faixas fica montada mesmo vazia; vazia, não abre o espaço do gap. */
+.editor .cabeca-editor > .vivo { display: grid; gap: 8px; }
+.editor .cabeca-editor > .vivo:empty { margin-bottom: -8px; }

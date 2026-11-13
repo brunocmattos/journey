@@ -13,7 +13,14 @@ test('critério 5: fluxos de canais diferentes convivem, cada um com a cor da á
   const cores: string[] = [];
   for (const nome of MODELOS) {
     await page.goto(casa);
-    if (!(await page.getByRole('region', { name: 'Novo fluxo' }).isVisible())) await page.getByRole('button', { name: 'Novo fluxo' }).click();
+    // Sem lista a região já vem aberta; com fluxos, abre pelo botão. Espera a página responder (o clique antes da
+    // hidratação se perde) em vez de olhar uma vez só com isVisible().
+    const novo = page.getByRole('button', { name: 'Novo fluxo' });
+    await expect(novo).toBeEnabled();
+    await expect(async () => {
+      if ((await novo.getAttribute('aria-expanded')) !== 'true') await novo.click();
+      await expect(page.getByRole('region', { name: 'Novo fluxo' })).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     await page.getByRole('button', { name: new RegExp(nome) }).click();
     await expect(page).toHaveURL(/\/f\//);
     await expect(page.getByTestId('salvamento')).toHaveText('salvo', { timeout: 20_000 });

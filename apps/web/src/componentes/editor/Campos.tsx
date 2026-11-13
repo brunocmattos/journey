@@ -1,8 +1,28 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Cadastro, TipoPeca } from '@journey/fluxo';
 import { buscar, comNome, tipoSugerido, type TipoCadastro } from '@/editor/cadastros';
+
+/**
+ * Grava, ao desmontar, o que foi digitado e não chegou a sair do campo (a seleção mudou com o foco aqui dentro). Usa
+ * o `aoMudar` do último desenho deste campo: o da peça que ele mostrava, não o da que foi selecionada agora.
+ */
+function useGravaAoSair<T>(aoMudar: (v: T) => void) {
+  const pendente = useRef<{ v: T } | null>(null);
+  const ultimo = useRef(aoMudar);
+  ultimo.current = aoMudar;
+  useEffect(
+    () => () => {
+      // No modo estrito esta limpeza roda uma vez ao montar: aí não há nada pendente.
+      const p = pendente.current;
+      pendente.current = null;
+      if (p) ultimo.current(p.v);
+    },
+    [],
+  );
+  return pendente;
+}
 
 /**
  * Campo de texto que grava ao sair (ou no Enter), como no protótipo: digitar não cria um passo no histórico por
@@ -21,10 +41,15 @@ export function CampoTexto({
   multilinha?: boolean;
   placeholder?: string;
 }) {
+  const pendente = useGravaAoSair(aoMudar);
   const props = {
     defaultValue: valor,
     placeholder,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      pendente.current = e.currentTarget.value !== valor ? { v: e.currentTarget.value } : null;
+    },
     onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      pendente.current = null;
       if (e.currentTarget.value !== valor) aoMudar(e.currentTarget.value);
     },
     onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -55,11 +80,17 @@ export function partesTempo(s: number | undefined): [number, Unidade] {
 export function CampoTempo({ rotulo, valor, aoMudar }: { rotulo: string; valor: number | undefined; aoMudar: (s: number | undefined) => void }) {
   const [n, u] = partesTempo(valor);
   const id = useId();
+  const segundos = (num: string, uni: Unidade) => {
+    const s = Math.round((parseFloat(num) || 0) * UNIDADES[uni]);
+    return s > 0 ? s : undefined;
+  };
+  const pendente = useGravaAoSair(aoMudar);
   const ler = (form: HTMLElement) => {
-    const num = parseFloat((form.querySelector(`[data-n="${id}"]`) as HTMLInputElement).value) || 0;
+    pendente.current = null;
+    const num = (form.querySelector(`[data-n="${id}"]`) as HTMLInputElement).value;
     const uni = (form.querySelector(`[data-u="${id}"]`) as HTMLSelectElement).value as Unidade;
-    const s = Math.round(num * UNIDADES[uni]);
-    aoMudar(s > 0 ? s : undefined);
+    const s = segundos(num, uni);
+    if (s !== valor) aoMudar(s);
   };
   return (
     <label className="campo">
@@ -74,6 +105,10 @@ export function CampoTempo({ rotulo, valor, aoMudar }: { rotulo: string; valor: 
           placeholder="0"
           style={{ flex: 1 }}
           aria-label={`${rotulo}: quantidade`}
+          onChange={(e) => {
+            const s = segundos(e.currentTarget.value, (e.currentTarget.nextElementSibling as HTMLSelectElement).value as Unidade);
+            pendente.current = s !== valor ? { v: s } : null;
+          }}
           onBlur={(e) => ler(e.currentTarget.parentElement!)}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
@@ -115,7 +150,8 @@ export function Cores({ rotulo, atual, cores, aoMudar }: { rotulo: string; atual
 
 /**
  * O responsável de uma peça: busca nos cadastros da empresa; um nome que não existe vira cadastro novo (com o
- * tipo sugerido, que dá pra trocar). Vazio tira o responsável.
+ * tipo sugerido, que dá pra trocar) só no Enter ou no "Criar …": sair do campo com um nome que não existe volta ao
+ * que estava (criar um cadastro da empresa sem querer é pior que redigitar). Vazio tira o responsável.
  */
 export function Responsavel({
   rotulo,
@@ -136,9 +172,11 @@ export function Responsavel({
 }) {
   const [texto, setTexto] = useState(atual?.nome ?? '');
   const [aberto, setAberto] = useState(false);
-  const [destaque, setDestaque] = useState(0);
+  // -1: nada destacado (o Enter num campo vazio não pega o primeiro cadastro da lista).
+  const [destaque, setDestaque] = useState(-1);
   const [tipoNovo, setTipoNovo] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
+  const caixa = useRef<HTMLDivElement>(null);
   const lista = useId();
   const achados = buscar(cadastros, texto, 6);
   const exato = comNome(cadastros, texto);
@@ -146,6 +184,15 @@ export function Responsavel({
   const tipo = tipoNovo ?? tipoSugerido(texto, tipoPeca, tipos);
   const nomeTipo = (k: string) => tipos.find((t) => t.chave === k)?.nome ?? k;
   const opcoes = [...achados.map((k) => ({ k })), ...(podeCriar ? [{ k: null }] : [])];
+  const mostrar = aberto && opcoes.length > 0;
+  const idOpcao = (i: number) => `${lista}-op-${i}`;
+
+  const voltar = () => {
+    setTexto(atual?.nome ?? '');
+    setTipoNovo(null);
+    setAberto(false);
+    setDestaque(-1);
+  };
 
   const escolher = async (i: number) => {
     const o = opcoes[i];
@@ -160,9 +207,10 @@ export function Responsavel({
     setCriando(false);
   };
 
+  /** Enter sem opção destacada: vazio tira, nome que existe vale, nome novo cria. */
   const confirmar = () => {
     const t = texto.trim();
-    if (!t) return aoEscolher(undefined);
+    if (!t) return atual && aoEscolher(undefined);
     if (exato) {
       setTexto(exato.nome);
       return exato.id !== atual?.id && aoEscolher(exato.id);
@@ -170,16 +218,39 @@ export function Responsavel({
     void escolher(opcoes.length - 1);
   };
 
+  /** Saiu do campo e da escolha do tipo: vazio tira, nome que existe vale, nome novo volta ao que estava. */
+  const sair = () => {
+    setAberto(false);
+    if (criando) return;
+    const t = texto.trim();
+    if (t === (atual?.nome ?? '')) return;
+    if (!t) return aoEscolher(undefined);
+    if (exato) {
+      setTexto(exato.nome);
+      return exato.id !== atual?.id && aoEscolher(exato.id);
+    }
+    voltar();
+  };
+
   return (
-    <div className="campo">
+    <div
+      className="campo"
+      ref={caixa}
+      onBlur={(e) => {
+        // O foco foi pro tipo do cadastro novo (ou voltou dele pro campo): ainda está escolhendo.
+        if (caixa.current?.contains(e.relatedTarget as Node | null)) return;
+        sair();
+      }}
+    >
       <label htmlFor={`${lista}-campo`}>{rotulo}</label>
       <div className="combo">
         <input
           id={`${lista}-campo`}
           type="text"
           role="combobox"
-          aria-expanded={aberto}
-          aria-controls={lista}
+          aria-expanded={mostrar}
+          aria-controls={mostrar ? lista : undefined}
+          aria-activedescendant={mostrar && destaque >= 0 && destaque < opcoes.length ? idOpcao(destaque) : undefined}
           aria-autocomplete="list"
           value={texto}
           placeholder="Escreva: vira cadastro"
@@ -187,35 +258,47 @@ export function Responsavel({
           onChange={(e) => {
             setTexto(e.target.value);
             setAberto(true);
-            setDestaque(0);
+            setDestaque(e.target.value.trim() ? 0 : -1);
           }}
           onFocus={() => setAberto(true)}
-          onBlur={() => {
-            setAberto(false);
-            // Saiu do campo com um nome diferente: vale como Enter (usa o que existe ou cria).
-            if (texto.trim() !== (atual?.nome ?? '')) confirmar();
-          }}
+          onBlur={() => setAberto(false)}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
+              setAberto(true);
               setDestaque((d) => Math.min(d + 1, opcoes.length - 1));
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               setDestaque((d) => Math.max(d - 1, 0));
             } else if (e.key === 'Enter') {
               e.preventDefault();
-              if (aberto && opcoes[destaque]) void escolher(destaque);
+              if (mostrar && destaque >= 0 && opcoes[destaque]) void escolher(destaque);
               else confirmar();
-            } else if (e.key === 'Escape') setAberto(false);
+            } else if (e.key === 'Escape') voltar();
           }}
         />
-        {aberto && opcoes.length > 0 && (
-          <div className="sugestoes" id={lista} role="listbox">
+        {/* O tipo fica entre o campo e a lista: a lista aberta não cobre a escolha. */}
+        {podeCriar && (
+          <label className="linha dica">
+            Novo cadastro do tipo
+            <select value={tipo} onChange={(e) => setTipoNovo(e.target.value)} aria-label="Tipo do cadastro novo">
+              {tipos.map((t) => (
+                <option key={t.chave} value={t.chave}>
+                  {t.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {mostrar && (
+          <div className="sugestoes" id={lista} role="listbox" aria-label={rotulo}>
             {opcoes.map((o, i) => (
               <button
                 key={o.k?.id ?? 'novo'}
+                id={idOpcao(i)}
                 type="button"
                 role="option"
+                tabIndex={-1}
                 aria-selected={i === destaque}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void escolher(i)}
@@ -236,18 +319,6 @@ export function Responsavel({
           </div>
         )}
       </div>
-      {podeCriar && (
-        <label className="linha dica">
-          Novo cadastro do tipo
-          <select value={tipo} onChange={(e) => setTipoNovo(e.target.value)} aria-label="Tipo do cadastro novo">
-            {tipos.map((t) => (
-              <option key={t.chave} value={t.chave}>
-                {t.nome}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
     </div>
   );
 }

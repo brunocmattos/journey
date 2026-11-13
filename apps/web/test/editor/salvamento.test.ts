@@ -100,6 +100,51 @@ describe('editor/salvamento', () => {
     expect(t.guardados.at(-1)).toBeNull();
   });
 
+  it('responsável apagado em outra tela (22023/23503): para, mas a cópia fica no navegador', async () => {
+    const t = montar([motivoDoErro({ code: '22023', message: 'responsável' })]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('recusado');
+    expect(t.s.parado).toBe(true);
+    expect(t.guardados.at(-1)).toEqual({ revisao: 3, documento: doc('a'), estilo: ESTILO_PADRAO });
+  });
+
+  it('a rede voltou (tentarJa): manda na hora, sem esperar a próxima tentativa', async () => {
+    const t = montar([{ ok: false, motivo: 'rede' }, { ok: false, motivo: 'rede' }]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    await vi.advanceTimersByTimeAsync(500);
+    await t.responder();
+    await vi.advanceTimersByTimeAsync(2000);
+    await t.responder();
+    // Agora espera 4 s; o `online` chega antes.
+    expect(t.enviados).toHaveLength(2);
+    t.s.tentarJa();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.enviados).toHaveLength(3);
+    await t.responder();
+    expect(t.situacoes.at(-1)).toBe('salvo');
+    // O temporizador velho não manda de novo.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(t.enviados).toHaveLength(3);
+  });
+
+  it('tentarJa sem falha antes, com envio no ar ou parado não faz nada', async () => {
+    const t = montar([{ ok: false, motivo: 'conflito' }]);
+    t.s.mudou(doc('a'), ESTILO_PADRAO);
+    t.s.tentarJa(); // ainda esperando a pessoa parar de mexer: segue a espera normal
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.enviados).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(500);
+    t.s.tentarJa(); // no ar
+    expect(t.enviados).toHaveLength(1);
+    await t.responder();
+    t.s.mudou(doc('b'), ESTILO_PADRAO);
+    t.s.tentarJa(); // parado pelo conflito
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(t.enviados).toHaveLength(1);
+  });
+
   it('envio que ficou sem resposta mas chegou: o conflito seguinte não é conflito', async () => {
     let banco: NoBanco = { revisao: 3, documento: null, estilo: null };
     const t = montar([{ ok: false, motivo: 'rede' }, { ok: false, motivo: 'conflito' }], async () => banco);
@@ -193,7 +238,7 @@ describe('editor/salvamento', () => {
     expect(motivoDoErro({ code: '40001' })).toEqual({ ok: false, motivo: 'conflito' });
     expect(motivoDoErro({ code: 'P0001' })).toEqual({ ok: false, motivo: 'trava' });
     expect(motivoDoErro({ code: '', message: 'TypeError: Failed to fetch' }, 0)).toEqual({ ok: false, motivo: 'rede' });
-    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
+    expect(motivoDoErro({ code: '22023', message: 'responsável' })).toMatchObject({ ok: false, motivo: 'recusado', manterCopia: true, mensagem: expect.stringContaining('um responsável deste fluxo foi apagado na tela Cadastros') });
     expect(motivoDoErro({ code: '23514', message: 'nome' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'nome' });
     // A mensagem não decide: código do banco com "failed" no texto continua recusa.
     expect(motivo({ code: '22023', message: 'validation failed' }, 400)).toBe('recusado');
@@ -201,7 +246,8 @@ describe('editor/salvamento', () => {
     expect(motivo({ code: 'PGRST303' }, 401)).toBe('sessao');
     expect(motivo({ message: 'Invalid authentication credentials' }, 401)).toBe('sessao');
     expect(motivoDoErro({ code: 'P0002', message: 'fluxo não encontrado' })).toEqual({ ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' });
-    expect(motivoDoErro({ code: '23503', message: 'insert or update violates foreign key' })).toMatchObject({ motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' });
+    expect(motivoDoErro({ code: '23503', message: 'insert or update violates foreign key' })).toMatchObject({ motivo: 'recusado', manterCopia: true, mensagem: expect.stringContaining('guardadas neste navegador') });
+    expect(motivoDoErro({ code: '23514', message: 'nome' })).not.toHaveProperty('manterCopia');
     expect(motivo({ code: '57014' }, 500)).toBe('rede');
     expect(motivo({ code: '40P01' }, 500)).toBe('rede');
     expect(motivo({ message: 'rate limit' }, 429)).toBe('rede');

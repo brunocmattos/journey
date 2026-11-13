@@ -7,8 +7,10 @@ export type Resposta =
   /**
    * conflito: outra pessoa salvou no meio (40001); trava: outra pessoa pegou a trava (P0001); rede: não chegou ou
    * deu um erro passageiro (tenta de novo); sessao: o login venceu (tenta de novo até a pessoa entrar outra vez).
+   * `manterCopia`: recusa que não é culpa do documento daqui (um cadastro apagado em outra tela): a cópia fica no
+   * navegador, senão tudo desde o último salvamento se perderia.
    */
-  | { ok: false; motivo: 'conflito' | 'trava' | 'rede' | 'sessao' | 'recusado'; mensagem?: string };
+  | { ok: false; motivo: 'conflito' | 'trava' | 'rede' | 'sessao' | 'recusado'; mensagem?: string; manterCopia?: boolean };
 
 export type Situacao = 'salvo' | 'esperando' | 'salvando' | 'sem_rede' | 'sem_sessao' | 'conflito' | 'sem_trava' | 'recusado';
 
@@ -54,7 +56,7 @@ export class Salvamento {
   revisao: number;
   private pendente: Versao | null = null;
   private voo: Promise<boolean> | null = null;
-  private parado = false;
+  private _parado = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private tentativas = 0;
   /** Versões mandadas desde a última confirmação que ficaram sem resposta: podem ter chegado (ver `conferir`). */
@@ -66,6 +68,11 @@ export class Salvamento {
     this.revisao = o.revisao;
   }
 
+  /** Parou (conflito, trava perdida, recusa ou `parar`): não manda mais nada sozinho. */
+  get parado(): boolean {
+    return this._parado;
+  }
+
   /** Tem mudança que ainda não chegou no banco? */
   get sujo(): boolean {
     return this.pendente !== null || this.voo !== null;
@@ -74,14 +81,14 @@ export class Salvamento {
   mudou(documento: Documento, estilo: Estilo): void {
     this.pendente = { documento, estilo };
     // Parado, a mudança fica na fila (sem barulho na tela) e vai se alguém chamar `retomar`.
-    if (this.parado) return;
+    if (this._parado) return;
     if (!this.voo) this.o.aoMudar('esperando');
     this.agendar(this.o.espera ?? 500);
   }
 
   /** Manda já o que estiver pendente e espera tudo chegar (ou falhar). Ao sair da página, por exemplo. */
   async agora(): Promise<void> {
-    while (!this.parado && (this.voo || this.pendente)) {
+    while (!this._parado && (this.voo || this.pendente)) {
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
       if (!(await (this.voo ?? this.enviar()))) return;
@@ -90,14 +97,25 @@ export class Salvamento {
 
   /** Para de mandar. O que estiver no ar termina, mas não agenda mais nada. */
   parar(): void {
-    this.parado = true;
+    this._parado = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
   }
 
+  /**
+   * A rede voltou (evento `online`): quem estava esperando a próxima tentativa (até 30 s) manda já. Fora disso
+   * (nada pendente, já no ar, parado ou sem falha antes) não faz nada.
+   */
+  tentarJa(): void {
+    if (this._parado || this.voo || !this.pendente || this.tentativas === 0) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    void this.enviar();
+  }
+
   /** Volta a mandar depois de um `parar` (por exemplo, apagar o fluxo deu errado). */
   retomar(): void {
-    this.parado = false;
+    this._parado = false;
     if (this.pendente) {
       this.o.aoMudar('esperando');
       this.agendar(0);
@@ -114,7 +132,7 @@ export class Salvamento {
 
   private enviar(): Promise<boolean> {
     if (this.voo) return this.voo;
-    if (this.parado || !this.pendente) return Promise.resolve(true);
+    if (this._parado || !this.pendente) return Promise.resolve(true);
     this.voo = this.mandar().finally(() => (this.voo = null));
     return this.voo;
   }
@@ -133,7 +151,7 @@ export class Salvamento {
       this.tentativas = 0;
       this.semResposta = [];
       if (!this.pendente) this.o.guardar(null);
-      if (this.parado) return true;
+      if (this._parado) return true;
       if (this.pendente) {
         this.o.aoMudar('esperando');
         this.agendar(0);
@@ -142,11 +160,11 @@ export class Salvamento {
     }
     // O que não chegou volta pra fila (a não ser que já tenha coisa mais nova).
     this.pendente ??= atual;
-    if (r.motivo === 'recusado') {
+    if (r.motivo === 'recusado' && !r.manterCopia) {
       // Uma cópia recusada voltaria a cada vez que o fluxo abrisse e seria recusada de novo: não fica.
       this.o.guardar(null);
     } else this.o.guardar({ revisao: this.revisao, ...this.pendente });
-    if (this.parado) return false;
+    if (this._parado) return false;
     if (r.motivo === 'rede' || r.motivo === 'sessao') {
       this.o.aoMudar(r.motivo === 'rede' ? 'sem_rede' : 'sem_sessao');
       this.agendar(proximaTentativa(this.tentativas++));
@@ -225,7 +243,15 @@ export function motivoDoErro(e: { code?: string; message?: string } | null | und
   if (c === 'P0001') return { ok: false, motivo: 'trava' };
   // O que o salvar_fluxo recusa por causa de outra tela: o fluxo ou um cadastro dele foi apagado.
   if (c === 'P0002') return { ok: false, motivo: 'recusado', mensagem: 'este fluxo foi apagado' };
-  if (c === '22023' || c === '23503') return { ok: false, motivo: 'recusado', mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros' };
+  // O documento daqui está certo, só aponta pra um cadastro que sumiu: a cópia fica (o editor tira esse responsável
+  // ao recuperar), senão o trabalho desde o último salvamento iria embora.
+  if (c === '22023' || c === '23503')
+    return {
+      ok: false,
+      motivo: 'recusado',
+      manterCopia: true,
+      mensagem: 'um responsável deste fluxo foi apagado na tela Cadastros. As mudanças ficaram guardadas neste navegador: recarregue pra continuar sem esse responsável',
+    };
   if (c === 'PGRST301' || c === 'PGRST303' || status === 401) return { ok: false, motivo: 'sessao' };
   if (c === '57014' || c === '40P01' || /^(08|53)/.test(c) || status === 429 || (status !== undefined && status >= 500)) return { ok: false, motivo: 'rede' };
   if (!c && status === 413) return { ok: false, motivo: 'recusado', mensagem: 'o fluxo ficou grande demais pra salvar' };

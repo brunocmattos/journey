@@ -75,25 +75,29 @@ export function Painel(p: PropsPainel) {
   );
 }
 
+/**
+ * Um painel por item selecionado (`key` pelo id): trocar de peça monta campos novos, e o que estava digitado no campo
+ * da anterior é gravado nela (ver `useGravaAoSair`, no Campos), nunca na que acabou de ser selecionada.
+ */
 function Propriedades(p: PropsPainel) {
   const { doc, sel } = p;
   if (sel?.tipo === 'peca') {
     const peca = doc.pecas.find((x) => x.id === sel.id);
-    if (peca) return <PainelPeca {...p} peca={peca} />;
+    if (peca) return <PainelPeca key={`peca:${peca.id}`} {...p} peca={peca} />;
   }
   if (sel?.tipo === 'conexao') {
     const c = doc.conexoes.find((x) => x.id === sel.id);
-    if (c) return <PainelConexao {...p} conexao={c} />;
+    if (c) return <PainelConexao key={`conexao:${c.id}`} {...p} conexao={c} />;
   }
   if (sel?.tipo === 'grupo') {
     const g = doc.grupos.find((x) => x.id === sel.id);
-    if (g) return <PainelGrupo {...p} grupo={g} />;
+    if (g) return <PainelGrupo key={`grupo:${g.id}`} {...p} grupo={g} />;
   }
   if (sel?.tipo === 'nota') {
     const n = doc.notas.find((x) => x.id === sel.id);
-    if (n) return <PainelNota {...p} nota={n} />;
+    if (n) return <PainelNota key={`nota:${n.id}`} {...p} nota={n} />;
   }
-  return <PainelFluxo {...p} />;
+  return <PainelFluxo key="fluxo" {...p} />;
 }
 
 function PainelFluxo({ fluxo, canais, acoes, soLeitura }: PropsPainel) {

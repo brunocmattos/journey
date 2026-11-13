@@ -25,7 +25,8 @@ export function AguaCheia({ d, cor, estilo }: { d: string; cor: string; estilo: 
 export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string; cor: string; estilo: Estilo; pausado: boolean; aoChegar: () => void }) {
   const agua = useRef<SVGPathElement>(null);
   const bolhas = useRef<(SVGCircleElement | null)[]>([]);
-  const gasto = useRef(0);
+  // Quanto do cano já tem água (0 a 1), não o tempo gasto: trocar a velocidade no meio não faz a água pular.
+  const feito = useRef(0);
   const pausa = useRef(pausado);
   pausa.current = pausado;
   const chegar = useRef(aoChegar);
@@ -43,9 +44,9 @@ export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string;
     let raf = 0;
     let fim = false;
     const quadro = (t: number) => {
-      if (!pausa.current) gasto.current += t - ultimo;
+      if (!pausa.current) feito.current = Math.min(1, feito.current + Math.max(0, t - ultimo) / dur);
       ultimo = t;
-      const prog = semMovimento ? 1 : Math.min(1, gasto.current / dur);
+      const prog = semMovimento ? 1 : feito.current;
       p.style.strokeDashoffset = String(L * (1 - prog));
       const cabeca = L * prog;
       bolhas.current.forEach((b, i) => {
@@ -65,7 +66,8 @@ export function AguaCorrendo({ d, cor, estilo, pausado, aoChegar }: { d: string;
     };
     raf = requestAnimationFrame(quadro);
     return () => cancelAnimationFrame(raf);
-    // O desenho do cano pode mudar no meio (estilo): recomeça a conta do comprimento, não do tempo gasto.
+    // O desenho do cano (estilo) ou a velocidade podem mudar no meio: recomeça a conta do comprimento e da duração,
+    // não do quanto já andou.
   }, [d, estilo.velocidade]);
 
   return (

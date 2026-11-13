@@ -19,7 +19,8 @@ test('critério 2: o nome escrito na peça vira cadastro; renomear lá muda no f
   await resp.fill('Fila Cobrança');
   await expect(page.getByRole('option', { name: /Criar “Fila Cobrança”/ })).toContainText('Fila');
   await resp.press('Enter');
-  await expect(page.getByText('“Fila Cobrança” virou cadastro (Fila)')).toBeVisible();
+  // O aviso some em 2,6 s: confere o que fica (o campo e a peça), não o aviso.
+  await expect(resp).toHaveValue('Fila Cobrança');
   const naPeca = page.getByRole('button', { name: 'Atendimento: Cobra o cliente' });
   await expect(naPeca).toContainText('Fila Cobrança');
   await expect(page.getByTestId('salvamento')).toHaveText('salvo', { timeout: 20_000 });

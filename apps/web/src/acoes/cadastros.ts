@@ -56,7 +56,8 @@ export async function apagarCadastro(empresaId: string, id: string): Promise<{ e
 /** Janelas e feriados de um Horário, conferidos como o relógio confere. */
 export async function mudarHorario(empresaId: string, id: string, campos: unknown): Promise<{ erro?: string }> {
   const lidos = camposHorario({ id, tipo: 'horario', nome: 'h', campos: campos as Record<string, unknown> });
-  if (!lidos) return { erro: 'Confere as janelas (o fim depois do início, até 24:00) e as datas dos feriados.' };
+  // Janela sem dia não abre nunca: é engano de quem editou, não um horário.
+  if (!lidos || lidos.janelas.some((j) => !j.dias.length)) return { erro: 'Confere as janelas (o fim depois do início, até 24:00, com pelo menos um dia) e as datas dos feriados.' };
   const { supabase } = await usuarioAtual();
   const r = await supabase.from('cadastros').update({ campos: lidos }).eq('empresa_id', empresaId).eq('id', id).eq('tipo', 'horario').select('id');
   if (r.error) return { erro: mensagemDoErro('mudarHorario', r.error) };

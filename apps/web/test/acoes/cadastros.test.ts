@@ -41,6 +41,7 @@ describe('acoes/cadastros', () => {
 
   it('horário: confere janelas e feriados antes de gravar', async () => {
     expect((await mudarHorario('e1', 'k1', { janelas: [{ dias: ['seg'], inicio: '18:00', fim: '08:00' }] })).erro).toMatch(/Confere as janelas/);
+    expect((await mudarHorario('e1', 'k1', { janelas: [{ dias: [], inicio: '08:00', fim: '18:00' }] })).erro).toMatch(/pelo menos um dia/);
     expect(b.feitas).toEqual([]);
     b.quando('cadastros.update', { data: [{ id: 'k1' }], error: null });
     expect(await mudarHorario('e1', 'k1', { janelas: [{ dias: ['sab'], inicio: '00:00', fim: '24:00' }], feriados: [{ data: '2026-12-25', todo_ano: true, extra: 1 }] })).toEqual({});

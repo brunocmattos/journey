@@ -33,8 +33,22 @@ const novoId = (prefixo: string) => `${prefixo}${Date.now().toString(36)}${Math.
 const chaveLocal = (id: string) => `journey:fluxo:${id}`;
 /** A trava vale 10 minutos; o editor renova antes de vencer. */
 const RENOVAR_TRAVA = 4 * 60 * 1000;
+/** Até quando conta como minha uma trava que não deu pra renovar: 9 dos 10 minutos, pelo relógio daqui. */
+const TRAVA_VALE = 9 * 60 * 1000;
+/** Pedido de trava que falhou (rede, 5xx, login): tenta de novo nesse tempo, não só na próxima renovação. */
+const DE_NOVO_TRAVA = 20 * 1000;
 
-type Trava = { estado: 'pegando' } | { estado: 'minha' } | { estado: 'outra'; por: string | null; ate: string | null };
+/**
+ * pegando: abrindo; minha: edita; outra: alguém editando (o banco disse); incerta: não deu pra confirmar com o banco
+ * (sem rede) e a trava daqui, se havia, já pode ter vencido; liberou: quem só via ganhou a trava, mas o documento
+ * na tela é o do carregamento: recarrega pra editar o que está no banco.
+ */
+type Trava =
+  | { estado: 'pegando' }
+  | { estado: 'minha' }
+  | { estado: 'outra'; por: string | null; ate: string | null }
+  | { estado: 'incerta' }
+  | { estado: 'liberou' };
 
 export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais, tipos }: PropsEditor) {
   const router = useRouter();
@@ -44,7 +58,23 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const [hist, setHist] = useState<Historico>(() => comecar(fluxo.documento));
   const doc = hist.atual;
   const [estilo, setEstilo] = useState<Estilo>(() => lerEstilo(fluxo.estilo));
+  const [velocidadeVista, setVelocidadeVista] = useState<number | null>(null);
+  // O que a tela mostra: o estilo, com a velocidade que quem só vê escolheu pro play dele.
+  const estiloVisto = useMemo(() => (velocidadeVista === null ? estilo : { ...estilo, velocidade: velocidadeVista }), [estilo, velocidadeVista]);
   const [dados, setDados] = useState<DadosFluxo>({ nome: fluxo.nome, descricao: fluxo.descricao, canal: fluxo.canal, meta_s: fluxo.meta_s });
+  // O mais recente, sem esperar o próximo desenho: uma ação chamada depois de um await (ou de um menu aberto antes)
+  // traz o `doc` do desenho em que nasceu, e gravar em cima dele apagaria o que mudou nesse meio-tempo.
+  const histRef = useRef(hist);
+  histRef.current = hist;
+  const estiloRef = useRef(estilo);
+  estiloRef.current = estilo;
+  const dadosRef = useRef(dados);
+  dadosRef.current = dados;
+  const docAtual = () => histRef.current.atual;
+  const mudarHist = (h: Historico) => {
+    histRef.current = h;
+    setHist(h);
+  };
   const [cadastros, setCadastros] = useState<readonly Cadastro[]>(cadastrosIniciais);
   const [sel, setSel] = useState<D.Selecao>(null);
   const [ferramenta, setFerramenta] = useState<Ferramenta>('selecionar');
@@ -60,6 +90,10 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const soLeitura = trava.estado !== 'minha' || parado;
 
   const avisar = (t: string) => setAviso(t);
+  // O título da aba acompanha o nome do fluxo (renomear aqui muda na hora).
+  useEffect(() => {
+    document.title = `${dados.nome} · Journey`;
+  }, [dados.nome]);
   useEffect(() => {
     if (!aviso) return;
     const t = setTimeout(() => setAviso(null), 2600);
@@ -96,17 +130,49 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   // Trava: pega ao abrir e renova; quem não tem a trava só vê (e dá play). Ao sair, solta.
   const token = useRef<string | null>(null);
   const minha = useRef(false);
+  /** Até quando (relógio daqui) a trava confirmada vale, mesmo sem conseguir renovar. */
+  const minhaAte = useRef(0);
+  /** O banco já disse que era de outra pessoa: o documento na tela pode estar velho. */
+  const jaFoiOutra = useRef(false);
   useEffect(() => {
     let vivo = true;
+    let pedindo = false;
+    let parou = false;
+    let deNovo: ReturnType<typeof setTimeout> | undefined;
     const pegar = async () => {
-      const r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id });
+      if (pedindo || parou) return;
+      pedindo = true;
+      clearTimeout(deNovo);
+      let r: { data: unknown; error: unknown };
+      try {
+        r = await supabase.rpc('pegar_trava', { p_fluxo: fluxo.id });
+      } catch (erro) {
+        r = { data: null, error: erro };
+      } finally {
+        pedindo = false;
+      }
       if (!vivo) return;
       const d = r.data as { ok: boolean; por?: string | null; ate?: string | null } | null;
-      if (r.error || !d) return setTrava({ estado: 'outra', por: null, ate: null });
+      if (r.error || !d) {
+        // Não deu pra perguntar (rede, 5xx, login): não é "outra pessoa". Enquanto a última trava confirmada vale,
+        // segue editando; depois, fica só vendo até conseguir confirmar. Tenta de novo logo.
+        deNovo = setTimeout(() => void pegar(), DE_NOVO_TRAVA);
+        if (minha.current && Date.now() < minhaAte.current) return;
+        return setTrava({ estado: 'incerta' });
+      }
       if (!d.ok) {
         minha.current = false;
+        jaFoiOutra.current = true;
         return setTrava({ estado: 'outra', por: d.por ?? null, ate: d.ate ?? null });
       }
+      if (!minha.current && jaFoiOutra.current) {
+        // Quem só via ganhou a trava, mas a tela tem o documento (e a revisão) de quando abriu: editar daqui daria
+        // um conflito no primeiro salvamento. Solta a trava (pra não segurar à toa) e pede pra recarregar.
+        parou = true;
+        void supabase.rpc('soltar_trava', { p_fluxo: fluxo.id });
+        return setTrava({ estado: 'liberou' });
+      }
+      minhaAte.current = Date.now() + TRAVA_VALE;
       if (!minha.current) {
         minha.current = true;
         recuperarCopia();
@@ -114,8 +180,20 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       setTrava({ estado: 'minha' });
     };
     void pegar();
+    // O token muda (renova a cada hora): o soltar com keepalive precisa do atual, senão dá 401 ao fechar.
     void supabase.auth.getSession().then(({ data }) => (token.current = data.session?.access_token ?? null));
+    const { data: auth } = supabase.auth.onAuthStateChange((_evento, sessao) => {
+      token.current = sessao?.access_token ?? null;
+    });
     const intervalo = setInterval(() => void pegar(), RENOVAR_TRAVA);
+    // A rede voltou, a aba voltou a aparecer ou a página voltou do cache: o intervalo pode ter ficado parado (aba
+    // escondida, computador dormindo), então confirma a trava já. Com a rede de volta, o salvamento também tenta já.
+    const voltouRede = () => {
+      void pegar();
+      salv.current?.tentarJa();
+    };
+    const visivel = () => document.visibilityState === 'visible' && void pegar();
+    const voltouDoCache = (e: PageTransitionEvent) => e.persisted && void pegar();
     const soltar = () => {
       if (!minha.current || !token.current) return;
       // keepalive: o pedido segue mesmo com a página fechando.
@@ -127,18 +205,28 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       }).catch(() => {});
     };
     const antesDeSair = (e: BeforeUnloadEvent) => {
-      if (salv.current?.sujo) {
+      // Parado (conflito, trava perdida, recusa), não há o que esperar: o "Recarregar" da faixa não pode abrir o
+      // "sair do site?". A cópia, quando vale, já está no navegador.
+      if (salv.current?.sujo && !salv.current.parado) {
         void salv.current.agora();
         e.preventDefault();
       }
     };
     addEventListener('pagehide', soltar);
     addEventListener('beforeunload', antesDeSair);
+    addEventListener('online', voltouRede);
+    addEventListener('pageshow', voltouDoCache);
+    document.addEventListener('visibilitychange', visivel);
     return () => {
       vivo = false;
       clearInterval(intervalo);
+      clearTimeout(deNovo);
+      auth.subscription.unsubscribe();
       removeEventListener('pagehide', soltar);
       removeEventListener('beforeunload', antesDeSair);
+      removeEventListener('online', voltouRede);
+      removeEventListener('pageshow', voltouDoCache);
+      document.removeEventListener('visibilitychange', visivel);
       // Saindo pra outra tela: espera o que falta chegar e solta a trava. Sem `parar`: no modo estrito do React a
       // limpeza roda uma vez ao montar, e sem rede o salvamento segue tentando (a cópia está no navegador).
       void salv.current?.agora().finally(soltar);
@@ -147,19 +235,31 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fluxo.id]);
 
-  /** O que não chegou no banco da última vez (sem rede) e partiu da mesma revisão volta pro quadro. */
+  /**
+   * O que não chegou no banco da última vez (sem rede, ou recusado porque um responsável foi apagado) e partiu da
+   * revisão que o salvamento tem agora volta pro quadro. Responsável que não existe mais sai da peça: senão o banco
+   * recusaria de novo.
+   */
   function recuperarCopia() {
     let copia = null;
     try {
-      copia = copiaValida(JSON.parse(localStorage.getItem(chaveLocal(fluxo.id)) ?? 'null'), fluxo.revisao);
+      copia = copiaValida(JSON.parse(localStorage.getItem(chaveLocal(fluxo.id)) ?? 'null'), salv.current!.revisao);
     } catch {
       return;
     }
     if (!copia) return;
-    setHist(comecar(copia.documento));
+    const existem = new Set(cadastrosIniciais.map((k) => k.id));
+    let documento = copia.documento;
+    const orfas = documento.pecas.filter((p) => p.responsavel && !existem.has(p.responsavel));
+    for (const p of orfas) documento = D.mudarPeca(documento, p.id, { responsavel: undefined });
+    mudarHist(comecar(documento));
     setEstilo(lerEstilo(copia.estilo));
-    salv.current!.mudou(copia.documento, lerEstilo(copia.estilo));
-    avisar('Voltaram as mudanças que não tinham chegado ao banco.');
+    salv.current!.mudou(documento, lerEstilo(copia.estilo));
+    avisar(
+      orfas.length
+        ? `Voltaram as mudanças que não tinham chegado ao banco (sem o responsável apagado em ${orfas.length === 1 ? '1 peça' : `${orfas.length} peças`}).`
+        : 'Voltaram as mudanças que não tinham chegado ao banco.',
+    );
   }
 
   // ---------- Mudanças no documento ----------
@@ -169,60 +269,78 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     setEscolhendoInicio(null);
   };
 
+  /** Toda mudança no documento parte do mais recente (`docAtual()`), nunca do `doc` deste desenho. */
   const editar = (novo: Documento, selecao?: D.Selecao) => {
-    if (soLeitura || novo === doc) return;
-    if (play) parar();
-    setHist(registrar(hist, novo));
-    salv.current!.mudou(novo, estilo);
+    const v = vivo.current;
+    if (v.soLeitura || novo === docAtual()) return;
+    if (v.play) parar();
+    mudarHist(registrar(histRef.current, novo));
+    salv.current!.mudou(novo, estiloRef.current);
     if (selecao !== undefined) setSel(selecao);
   };
 
+  // Em só leitura o estilo não muda: mudaria aqui e iria junto no primeiro salvamento depois de pegar a trava.
   const mudarEstilo = (e: Estilo) => {
+    if (vivo.current.soLeitura) return;
+    estiloRef.current = e;
     setEstilo(e);
-    if (!soLeitura) salv.current!.mudou(doc, e);
+    setVelocidadeVista(null);
+    salv.current!.mudou(docAtual(), e);
   };
+  /** A velocidade do play: quem só vê também ajusta, só na tela dele (não vai pro estilo nem pro salvamento). */
+  const mudarVelocidade = (v: number) => (vivo.current.soLeitura ? setVelocidadeVista(v) : mudarEstilo({ ...estiloRef.current, velocidade: v }));
 
   const historia = (f: (h: Historico) => Historico) => {
     if (soLeitura) return;
     if (play) parar();
-    const h = f(hist);
-    if (h === hist) return;
-    setHist(h);
-    salv.current!.mudou(h.atual, estilo);
+    const antes = histRef.current;
+    const h = f(antes);
+    if (h === antes) return;
+    mudarHist(h);
+    salv.current!.mudou(h.atual, estiloRef.current);
     if (!D.existe(h.atual, sel)) setSel(null);
   };
 
-  const criar = (f: TipoPeca | 'grupo' | 'nota', x: number, y: number) => {
+  /** Cria e seleciona. `renomear`: abre o campo de nome (ponteiro); pelo teclado, a peça só ganha o foco. */
+  const criar = (f: TipoPeca | 'grupo' | 'nota', x: number, y: number, renomear = true) => {
     const id = novoId(f === 'grupo' ? 'g' : f === 'nota' ? 'n' : 'p');
-    if (f === 'grupo') return editar(D.criarGrupo(doc, id, x, y), { tipo: 'grupo', id });
+    if (f === 'grupo') return editar(D.criarGrupo(docAtual(), id, x, y), { tipo: 'grupo', id });
     if (f === 'nota') {
-      editar(D.criarNota(doc, id, x, y), { tipo: 'nota', id });
-      return setRenomeando(id);
+      editar(D.criarNota(docAtual(), id, x, y), { tipo: 'nota', id });
+      return renomear ? setRenomeando(id) : setFocar(id);
     }
-    editar(D.criarPeca(doc, id, f, x, y), { tipo: 'peca', id });
-    setRenomeando(id);
+    editar(D.criarPeca(docAtual(), id, f, x, y), { tipo: 'peca', id });
+    if (renomear) setRenomeando(id);
+    else setFocar(id);
   };
+  // A peça (ou nota) criada pelo teclado recebe o foco depois de aparecer no quadro: Enter nela renomeia.
+  const [focar, setFocar] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focar) return;
+    document.querySelector<HTMLElement>(`[data-peca="${focar}"], [data-nota="${focar}"]`)?.focus();
+    setFocar(null);
+  }, [focar]);
 
   const ligar = (de: string, para: string) => {
-    const r = D.ligar(doc, novoId('c'), de, para);
+    const r = D.ligar(docAtual(), novoId('c'), de, para);
     if ('erro' in r) return r.erro === 'repetida' && avisar('Essas duas peças já estão ligadas.');
     editar(r.doc, { tipo: 'conexao', id: r.conexao.id });
   };
 
   const criarLigada = (origem: string, tipo: TipoPeca, onde?: { x: number; y: number }) => {
     const id = novoId('p');
-    editar(D.criarLigada(doc, id, novoId('c'), origem, tipo, onde), { tipo: 'peca', id });
+    editar(D.criarLigada(docAtual(), id, novoId('c'), origem, tipo, onde), { tipo: 'peca', id });
     setRenomeando(id);
   };
 
   const apagarSelecao = () => {
     if (!sel) return;
-    editar(D.apagar(doc, sel), null);
+    editar(D.apagar(docAtual(), sel), null);
   };
 
   const duplicar = (id: string) => {
     const novo = novoId('p');
-    editar(D.duplicar(doc, id, novo), { tipo: 'peca', id: novo });
+    editar(D.duplicar(docAtual(), id, novo), { tipo: 'peca', id: novo });
   };
 
   const selecionar = (s: D.Selecao) => {
@@ -232,12 +350,18 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   };
 
   // ---------- Dados do fluxo (colunas) e cadastros ----------
+  // Parte do mais recente: duas mudanças seguidas (nome e descrição no mesmo desenho) não apagam uma à outra. Se o banco recusa,
+  // volta só os campos desta mudança.
   const mudarDados = async (d: DadosDoFluxo) => {
-    const antes = dados;
-    setDados({ ...dados, ...d } as DadosFluxo);
+    if (vivo.current.soLeitura) return;
+    const atual = dadosRef.current;
+    const antes = Object.fromEntries(Object.keys(d).map((k) => [k, atual[k as keyof DadosFluxo]])) as Partial<DadosFluxo>;
+    dadosRef.current = { ...atual, ...d } as DadosFluxo;
+    setDados(dadosRef.current);
     const r = await mudarFluxo(empresaId, fluxo.id, d);
     if (r.erro) {
-      setDados(antes);
+      dadosRef.current = { ...dadosRef.current, ...antes };
+      setDados(dadosRef.current);
       avisar(r.erro);
     }
   };
@@ -276,6 +400,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
   const [pausado, setPausado] = useState(false);
   const [escolhendoInicio, setEscolhendoInicio] = useState<string[] | null>(null);
   const ctx = useMemo(() => ({ cadastros, canal: dados.canal }), [cadastros, dados.canal]);
+  // Pro `editar` chamado depois de um await: a trava e o play de agora, não os de quando a ação nasceu.
+  const vivo = useRef({ soLeitura, play });
+  vivo.current = { soLeitura, play };
   const exec = useMemo(() => (play ? rodar(docPlay, ctx, play) : null), [play, docPlay, ctx]);
   const vis = useMemo(() => (exec ? verVisual(exec.eventos, mostrados) : null), [exec, mostrados]);
 
@@ -306,11 +433,12 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     if (mostrados === 0) return setMostrados(1);
     const e = espera(ev[mostrados - 1]!);
     if (e === 'cano') return;
-    const t = setTimeout(() => setMostrados((m) => m + 1), e / estilo.velocidade);
+    const t = setTimeout(() => setMostrados((m) => m + 1), e / estiloVisto.velocidade);
     return () => clearTimeout(t);
-  }, [exec, mostrados, pausado, estilo.velocidade]);
+  }, [exec, mostrados, pausado, estiloVisto.velocidade]);
 
-  const aguaChegou = () => setMostrados((m) => m + 1);
+  // A água que chegou é a do evento `i`: um aviso repetido (ou atrasado, de um cano que já passou) não pula evento.
+  const aguaChegou = (i: number) => setMostrados((m) => (m === i ? m + 1 : m));
 
   const escolher = (conexao: string) => {
     if (!play || !exec?.pendente?.opcoes.some((o) => o.conexao === conexao)) return;
@@ -386,6 +514,9 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       if (sel) return setSel(null);
       return;
     }
+    // Enter num botão ou link (Dar play, Desfazer, Painel, menu) é dele: ativa o botão, não renomeia. A peça focada
+    // (também role=button) trata o Enter no quadro e não deixa ele chegar aqui.
+    if (e.key === 'Enter' && (e.target as Element | null)?.closest?.('button, a, [role=button], [role=menuitem], [role=option], [role=tab], summary')) return;
     if (e.key === 'Enter' && (sel?.tipo === 'peca' || sel?.tipo === 'nota') && !soLeitura && !play) {
       e.preventDefault();
       return setRenomeando(sel.id);
@@ -404,14 +535,23 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
     const x0 = e.clientX;
     const y0 = e.clientY;
     let arrastou = false;
+    const ponteiro = e.pointerId;
     const mover = (ev: PointerEvent) => {
+      if (ev.pointerId !== ponteiro) return;
       if (!arrastou && criaAlgo(t) && !soLeitura && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) arrastou = true;
       if (arrastou) setFantasma({ t, x: ev.clientX, y: ev.clientY });
     };
-    const soltar = (ev: PointerEvent) => {
+    const largar = () => {
       removeEventListener('pointermove', mover);
       removeEventListener('pointerup', soltar);
+      removeEventListener('pointercancel', cancelar);
       setFantasma(null);
+    };
+    // O sistema tomou o ponteiro (rolagem no toque, alerta): sem os ouvintes pendurados e sem o fantasma na tela.
+    const cancelar = (ev: PointerEvent) => ev.pointerId === ponteiro && largar();
+    const soltar = (ev: PointerEvent) => {
+      if (ev.pointerId !== ponteiro) return;
+      largar();
       if (arrastou && criaAlgo(t)) {
         if (quadro.current?.contem(ev.clientX, ev.clientY)) {
           const w = quadro.current.paraMundo(ev.clientX, ev.clientY);
@@ -419,12 +559,31 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
         }
         return setFerramenta('selecionar');
       }
-      const nova = ferramenta === t && criaAlgo(t) ? 'selecionar' : t;
-      setFerramenta(nova);
-      if (criaAlgo(nova)) avisar(`Clique no quadro pra pôr ${nova === 'grupo' ? 'o grupo' : nova === 'nota' ? 'a nota' : FORMAS[nova].nome}.`);
+      alternarFerramenta(t);
     };
     addEventListener('pointermove', mover);
     addEventListener('pointerup', soltar);
+    addEventListener('pointercancel', cancelar);
+  };
+
+  /**
+   * Ferramenta ativada sem ponteiro: quem não usa mouse não tem como clicar no quadro, então a forma nasce já no meio
+   * da parte visível (na grade), selecionada e com o foco; a ferramenta volta pro Selecionar. Selecionar e Mover o
+   * quadro só são escolhidos, como no clique.
+   */
+  const ativarPeloTeclado = (t: Ferramenta) => {
+    if (!criaAlgo(t)) return alternarFerramenta(t);
+    const c = quadro.current?.centro();
+    if (soLeitura || !c) return;
+    criar(t, c.x, c.y, false);
+    setFerramenta('selecionar');
+  };
+
+  /** Clique numa ferramenta: escolhe; clicar de novo numa forma já escolhida volta pro Selecionar. */
+  const alternarFerramenta = (t: Ferramenta) => {
+    const nova = ferramenta === t && criaAlgo(t) ? 'selecionar' : t;
+    setFerramenta(nova);
+    if (criaAlgo(nova)) avisar(`Clique no quadro pra pôr ${nova === 'grupo' ? 'o grupo' : nova === 'nota' ? 'a nota' : FORMAS[nova].nome}.`);
   };
 
   const botaoFerramenta = (t: Ferramenta, nome: string, icone: string, dica: string) => (
@@ -436,6 +595,8 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
       aria-label={nome}
       disabled={soLeitura && criaAlgo(t)}
       onPointerDown={(e) => apertarFerramenta(t, e)}
+      // Teclado (Enter, espaço) e leitor de tela: clique sem ponteiro (`detail` 0). O do mouse o pointerup já tratou.
+      onClick={(e) => e.detail === 0 && ativarPeloTeclado(t)}
     >
       <Icone nome={icone} />
       <span className="dica-ferr">
@@ -458,18 +619,34 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
 
   return (
     <div className={`editor${estilo.ondas ? ' ondas' : ''}${estilo.holofote ? ' holofote-on' : ''}${vis?.pergunta ? ' escolhendo' : ''}`}>
+      {/* O nome do fluxo como título da página pro leitor de tela (na tela ele é o campo editável). */}
+      <h1 className="so-leitor">{dados.nome}</h1>
       <div className="cabeca-editor">
-        {trava.estado === 'outra' && !parado && (
-          <div className="faixa" role="status">
-            {trava.por ? `${trava.por} está editando este fluxo` : 'Outra pessoa está editando este fluxo'}
-            {trava.ate && ` (até ${new Date(trava.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: FUSO })}, se parar de mexer)`}. Dá pra ver e dar play; a
-            edição libera quando a trava vencer ou a pessoa fechar o fluxo.
-          </div>
-        )}
+        {/* Região viva montada vazia: o leitor de tela só anuncia o que muda dentro de uma região que já existia. */}
+        <div className="vivo" role="status">
+          {trava.estado === 'outra' && !parado && (
+            <div className="faixa">
+              {trava.por ? `${trava.por} está editando este fluxo` : 'Outra pessoa está editando este fluxo'}
+              {trava.ate && ` (até ${new Date(trava.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: FUSO })}, se parar de mexer)`}. Dá pra ver e dar play; a
+              edição libera quando a trava vencer ou a pessoa fechar o fluxo.
+            </div>
+          )}
+          {trava.estado === 'incerta' && !parado && (
+            <div className="faixa">Não deu pra confirmar a edição deste fluxo com o banco (sem conexão?). Dá pra ver e dar play; tentando de novo.</div>
+          )}
+          {trava.estado === 'liberou' && !parado && (
+            <div className="faixa">
+              A edição deste fluxo liberou. Recarregue pra editar a versão que está no banco.
+              <button className="botao pequeno" type="button" onClick={() => location.reload()}>
+                Recarregar
+              </button>
+            </div>
+          )}
+        </div>
         {parado && (
           <div className="faixa erro" role="alert">
             {situacao.s === 'conflito'
-              ? 'Outra pessoa salvou este fluxo enquanto ele estava aberto aqui. As últimas mudanças daqui não foram salvas: recarregue pra continuar da versão dela.'
+              ? 'Este fluxo foi salvo em outro lugar (outra pessoa ou outra aba) enquanto estava aberto aqui. As últimas mudanças daqui não foram salvas: recarregue pra continuar da versão que está no banco.'
               : situacao.s === 'sem_trava'
                 ? 'Outra pessoa pegou a edição deste fluxo. As últimas mudanças daqui não foram salvas: recarregue pra ver como ficou.'
                 : `O banco recusou as últimas mudanças${situacao.mensagem ? ` (${situacao.mensagem})` : ''}. Recarregue pra continuar.`}
@@ -494,7 +671,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
           />
           <span className={`salvo${parado ? ' erro' : ''}`} role="status" data-testid="salvamento">
-            {trava.estado === 'pegando' ? 'abrindo…' : soLeitura && !parado ? 'só leitura' : textoSituacao[situacao.s]}
+            {trava.estado === 'pegando' ? 'abrindo…' : trava.estado === 'incerta' && !parado ? 'não deu pra confirmar a edição' : soLeitura && !parado ? 'só leitura' : textoSituacao[situacao.s]}
           </span>
           <div className="empurra">
             <button className="bi" type="button" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled={soLeitura || !hist.antes.length} onClick={() => historia(desfazer)}>
@@ -528,7 +705,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
         <Quadro
           ref={quadro}
           doc={play ? docPlay : doc}
-          estilo={estilo}
+          estilo={estiloVisto}
           canais={canais}
           canalFluxo={dados.canal}
           nomesCadastros={nomesCadastros}
@@ -537,7 +714,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           soLeitura={soLeitura}
           play={vis}
           pausado={pausado}
-          aoAguaChegar={aguaChegou}
+          aoAguaChegar={() => aguaChegou(mostrados)}
           renomeando={renomeando}
           acoes={{
             selecionar,
@@ -546,17 +723,18 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
             ligar,
             mudar: (d, primeiro) => {
               if (soLeitura) return;
-              setHist((h) => (primeiro ? registrar(h, d) : substituir(h, d)));
-              salv.current!.mudou(d, estilo);
+              mudarHist(primeiro ? registrar(histRef.current, d) : substituir(histRef.current, d));
+              salv.current!.mudou(d, estiloRef.current);
             },
             renomear: setRenomeando,
             gravarNome: (id, texto) => {
               setRenomeando(null);
               const t = texto.trim();
+              const d = docAtual();
               if (!t) return;
-              if (doc.pecas.some((p) => p.id === id)) {
-                if (doc.pecas.find((p) => p.id === id)!.nome !== t) editar(D.mudarPeca(doc, id, { nome: t }));
-              } else if (doc.notas.find((n) => n.id === id)?.texto !== t) editar(D.mudarNota(doc, id, { texto: t }));
+              if (d.pecas.some((p) => p.id === id)) {
+                if (d.pecas.find((p) => p.id === id)!.nome !== t) editar(D.mudarPeca(d, id, { nome: t }));
+              } else if (d.notas.find((n) => n.id === id)?.texto !== t) editar(D.mudarNota(d, id, { texto: t }));
             },
             escolher,
             usarFerramenta: setFerramenta,
@@ -568,7 +746,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
               play={play}
               visual={vis}
               pausado={pausado}
-              velocidade={estilo.velocidade}
+              velocidade={estiloVisto.velocidade}
               autoEscolha={estilo.autoEscolha}
               corAgua={corAgua}
               canais={canais}
@@ -579,7 +757,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
                 voltar,
                 recomecar,
                 parar,
-                velocidade: (v) => mudarEstilo({ ...estilo, velocidade: v }),
+                velocidade: mudarVelocidade,
                 quando: (q) => {
                   if (!play) return;
                   setPlay({ ...play, quando: q, escolhas: [] });
@@ -609,11 +787,11 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           tipos={tipos}
           soLeitura={soLeitura}
           acoes={{
-            mudarPeca: (id, patch) => editar(D.mudarPeca(doc, id, patch)),
-            mudarConexao: (id, patch) => editar(D.mudarConexao(doc, id, patch)),
-            inverter: (id) => editar(D.inverterConexao(doc, id)),
-            mudarGrupo: (id, patch) => editar(D.mudarGrupo(doc, id, patch)),
-            mudarNota: (id, patch) => editar(D.mudarNota(doc, id, patch)),
+            mudarPeca: (id, patch) => editar(D.mudarPeca(docAtual(), id, patch)),
+            mudarConexao: (id, patch) => editar(D.mudarConexao(docAtual(), id, patch)),
+            inverter: (id) => editar(D.inverterConexao(docAtual(), id)),
+            mudarGrupo: (id, patch) => editar(D.mudarGrupo(docAtual(), id, patch)),
+            mudarNota: (id, patch) => editar(D.mudarNota(docAtual(), id, patch)),
             apagar: apagarSelecao,
             duplicar,
             selecionar,
@@ -653,11 +831,7 @@ export function Editor({ empresaId, fluxo, canais, cadastros: cadastrosIniciais,
           )}
         </div>
       )}
-      {aviso && (
-        <div className="aviso" role="status">
-          {aviso}
-        </div>
-      )}
+      <div role="status">{aviso && <div className="aviso">{aviso}</div>}</div>
     </div>
   );
 }
