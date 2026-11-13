@@ -3,8 +3,9 @@
 import { Marca } from '@/componentes/Marca';
 
 /**
- * Quando o link não abre por falha (banco fora do ar, chave secreta faltando no servidor). Revogado, vencido e
- * inexistente não chegam aqui: a página explica cada um. Em produção o Next esconde a mensagem: só o código.
+ * Quando o link não abre por falha (banco fora do ar, chave secreta faltando no servidor, documento do fluxo que não
+ * é um journey/2 válido). Revogado, vencido e inexistente não chegam aqui: a página explica cada um. Em produção o
+ * Next esconde a mensagem: só o código.
  */
 export default function ErroDoLink({ error, retry }: { error: unknown; retry: () => void }) {
   const codigo = error instanceof Error && 'digest' in error ? String(error.digest) : null;

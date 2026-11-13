@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { doc, ramal } from '@journey/nucleo/teste';
+import type { LinkDoBanco } from '@/compartilhar/retrato';
 
 vi.mock('server-only', () => ({}));
 vi.mock('next/server', () => ({ connection: async () => {} }));
@@ -19,6 +19,34 @@ vi.mock('@supabase/supabase-js', () => ({
 
 const { abrirLink, linkPublicoConfigurado } = await import('@/lib/link');
 const TOKEN = 'abcdefghijklmnopqrstuvwx';
+const ANA = 'a0000000-0000-0000-0000-000000000001';
+
+const ok = (extra: Partial<LinkDoBanco> = {}): LinkDoBanco => ({
+  estado: 'ok',
+  empresa: { nome: 'Empresa A' },
+  fluxo: { nome: 'Cobrança', canal: 'whatsapp', descricao: '', meta_s: null },
+  documento: {
+    formato: 'journey/2',
+    pecas: [
+      { id: 'i', tipo: 'inicio', nome: 'Começo', x: 0, y: 0 },
+      { id: 'a', tipo: 'atendimento', nome: 'Atende a Ana', x: 200, y: 0, responsavel: ANA },
+    ],
+    conexoes: [{ id: 'c', de: 'i', para: 'a', regra: 'sempre' }],
+    grupos: [],
+    notas: [],
+  },
+  estilo: {},
+  versao: null,
+  atual: { revisao: 2, editado_em: '2026-11-13T10:00:00Z' },
+  cadastros: [{ id: ANA, tipo: 'pessoa', nome: 'Ana', campos: {} }],
+  canais: [],
+  intencionais: [],
+  esconder_nomes: true,
+  cenario: null,
+  expira_em: null,
+  pessoas: ['Ana', 'Bia'],
+  ...extra,
+});
 
 describe('abrirLink', () => {
   beforeEach(() => {
@@ -42,9 +70,6 @@ describe('abrirLink', () => {
   it('revogado e vencido passam com a data', async () => {
     resposta = { data: { estado: 'revogado', quando: '2026-11-12T10:00:00Z' }, error: null };
     expect(await abrirLink(TOKEN)).toEqual({ estado: 'revogado', quando: '2026-11-12T10:00:00Z' });
-  });
-
-  it('vencido passa com a data', async () => {
     resposta = { data: { estado: 'vencido', quando: '2026-11-01T00:00:00Z' }, error: null };
     expect(await abrirLink(TOKEN)).toEqual({ estado: 'vencido', quando: '2026-11-01T00:00:00Z' });
   });
@@ -55,20 +80,7 @@ describe('abrirLink', () => {
   });
 
   it('link que vale volta como retrato, já sem os nomes', async () => {
-    const documento = doc({ ramais: [ramal('2001', { nome: 'Ana' })] });
-    resposta = {
-      data: {
-        estado: 'ok',
-        jornada: { nome: 'Telefonia', canal: 'telefonia' },
-        versao: { numero: 2, criada_em: '2026-11-12T10:00:00Z', documento, diagnostico: [] },
-        mais_recente: true,
-        esconder_nomes: true,
-        cenario: null,
-        expira_em: null,
-        intencionais: [],
-      },
-      error: null,
-    };
+    resposta = { data: ok(), error: null };
     const r = await abrirLink(TOKEN);
     expect(r.estado).toBe('ok');
     expect(JSON.stringify(r)).not.toContain('Ana');
@@ -79,12 +91,9 @@ describe('abrirLink', () => {
     await expect(abrirLink(TOKEN)).rejects.toThrow('SUPABASE_SECRET_KEY');
   });
 
-  it('documento que não é journey/1 não vira página', async () => {
-    resposta = {
-      data: { estado: 'ok', jornada: { nome: 'x', canal: 'telefonia' }, versao: { numero: 1, criada_em: '', documento: { formato: 'outro' }, diagnostico: [] }, mais_recente: true, esconder_nomes: true, cenario: null, expira_em: null, intencionais: [] },
-      error: null,
-    };
-    await expect(abrirLink(TOKEN)).rejects.toThrow('journey/1');
+  it('documento que não é journey/2 válido não vira página', async () => {
+    resposta = { data: ok({ documento: { formato: 'journey/1' } }), error: null };
+    await expect(abrirLink(TOKEN)).rejects.toThrow('este link não abre');
   });
 });
 

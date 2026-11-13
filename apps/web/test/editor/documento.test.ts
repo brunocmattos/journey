@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { documentoVazio, lerDocumento, type Documento } from '@journey/fluxo';
-import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverGrupoEm, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
+import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverGrupoEm, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo, semResponsaveisQueSumiram } from '@/editor/documento';
 
 const base = (): Documento => {
   let d = criarPeca(documentoVazio(), 'a', 'inicio', 95, 30);
@@ -139,5 +139,15 @@ describe('editor/documento', () => {
     expect(d.conexoes).toHaveLength(2);
     expect(existe(d, { tipo: 'conexao', id: 'c2' })).toBe(true);
     expect(existe(apagar(d, { tipo: 'conexao', id: 'c2' }), { tipo: 'conexao', id: 'c2' })).toBe(false);
+  });
+
+  it('responsável que não é mais cadastro sai da peça; o resto fica igual', () => {
+    let d = mudarPeca(base(), 'b', { responsavel: 'k-existe' });
+    d = mudarPeca(d, 'c', { responsavel: 'k-sumiu' });
+    const r = semResponsaveisQueSumiram(d, new Set(['k-existe']));
+    expect(r.orfas).toBe(1);
+    expect(r.documento.pecas.map((p) => p.responsavel)).toEqual([undefined, 'k-existe', undefined]);
+    expect('responsavel' in r.documento.pecas[2]!).toBe(false);
+    expect(semResponsaveisQueSumiram(d, new Set(['k-existe', 'k-sumiu'])).documento).toBe(d);
   });
 });

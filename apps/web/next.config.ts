@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const config: NextConfig = {
-  transpilePackages: ['@journey/nucleo', '@journey/fluxo'],
+  transpilePackages: ['@journey/fluxo'],
   // O link público: nenhum buscador indexa, e o endereço (que é a chave) não vai no Referer pra outro site.
   headers: async () => [
     {
@@ -11,14 +11,19 @@ const config: NextConfig = {
         { key: 'Referrer-Policy', value: 'no-referrer' },
       ],
     },
+    // A página do link dos e-mails do login: o token está no endereço e não vai pra outro site. "same-origin", e não
+    // "no-referrer": com no-referrer o navegador manda `Origin: null` no POST do botão, e o /auth/confirmar recusa.
+    {
+      source: '/auth/confirm',
+      headers: [
+        { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        { key: 'Referrer-Policy', value: 'same-origin' },
+        // O botão não entra em moldura de outro site (clickjacking: alguém faria a pessoa clicar sem ver).
+        { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+        { key: 'X-Frame-Options', value: 'DENY' },
+      ],
+    },
   ],
-  serverExternalPackages: ['exceljs'],
-  experimental: {
-    // O import aceita até 4 MB (importacao/limite.ts; a Vercel corta em 4,5 MB); a folga é das bordas do multipart.
-    serverActions: { bodySizeLimit: '5mb' },
-    // Com proxy, o Next guarda o corpo em memória até este tamanho (padrão 10 MB) e corta o resto em silêncio.
-    proxyClientMaxBodySize: '5mb',
-  },
 };
 
 export default config;

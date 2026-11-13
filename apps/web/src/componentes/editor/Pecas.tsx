@@ -113,6 +113,7 @@ export const RotuloCano = memo(function RotuloCano({
   y,
   selecionado,
   escolhivel,
+  destacado = false,
   corAgua,
 }: {
   conexao: Conexao;
@@ -120,13 +121,15 @@ export const RotuloCano = memo(function RotuloCano({
   y: number;
   selecionado: boolean;
   escolhivel: boolean;
+  /** No holofote de um achado. */
+  destacado?: boolean;
   corAgua?: string;
 }) {
   const t = textoRegra(c);
   if (!t) return null;
   return (
     <div
-      className={`rotulo-cano${selecionado ? ' sel' : ''}${escolhivel ? ' escolhivel foco' : ''}`}
+      className={`rotulo-cano${selecionado ? ' sel' : ''}${escolhivel ? ' escolhivel foco' : destacado ? ' foco' : ''}`}
       data-rotulo={c.id}
       style={{ left: x, top: y, ...(escolhivel && corAgua && { ['--agua' as string]: corAgua }) }}
       role="button"

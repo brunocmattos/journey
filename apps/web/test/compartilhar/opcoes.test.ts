@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { descreverLink, ehValidade, enderecoDoLink, expiraEm, situacao, type LinkResumo } from '@/compartilhar/opcoes';
+import { descreverLink, ehValidade, enderecoDoLink, escolhasDoFormulario, expiraEm, situacao, type LinkResumo } from '@/compartilhar/opcoes';
 
 const AGORA = new Date('2026-11-12T15:00:00Z');
 const base: LinkResumo = {
@@ -29,7 +29,7 @@ describe('opções do link', () => {
   });
 
   it('descreve em uma linha, com a data de São Paulo', () => {
-    expect(descreverLink(base, AGORA)).toBe('sempre a versão mais recente · nomes escondidos · sem cenário · sem prazo');
+    expect(descreverLink(base, AGORA)).toBe('o fluxo de agora · nomes escondidos · sem cenário · sem prazo');
     expect(descreverLink({ ...base, versao: 3, esconder_nomes: false, cenario_nome: 'E se?', expira_em: '2026-12-13T02:00:00Z' }, AGORA)).toBe(
       'versão 3 · com os nomes · cenário “E se?” · vale até 12/12/2026',
     );
@@ -39,5 +39,12 @@ describe('opções do link', () => {
 
   it('endereço', () => {
     expect(enderecoDoLink('https://journey.exemplo.com', 'abc')).toBe('https://journey.exemplo.com/l/abc');
+  });
+
+  it('o formulário vira as opções do link', () => {
+    expect(escolhasDoFormulario({ versao: '', cenario: '', esconder: true, validade: '30' })).toEqual({ versao: null, cenarioId: null, esconderNomes: true, validade: 30 });
+    expect(escolhasDoFormulario({ versao: '3', cenario: 'k1', esconder: false, validade: 'sem' })).toEqual({ versao: 3, cenarioId: 'k1', esconderNomes: false, validade: null });
+    // Validade fora da lista volta pro padrão.
+    expect(escolhasDoFormulario({ versao: '', cenario: '', esconder: true, validade: '1' }).validade).toBe(30);
   });
 });

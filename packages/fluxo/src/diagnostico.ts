@@ -25,6 +25,30 @@ export interface OpcoesDiagnostico {
 
 const ORDEM: Record<Gravidade, number> = { grave: 0, alerta: 1, observacao: 2 };
 
+const FNV_BASE = 0xcbf29ce484222325n;
+const FNV_PRIMO = 0x100000001b3n;
+const BITS_64 = 0xffffffffffffffffn;
+
+/** FNV-1a de 64 bits dos bytes UTF-8 do texto, em hexadecimal (16 dígitos). Pequeno, determinístico e sem dependência. */
+export function fnv1a64(texto: string): string {
+  let h = FNV_BASE;
+  for (const b of new TextEncoder().encode(texto)) h = ((h ^ BigInt(b)) * FNV_PRIMO) & BITS_64;
+  return h.toString(16).padStart(16, '0');
+}
+
+/** Até este tamanho, o fim da chave fica como é. */
+const SUFIXO_MAXIMO = 200;
+
+/**
+ * O fim da chave de um achado, curto. A de um ciclo junta os ids de todas as peças dele e cresceria com o ciclo; a
+ * chave vai pro banco (achados_intencionais, até 2000 letras). Passando do limite, fica o começo (pra quem lê) e o
+ * resumo do texto inteiro (pra continuar única e estável). Corta por caractere, não por unidade de UTF-16.
+ */
+export function resumirChave(sufixo: string): string {
+  if (sufixo.length <= SUFIXO_MAXIMO) return sufixo;
+  return `${Array.from(sufixo).slice(0, 80).join('')}~${fnv1a64(sufixo)}`;
+}
+
 /** As saídas que a água usa: um Fim encerra a jornada, então as saídas dele não levam a lugar nenhum. */
 const proximas = (idx: Indice, id: string): Conexao[] => (idx.pecas.get(id)!.tipo === 'fim' ? [] : idx.saidas.get(id)!);
 const tempoDa = (c: Conexao): number => (c.regra === 'tempo' ? (c.tempo_s ?? 0) : 0);
@@ -155,7 +179,7 @@ function igualdade(c: Conexao): string {
   switch (c.regra) {
     case 'opcao':
     case 'condicao':
-      return c.valor ? `${c.regra}:${c.valor.trim().toLowerCase().slice(0, 60)}` : '';
+      return c.valor ? `${c.regra}:${c.valor.trim().toLowerCase()}` : '';
     case 'horario':
       return c.horario ? `horario:${c.horario}` : '';
     case 'senao':
@@ -164,6 +188,9 @@ function igualdade(c: Conexao): string {
       return '';
   }
 }
+/** Até cinco nomes; passando disso, os cinco primeiros e quantos faltam (o título de um ciclo de 2.000 peças cabe na tela). */
+const alguns = (nomes: readonly string[]): string => (nomes.length > 5 ? `${nomes.slice(0, 5).join(', ')} e mais ${nomes.length - 5}` : nomes.join(', '));
+
 const COMO_IGUAL: Record<string, string> = { opcao: 'a mesma opção', condicao: 'a mesma condição', horario: 'o mesmo lado do horário', senao: '"senão"' };
 
 /** Os problemas de um fluxo, do mais grave pro mais leve. Vale pra qualquer canal: nada aqui é de telefonia. */
@@ -172,7 +199,7 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
   const out: Achado[] = [];
   const nome = (id: string) => idx.pecas.get(id)?.nome || id;
   const achado = (tipo: string, gravidade: Gravidade, sufixo: string, titulo: string, texto: string, refs: string[]) =>
-    out.push({ tipo, gravidade, chave: `${tipo}:${sufixo}`, titulo, texto, refs });
+    out.push({ tipo, gravidade, chave: `${tipo}:${resumirChave(sufixo)}`, titulo, texto, refs });
 
   const inicios = doc.pecas.filter((p) => p.tipo === 'inicio').map((p) => p.id);
   const fins = doc.pecas.filter((p) => p.tipo === 'fim').map((p) => p.id);
@@ -216,7 +243,8 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
     for (const [k, ids] of iguais) {
       if (ids.length < 2) continue;
       const regra = k.split(':')[0]!;
-      achado('opcoes_repetidas', 'alerta', `${p.id}:${k}`, `${p.nome} tem ${ids.length} saídas iguais`, `${ids.length} saídas de ${p.nome} são ${COMO_IGUAL[regra]}: não dá pra saber qual seguir.`, [p.id, ...ids]);
+      // A chave é feita dos ids (em ordem): o valor da opção ou da condição é texto livre (pode ter nome de pessoa).
+      achado('opcoes_repetidas', 'alerta', `${p.id}:${[...ids].sort().join('+')}`, `${p.nome} tem ${ids.length} saídas iguais`, `${ids.length} saídas de ${p.nome} são ${COMO_IGUAL[regra]}: não dá pra saber qual seguir.`, [p.id, ...ids]);
     }
   }
 
@@ -241,10 +269,10 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
       const sozinho = comp.every((id) => proximas(idx, id).length === 1 || doRelogio(id));
       const semTempo = comp.every((id) => !idx.pecas.get(id)!.tempo_s && proximas(idx, id).every((c) => !dentro.has(c.para) || tempoDa(c) === 0));
       if (sozinho && semTempo && comp.some(doRelogio))
-        achado('ciclo_sem_tempo', 'alerta', comp.join('+'), `Ciclo sem espera: ${comp.map(nome).join(', ')}`, 'O relógio manda a jornada de volta pras mesmas peças sem o tempo andar, então ele decide igual de novo e ela não sai. Põe um tempo na espera (uma peça com tempo ou uma ligação "depois de um tempo").', comp);
+        achado('ciclo_sem_tempo', 'alerta', comp.join('+'), `Ciclo sem espera: ${alguns(comp.map(nome))}`, 'O relógio manda a jornada de volta pras mesmas peças sem o tempo andar, então ele decide igual de novo e ela não sai. Põe um tempo na espera (uma peça com tempo ou uma ligação "depois de um tempo").', comp);
       continue;
     }
-    achado('ciclo_sem_saida', 'grave', comp.join('+'), `Ciclo sem saída: ${comp.map(nome).join(', ')}`, 'Essas peças levam umas às outras e nenhuma chega num Fim: quem entra aqui não termina a jornada.', comp);
+    achado('ciclo_sem_saida', 'grave', comp.join('+'), `Ciclo sem saída: ${alguns(comp.map(nome))}`, 'Essas peças levam umas às outras e nenhuma chega num Fim: quem entra aqui não termina a jornada.', comp);
   }
 
   if (opcoes.meta_s && opcoes.meta_s > 0) {

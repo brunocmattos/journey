@@ -3,7 +3,6 @@ import { cache } from 'react';
 import { connection } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { montarRetrato, type LinkDoBanco, type Retrato } from '@/compartilhar/retrato';
-import { ehDocumento } from './documento';
 
 export type LinkAberto =
   | { estado: 'ok'; retrato: Retrato }
@@ -35,6 +34,8 @@ export const abrirLink = cache(async (token: string): Promise<LinkAberto> => {
   if (error) throw new Error(error.message);
   const r = data as LinkDoBanco | { estado: 'revogado' | 'vencido'; quando: string } | { estado: 'inexistente' };
   if (r.estado !== 'ok') return r;
-  if (!ehDocumento(r.versao.documento)) throw new Error(`a versão ${r.versao.numero} do link não é um documento journey/1`);
-  return { estado: 'ok', retrato: montarRetrato(r) };
+  const retrato = montarRetrato(r);
+  // O banco só confere a forma do documento: um que o lerDocumento recusa não vira página (o erro do link aparece).
+  if (!retrato) throw new Error('este link não abre: o documento do fluxo não é um journey/2 válido');
+  return { estado: 'ok', retrato };
 });

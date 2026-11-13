@@ -1,231 +1,320 @@
 import { describe, expect, it } from 'vitest';
-import { diagnosticar } from '@journey/nucleo/diagnostico';
-import { doc, entrada, fila, peca, ramal, saida } from '@journey/nucleo/teste';
-import { esconderNomes, montarRetrato, semObservacoes, trocadorDeNomes, nomesDePessoas, type LinkDoBanco } from '@/compartilhar/retrato';
-import { jornadasDoImport } from '@/importacao/jornadas';
-import { central } from '../central';
+import { diagnosticar, type Documento } from '@journey/fluxo';
+import { ESTILO_PADRAO } from '@/editor/estilo';
+import { montarRetrato, PESSOA, pessoasEscondidas, rotuloDaVersao, trocadorDeNomes, type LinkDoBanco } from '@/compartilhar/retrato';
 
-const d = doc({
-  entradas: [
-    entrada('principal', 'peca:menu', { nome: 'Principal', observacao: 'número da fachada' }),
-    entrada('direto-2001', 'ramal:2001', { nome: 'Ana direto' }),
-    entrada('recepcao', 'ramal:2003', { nome: 'Recepção' }),
-  ],
-  ramais: [
-    ramal('2001', { nome: 'Ana', ao_nao_atender: 'fila:100' }),
-    ramal('2002', { nome: 'Ana Paula', tipo: 'pessoa', ao_nao_atender: 'ramal:9999', observacao: 'sai às 17h' }),
-    ramal('2003', { nome: 'Recepção', tipo: 'setor' }),
-  ],
-  filas: [fila('100', { nome: 'Fila da Ana', espera_maxima_s: 60, ao_esgotar: 'fim:desliga', membros: ['ramal:2001', 'ramal:2002'] })],
-  pecas: [peca('menu', 'menu', { nome: 'Menu principal', espera_s: 5, tentativas: 2, texto: 'Digite 1 para Análise, 2 para falar com a ANA ou 3 para a Ana Paula.' })],
-  saidas: [
-    saida('menu', '1', 'fila:100', { rotulo: 'Análise' }),
-    saida('menu', '2', 'ramal:2001', { rotulo: 'Falar com a Ana' }),
-    saida('menu', '3', 'ramal:2002', { rotulo: 'Ana Paula' }),
-    saida('menu', 'esgotou', 'fim:desliga'),
-  ],
-});
+const ANA = 'a0000000-0000-0000-0000-000000000001';
+const ANA_PAULA = 'a0000000-0000-0000-0000-000000000002';
+const SEM_USO = 'a0000000-0000-0000-0000-000000000003';
+const FILA = 'f0000000-0000-0000-0000-000000000001';
 
-/** Uma chave que está no diagnóstico de `d`: o intencional dela vai no retrato. */
-const CHAVE = diagnosticar(d)[0]!.chave;
+const DOC: Documento = {
+  formato: 'journey/2',
+  pecas: [
+    { id: 'i', tipo: 'inicio', nome: 'Cliente liga', x: 0, y: 0 },
+    { id: 'menu', tipo: 'decisao', nome: 'Menu', x: 200, y: 0, descricao: 'Digite 1 para Análise, 2 para falar com a ANA ou 3 para a Ana Paula.' },
+    // A Ana Paula aparece primeiro nas peças: ela é a Pessoa 1.
+    { id: 'ap', tipo: 'atendimento', nome: 'Atende a Ana Paula', x: 400, y: 100, responsavel: ANA_PAULA },
+    { id: 'a', tipo: 'atendimento', nome: 'Atende a Ana', x: 400, y: 0, responsavel: ANA },
+    { id: 'fila', tipo: 'atendimento', nome: 'Fila', x: 400, y: 200, responsavel: FILA },
+    { id: 'f', tipo: 'fim', nome: 'Fim', x: 600, y: 0 },
+  ],
+  conexoes: [
+    { id: 'c1', de: 'i', para: 'menu', regra: 'sempre' },
+    { id: 'c2', de: 'menu', para: 'a', regra: 'opcao', valor: '2', rotulo: 'Falar com a Ana' },
+    { id: 'c3', de: 'menu', para: 'ap', regra: 'condicao', valor: 'pediu a Ana Paula' },
+    { id: 'c4', de: 'menu', para: 'fila', regra: 'opcao', valor: '1', rotulo: 'Análise' },
+    { id: 'c5', de: 'a', para: 'f', regra: 'sempre' },
+    { id: 'c6', de: 'ap', para: 'f', regra: 'sempre' },
+  ],
+  grupos: [{ id: 'g', nome: 'Mesa da Ana', x: 380, y: -20, w: 300, h: 300 }],
+  notas: [
+    { id: 'n', texto: 'A Ana sai às 17h', x: 0, y: 300, w: 100, h: 100 },
+    // Quem não é responsável de nenhuma peça, citado só no texto: a Bia é cadastro da empresa; o Rui, não.
+    { id: 'n2', texto: 'Se a Bia Torres faltar, chama o Rui', x: 0, y: 400, w: 100, h: 100 },
+  ],
+};
 
-function link(extra: Partial<LinkDoBanco> = {}, documento = d): LinkDoBanco {
+/** Uma chave que está no diagnóstico de DOC (a fila não tem saída): o intencional dela vai no retrato. */
+const CHAVE = diagnosticar(DOC)[0]!.chave;
+
+function link(extra: Partial<LinkDoBanco> = {}): LinkDoBanco {
   return {
     estado: 'ok',
-    jornada: { nome: 'Telefonia', canal: 'telefonia' },
-    versao: { numero: 3, criada_em: '2026-11-12T10:00:00Z', documento, diagnostico: diagnosticar(documento) },
-    mais_recente: true,
+    empresa: { nome: 'Empresa A' },
+    fluxo: { nome: 'Telefonia da Ana', canal: 'telefonia', descricao: 'Quem atende é a Ana Paula', meta_s: null },
+    documento: DOC,
+    estilo: { velocidade: 2, cano: 'nao-existe' },
+    versao: { numero: 3, nome: 'antes da Ana sair', criada_em: '2026-11-12T10:00:00Z' },
+    atual: null,
+    cadastros: [
+      { id: ANA, tipo: 'pessoa', nome: 'Ana', campos: { ramal: '2001' } },
+      { id: ANA_PAULA, tipo: 'pessoa', nome: 'Ana Paula', campos: {} },
+      { id: SEM_USO, tipo: 'pessoa', nome: 'Zeca', campos: {} },
+      { id: FILA, tipo: 'fila', nome: 'Fila da Ana', campos: { obs: ['falar com a Ana'] } },
+    ],
+    canais: [{ chave: 'telefonia', nome: 'Telefonia', cor: '#1e8bdc', arquivado: false }],
+    intencionais: [
+      { chave: CHAVE, nota: 'a Ana pediu' },
+      { chave: 'de_outra_versao:x', nota: 'não vai' },
+    ],
     esconder_nomes: true,
-    cenario: { nome: 'E se a Ana não atender?', entrada: 'entrada:principal', inicio: '2026-11-23T10:00', modo: 'cenario', escolhas: ['saida:menu-2'] },
+    cenario: { nome: 'E se a Ana não atender?', inicio: 'i', quando: '2026-11-23T10:00', modo: 'relogio', escolhas: ['c2'] },
     expira_em: null,
-    intencionais: [{ chave: CHAVE, nota: 'a Ana pediu' }],
+    // Todas as pessoas da empresa, como o abrir_link manda (por nome; Ana e Zeca também são cadastros acima).
+    pessoas: ['Ana', 'Ana Paula', 'Bia Torres', 'Zeca'],
     ...extra,
   };
 }
 
 describe('nomes das pessoas', () => {
-  it('são os dos ramais, menos os de setor', () => {
-    expect([...nomesDePessoas(d)]).toEqual([
-      ['ana', 'ramal 2001'],
-      ['ana paula', 'ramal 2002'],
+  it('cada Pessoa das peças vira "Pessoa N", na ordem em que aparece; a que nenhuma peça usa, só "Pessoa"', () => {
+    expect([...pessoasEscondidas(link().cadastros, DOC)]).toEqual([
+      [ANA_PAULA, 'Pessoa 1'],
+      [ANA, 'Pessoa 2'],
+      [SEM_USO, PESSOA],
     ]);
   });
 
   it('trocam como palavra inteira, sem caixa, o nome maior primeiro', () => {
-    const trocar = trocadorDeNomes(nomesDePessoas(d));
-    expect(trocar('Digite 1 para Análise, 2 para falar com a ANA ou 3 para a Ana Paula.')).toBe(
-      'Digite 1 para Análise, 2 para falar com a ramal 2001 ou 3 para a ramal 2002.',
-    );
+    const trocar = trocadorDeNomes(new Map([['Ana', 'Pessoa 2'], ['Ana Paula', 'Pessoa 1']]));
+    expect(trocar('Digite 1 para Análise, 2 para falar com a ANA ou 3 para a Ana Paula.')).toBe('Digite 1 para Análise, 2 para falar com a Pessoa 2 ou 3 para a Pessoa 1.');
     expect(trocar('Banana')).toBe('Banana');
-  });
-});
-
-describe('esconderNomes', () => {
-  const e = esconderNomes(d);
-
-  it('o ramal perde o nome; o de setor fica', () => {
-    expect(e.ramais.map((r) => r.nome)).toEqual([undefined, undefined, 'Recepção']);
-  });
-
-  it('a entrada direto num ramal escondido perde o nome; as outras trocam o nome da pessoa', () => {
-    expect(e.entradas.map((x) => x.nome)).toEqual(['Principal', undefined, 'Recepção']);
-    expect(e.filas[0]!.nome).toBe('Fila da ramal 2001');
-  });
-
-  it('textos dos áudios e rótulos das opções trocam o nome', () => {
-    expect(e.pecas[0]!.texto).toBe('Digite 1 para Análise, 2 para falar com a ramal 2001 ou 3 para a ramal 2002.');
-    expect(e.saidas.map((s) => s.rotulo)).toEqual(['Análise', 'Falar com a ramal 2001', 'ramal 2002', undefined]);
-  });
-
-  it('não mexe no resto', () => {
-    expect(e.saidas.map((s) => s.para)).toEqual(d.saidas.map((s) => s.para));
-    expect(e.filas[0]!.membros).toEqual(['ramal:2001', 'ramal:2002']);
-    expect(d.ramais[0]!.nome).toBe('Ana');
-  });
-});
-
-describe('semObservacoes', () => {
-  it('tira a observação de todo item', () => {
-    const s = semObservacoes(d);
-    expect(JSON.stringify(s)).not.toContain('observacao');
-    expect(s.entradas[0]!.nome).toBe('Principal');
-  });
-});
-
-describe('montarRetrato', () => {
-  it('com nomes escondidos, nenhum nome de pessoa vai pro navegador', () => {
-    const r = montarRetrato(link());
-    const tudo = JSON.stringify(r);
-    expect(tudo).not.toMatch(/\bAna\b/i);
-    expect(JSON.stringify(r.documento)).not.toContain('observacao');
-    expect(r.cenario).toMatchObject({ id: 'link', nome: 'E se a ramal 2001 não atender?', escolhas: ['saida:menu-2'], versao_aprovada: 3 });
-    expect(r.intencionais).toEqual([{ chave: CHAVE, nota: '' }]);
-  });
-
-  it('o diagnóstico tem as mesmas chaves, com os textos sem nome', () => {
-    const l = link();
-    const r = montarRetrato(l);
-    expect(r.diagnostico.map((a) => a.chave)).toEqual(l.versao.diagnostico.map((a) => a.chave));
-    expect(l.versao.diagnostico.some((a) => /Ana Paula/.test(a.titulo + a.texto))).toBe(true);
-    expect(r.diagnostico.some((a) => /ramal 2002 aponta pra ramal:9999/.test(a.titulo))).toBe(true);
-  });
-
-  it('só os achados que a versão guardou', () => {
-    const l = link();
-    const guardado = l.versao.diagnostico.slice(1);
-    const r = montarRetrato({ ...l, versao: { ...l.versao, diagnostico: guardado } });
-    expect(r.diagnostico.map((a) => a.chave)).toEqual(guardado.map((a) => a.chave));
-  });
-
-  it('com nomes à mostra, mantém nomes e notas, mas não as observações', () => {
-    const r = montarRetrato(link({ esconder_nomes: false, mais_recente: false, expira_em: '2026-12-12T10:00:00Z' }));
-    expect(r.documento.ramais[0]!.nome).toBe('Ana');
-    expect(r.cenario!.nome).toBe('E se a Ana não atender?');
-    expect(r.intencionais).toEqual([{ chave: CHAVE, nota: 'a Ana pediu' }]);
-    expect(JSON.stringify(r.documento)).not.toContain('observacao');
-    expect(r).toMatchObject({ versao: 3, maisRecente: false, esconderNomes: false, expiraEm: '2026-12-12T10:00:00Z' });
-  });
-
-  it('o nome da jornada passa pela mesma troca', () => {
-    const jornada = { nome: 'Telefonia da Ana Paula', canal: 'telefonia' };
-    expect(montarRetrato(link({ jornada })).jornada).toEqual({ nome: 'Telefonia da ramal 2002', canal: 'telefonia' });
-    expect(montarRetrato(link({ jornada, esconder_nomes: false })).jornada).toEqual(jornada);
-  });
-
-  it('só os intencionais dos achados do retrato', () => {
-    const l = link({
-      esconder_nomes: false,
-      intencionais: [
-        { chave: CHAVE, nota: 'fica' },
-        { chave: 'sem_transbordo:de-outra-versao', nota: 'não vai' },
-      ],
-    });
-    expect(montarRetrato(l).intencionais).toEqual([{ chave: CHAVE, nota: 'fica' }]);
-    const guardado = l.versao.diagnostico.filter((a) => a.chave !== CHAVE);
-    expect(montarRetrato({ ...l, versao: { ...l.versao, diagnostico: guardado } }).intencionais).toEqual([]);
-  });
-
-  it('sem cenário inicial', () => {
-    expect(montarRetrato(link({ cenario: null })).cenario).toBeNull();
-  });
-
-  it('a central: nenhum "Pessoa NNN" e o mesmo diagnóstico da jornada', async () => {
-    const [jornada] = jornadasDoImport(await central());
-    const l = link({ cenario: null, intencionais: [] }, jornada!.documento);
-    const r = montarRetrato({ ...l, versao: { ...l.versao, diagnostico: jornada!.diagnostico } });
-    expect(JSON.stringify(r)).not.toMatch(/Pessoa \d/);
-    expect(r.diagnostico.map((a) => a.chave)).toEqual(jornada!.diagnostico.map((a) => a.chave));
-  });
-});
-
-describe('cantos do esconder nomes', () => {
-  it('a entrada direto num ramal que não é setor conhecido perde o nome, mesmo sem nome no ramal ou fora do export', () => {
-    const dd = doc({
-      entradas: [
-        entrada('e1', 'peca:menu', { nome: 'Principal' }),
-        entrada('e2', 'ramal:2001', { nome: 'Carlos direto' }),
-        entrada('e3', 'ramal:9999', { nome: 'Bruna direto' }),
-        entrada('e4', 'ramal:2003', { nome: 'Recepção' }),
-      ],
-      ramais: [ramal('2001'), ramal('2003', { nome: 'Recepção', tipo: 'setor' })],
-      pecas: [peca('menu', 'menu', { espera_s: 5, tentativas: 2 })],
-      saidas: [saida('menu', '1', 'ramal:2003'), saida('menu', 'esgotou', 'fim:desliga')],
-    });
-    const l = link({}, dd);
-    expect(JSON.stringify(l.versao.diagnostico)).toMatch(/Carlos|Bruna/);
-    const r = montarRetrato(l);
-    expect(r.documento.entradas.map((x) => x.nome)).toEqual(['Principal', undefined, undefined, 'Recepção']);
-    expect(JSON.stringify(r)).not.toMatch(/Carlos|Bruna/i);
-    expect(r.diagnostico.map((a) => a.chave)).toEqual(l.versao.diagnostico.map((a) => a.chave));
-  });
-
-  it('o rótulo de uma saída pra ramal sem nome ou fora do export some', () => {
-    const e = esconderNomes(
-      doc({
-        ramais: [ramal('2001'), ramal('2002', { nome: 'Ana' }), ramal('2003', { nome: 'Recepção', tipo: 'setor' })],
-        pecas: [peca('menu', 'menu', { espera_s: 5, tentativas: 2 })],
-        saidas: [
-          saida('menu', '1', 'ramal:9999', { rotulo: 'Bruna' }),
-          saida('menu', '2', 'ramal:2001', { rotulo: 'Carlos' }),
-          saida('menu', '3', 'ramal:2002', { rotulo: 'Falar com a Ana' }),
-          saida('menu', '4', 'ramal:2003', { rotulo: 'Recepção' }),
-          saida('menu', '5', 'fim:desliga', { rotulo: 'Sair' }),
-        ],
-      }),
-    );
-    expect(e.saidas.map((s) => s.rotulo)).toEqual([undefined, undefined, 'Falar com a ramal 2002', 'Recepção', 'Sair']);
   });
 
   it('compara em NFC, e um acento combinante não é fim de palavra', () => {
-    const trocar = trocadorDeNomes(nomesDePessoas(doc({ ramais: [ramal('2001', { nome: 'Ana' }), ramal('2002', { nome: 'José' })] })));
-    expect(trocar('Fale com o José'.normalize('NFD'))).toBe('Fale com o ramal 2002');
+    const trocar = trocadorDeNomes(new Map([['Ana', 'Pessoa 1'], ['José', 'Pessoa 2']]));
+    expect(trocar('Fale com o José'.normalize('NFD'))).toBe('Fale com o Pessoa 2');
     expect(trocar('Rua Anã, 10'.normalize('NFD'))).toBe('Rua Anã, 10'.normalize('NFC'));
     expect(trocar('Ana̱ e ̱Ana')).toBe('Ana̱ e ̱Ana');
   });
 
   it('acha o nome sem depender da caixa do idioma', () => {
-    const trocar = trocadorDeNomes(nomesDePessoas(doc({ ramais: [ramal('2005', { nome: 'İsmail' })] })));
-    expect(trocar('Ligue para İsmail agora')).toBe('Ligue para ramal 2005 agora');
+    expect(trocadorDeNomes(new Map([['İsmail', 'Pessoa 1']]))('Ligue para İsmail agora')).toBe('Ligue para Pessoa 1 agora');
   });
 
   it('espaços repetidos contam como um, NBSP é espaço e os apóstrofos são iguais', () => {
-    const dd = doc({
-      ramais: [ramal('2002', { nome: 'Ana  Paula' }), ramal('2004', { nome: 'Ana Paula' }), ramal('2006', { nome: "D'Ávila" })],
-    });
-    expect([...nomesDePessoas(dd)].map(([, troca]) => troca)).toEqual(['ramal 2002', 'ramal 2006']);
-    const trocar = trocadorDeNomes(nomesDePessoas(dd));
-    expect(trocar('Ana Paula, Ana   Paula e Ana Paula')).toBe('ramal 2002, ramal 2002 e ramal 2002');
-    expect(trocar('Fale com d’Ávila ou D\'Ávila')).toBe('Fale com ramal 2006 ou ramal 2006');
+    const trocar = trocadorDeNomes(new Map([['Ana  Paula', 'Pessoa 1'], ['Ana Paula', 'Pessoa 9'], ["D'Ávila", 'Pessoa 2']]));
+    expect(trocar('Ana Paula, Ana   Paula e Ana Paula')).toBe('Pessoa 1, Pessoa 1 e Pessoa 1');
+    expect(trocar('Fale com d’Ávila ou D\'Ávila')).toBe('Fale com Pessoa 2 ou Pessoa 2');
   });
 
-  it('nome de uma letra não troca nada', () => {
-    const e = esconderNomes(
-      doc({
-        ramais: [ramal('2001', { nome: 'A' })],
-        pecas: [peca('menu', 'menu', { texto: 'Digite A para atendimento' })],
-      }),
-    );
-    expect(e.pecas[0]!.texto).toBe('Digite A para atendimento');
-    expect(e.ramais[0]!.nome).toBeUndefined();
+  it('nome de uma letra não troca nada no texto', () => {
+    expect(trocadorDeNomes(new Map([['A', 'Pessoa 1']]))('Digite A para atendimento')).toBe('Digite A para atendimento');
+  });
+
+  describe('variantes do nome', () => {
+    const trocar = trocadorDeNomes(new Map([['Ana Souza', 'Pessoa 1'], ['João da Silva', 'Pessoa 2']]));
+
+    it('cada palavra do nome sozinha (3 letras ou mais, menos as partículas)', () => {
+      expect(trocar('fala com a Ana')).toBe('fala com a Pessoa 1');
+      expect(trocar('o Souza atende')).toBe('o Pessoa 1 atende');
+      expect(trocar('ligar pro João, da Silva')).toBe('ligar pro Pessoa 2, da Pessoa 2');
+      // "da" é partícula: não troca sozinha.
+      expect(trocar('a casa da praia')).toBe('a casa da praia');
+    });
+
+    it('sem o acento que o nome tem', () => {
+      expect(trocar('Joao da Silva ligou')).toBe('Pessoa 2 ligou');
+      expect(trocar('JOAO')).toBe('Pessoa 2');
+    });
+
+    it('com hífen, sublinhado, tab, espaços ou espaço de largura zero entre as palavras', () => {
+      for (const t of ['Ana-Souza', 'Ana_Souza', 'Ana\tSouza', 'ANA   SOUZA', 'Ana\u200BSouza', 'Ana\u00A0Souza'])
+        expect(trocar(t), JSON.stringify(t)).toBe('Pessoa 1');
+    });
+
+    it('palavra que só contém o nome não troca', () => {
+      expect(trocar('Banana e Análise')).toBe('Banana e Análise');
+      expect(trocar('Anabela')).toBe('Anabela');
+      // Limite conhecido: o nome grudado em outra palavra fica.
+      expect(trocar('AnaSouza')).toBe('AnaSouza');
+    });
+
+    it('o nome inteiro de uma pessoa vale mais que a palavra do nome de outra', () => {
+      const t = trocadorDeNomes(new Map([['Ana Paula', 'Pessoa 1'], ['Ana', 'Pessoa 2']]));
+      expect(t('Ana e Paula e Ana Paula')).toBe('Pessoa 2 e Pessoa 1 e Pessoa 1');
+    });
+  });
+});
+
+describe('montarRetrato', () => {
+  it('com nomes escondidos, nenhum nome de pessoa vai pro navegador', () => {
+    const r = montarRetrato(link())!;
+    const tudo = JSON.stringify(r);
+    for (const nome of ['Ana', 'ANA', 'Zeca', '2001']) expect(tudo).not.toContain(nome);
+    expect(r.cadastros).toEqual([
+      { id: ANA, tipo: 'pessoa', nome: 'Pessoa 2', campos: {} },
+      { id: ANA_PAULA, tipo: 'pessoa', nome: 'Pessoa 1', campos: {} },
+      { id: SEM_USO, tipo: 'pessoa', nome: 'Pessoa', campos: {} },
+      { id: FILA, tipo: 'fila', nome: 'Fila da Pessoa 2', campos: { obs: ['falar com a Pessoa 2'] } },
+    ]);
+  });
+
+  it('quem não é responsável de nenhuma peça também sai do texto, sem número; a lista das pessoas não vai', () => {
+    const r = montarRetrato(link())!;
+    expect(r.documento.notas[1]!.texto).toBe('Se a Pessoa faltar, chama o Rui');
+    const tudo = JSON.stringify(r);
+    for (const nome of link().pessoas) expect(tudo).not.toContain(nome);
+    expect(tudo).not.toContain('Pessoa 3');
+    expect(tudo).not.toContain('pessoas');
+    expect(Object.keys(r)).not.toContain('pessoas');
+  });
+
+  it('o nome que está nas peças e na lista fica com o número', () => {
+    const r = montarRetrato(link({ pessoas: ['Ana Paula', 'Ana'] }))!;
+    expect(r.documento.notas[0]!.texto).toBe('A Pessoa 2 sai às 17h');
+    // Sem a lista (resposta antiga do banco), os das peças continuam escondidos.
+    expect(montarRetrato(link({ pessoas: undefined as unknown as string[] }))!.documento.notas[0]!.texto).toBe('A Pessoa 2 sai às 17h');
+  });
+
+  it('o nome sai de todo texto livre; o que não é nome fica', () => {
+    const { documento: d, fluxo, versao, cenario, intencionais } = montarRetrato(link())!;
+    expect(d.pecas.find((p) => p.id === 'menu')!.descricao).toBe('Digite 1 para Análise, 2 para falar com a Pessoa 2 ou 3 para a Pessoa 1.');
+    expect(d.pecas.map((p) => p.nome)).toEqual(['Cliente liga', 'Menu', 'Atende a Pessoa 1', 'Atende a Pessoa 2', 'Fila', 'Fim']);
+    expect(d.conexoes.map((c) => [c.valor, c.rotulo])).toEqual([
+      [undefined, undefined],
+      ['2', 'Falar com a Pessoa 2'],
+      ['pediu a Pessoa 1', undefined],
+      ['1', 'Análise'],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
+    expect(d.grupos[0]!.nome).toBe('Mesa da Pessoa 2');
+    expect(d.notas[0]!.texto).toBe('A Pessoa 2 sai às 17h');
+    expect(fluxo).toEqual({ nome: 'Telefonia da Pessoa 2', canal: 'telefonia', descricao: 'Quem atende é a Pessoa 1', meta_s: null });
+    expect(versao).toEqual({ numero: 3, nome: 'antes da Pessoa 2 sair' });
+    expect(cenario).toEqual({ nome: 'E se a Pessoa 2 não atender?', inicio: 'i', quando: '2026-11-23T10:00', modo: 'relogio', escolhas: ['c2'] });
+    expect(intencionais).toEqual([{ chave: CHAVE, nota: 'a Pessoa 2 pediu' }]);
+  });
+
+  it('no Horário só o nome do feriado troca: os dias e as horas ficam (uma Pessoa "Dom Pedro" não quebra o domingo)', () => {
+    const horario = { id: 'h', tipo: 'horario', nome: 'Comercial', campos: { janelas: [{ dias: ['dom', 'seg'], inicio: '08:00', fim: '18:00' }], feriados: [{ data: '2026-12-25', nome: 'Folga do Dom Pedro' }] } };
+    const base = link();
+    const r = montarRetrato(link({ cadastros: [...base.cadastros, horario], pessoas: [...base.pessoas, 'Dom Pedro'] }))!;
+    const campos = r.cadastros.find((k) => k.id === 'h')!.campos as { janelas: { dias: string[] }[]; feriados: { nome: string }[] };
+    expect(campos.janelas[0]!.dias).toEqual(['dom', 'seg']);
+    expect(campos.feriados[0]!.nome).not.toContain('Pedro');
+  });
+
+  it('responsável que é um id (cadastro apagado) fica; texto solto sai', () => {
+    const base = link();
+    const sumido = '00000000-0000-4000-8000-000000000000';
+    const documento = { ...DOC, pecas: [...DOC.pecas, { id: 'x', tipo: 'atendimento', nome: 'X', x: 0, y: 300, responsavel: sumido }, { id: 'y', tipo: 'atendimento', nome: 'Y', x: 0, y: 400, responsavel: 'Ana Paula' }] };
+    const r = montarRetrato(link({ documento: documento as unknown as LinkDoBanco['documento'], cadastros: base.cadastros }))!;
+    expect(r.documento.pecas.find((p) => p.id === 'x')!.responsavel).toBe(sumido);
+    expect(r.documento.pecas.find((p) => p.id === 'y')!.responsavel).toBeUndefined();
+  });
+
+  it('com nomes à mostra, fica tudo como está', () => {
+    const r = montarRetrato(link({ esconder_nomes: false }))!;
+    expect(r.documento).toEqual(DOC);
+    expect(r.cadastros.map((k) => k.nome)).toEqual(['Ana', 'Ana Paula', 'Zeca', 'Fila da Ana']);
+    expect(r.fluxo.nome).toBe('Telefonia da Ana');
+    expect(r.intencionais).toEqual([{ chave: CHAVE, nota: 'a Ana pediu' }]);
+  });
+
+  it('o estilo é lido sem confiar; os canais vão só com chave, nome e cor', () => {
+    const r = montarRetrato(link())!;
+    expect(r.estilo).toEqual({ ...ESTILO_PADRAO, canais: {}, velocidade: 2 });
+    expect(r.canais).toEqual([{ chave: 'telefonia', nome: 'Telefonia', cor: '#1e8bdc' }]);
+  });
+
+  it('versão fixa ou o fluxo de agora, com a data de cada um', () => {
+    const fixa = montarRetrato(link({ esconder_nomes: false }))!;
+    expect([rotuloDaVersao(fixa.versao), fixa.de]).toEqual(['versão 3 · antes da Ana sair', '2026-11-12T10:00:00Z']);
+    const agora = montarRetrato(link({ versao: null, atual: { revisao: 7, editado_em: '2026-11-13T09:00:00Z' } }))!;
+    expect([rotuloDaVersao(agora.versao), agora.de]).toEqual(['o fluxo de agora', '2026-11-13T09:00:00Z']);
+  });
+
+  it('do cenário guardado só vão os campos dele', () => {
+    const cenario = { ...link().cenario!, esperado: { caminho: ['Ana'] } } as unknown as LinkDoBanco['cenario'];
+    expect(Object.keys(montarRetrato(link({ cenario }))!.cenario!)).toEqual(['nome', 'inicio', 'quando', 'modo', 'escolhas']);
+    expect(montarRetrato(link({ cenario: null }))!.cenario).toBeNull();
+  });
+
+  it('documento que não é journey/2 válido: o link não abre', () => {
+    expect(montarRetrato(link({ documento: { formato: 'journey/1' } }))).toBeNull();
+    expect(montarRetrato(link({ documento: { ...DOC, pecas: [{ id: 'x', tipo: 'robo' }] } }))).toBeNull();
+  });
+
+  it('o que o documento não conhece não vai', () => {
+    const comLixo = { ...DOC, segredo: 'Ana', pecas: DOC.pecas.map((p) => ({ ...p, observacao: 'Ana' })) };
+    expect(JSON.stringify(montarRetrato(link({ esconder_nomes: false, documento: comLixo }))!.documento)).not.toContain('observacao');
+  });
+});
+
+describe('o que mais sai com os nomes escondidos', () => {
+  const FULANA = 'a0000000-0000-0000-0000-00000000000f';
+  const base = (doc: unknown, cadastros: LinkDoBanco['cadastros'], extra: Partial<LinkDoBanco> = {}): LinkDoBanco =>
+    link({
+      documento: doc,
+      cadastros,
+      fluxo: { nome: 'F', canal: null, descricao: '', meta_s: null },
+      versao: null,
+      atual: { revisao: 1, editado_em: '2026-11-13T00:00:00Z' },
+      canais: [{ chave: 'wa', nome: 'WhatsApp da Ana Souza', cor: '#000000', arquivado: false }],
+      intencionais: [],
+      cenario: null,
+      pessoas: ['Ana Souza'],
+      ...extra,
+    });
+
+  it('pessoa que só aparece no texto, valor de qualquer regra, nome de canal e responsável solto', () => {
+    const doc = {
+      formato: 'journey/2',
+      pecas: [
+        { id: 'i', tipo: 'inicio', nome: 'Início', x: 0, y: 0 },
+        { id: 'a', tipo: 'atendimento', nome: 'Atende', x: 0, y: 0, responsavel: FILA, descricao: 'Se travar, chama a Ana Souza' },
+        { id: 'b', tipo: 'atendimento', nome: 'Outro', x: 0, y: 0, responsavel: 'Ana Souza' },
+        { id: 'f', tipo: 'fim', nome: 'Fim', x: 0, y: 0 },
+      ],
+      conexoes: [
+        { id: 'c1', de: 'i', para: 'a', regra: 'sempre', valor: 'Ana Souza respondeu' },
+        { id: 'c2', de: 'a', para: 'f', regra: 'opcao', valor: 'Ana Souza' },
+        { id: 'c3', de: 'a', para: 'b', regra: 'opcao', valor: '2' },
+        { id: 'c4', de: 'b', para: 'f', regra: 'sempre' },
+      ],
+      grupos: [],
+      notas: [],
+    };
+    const r = montarRetrato(base(doc, [{ id: FILA, tipo: 'fila', nome: 'Suporte', campos: {} }]))!;
+    expect(JSON.stringify(r)).not.toMatch(/Ana|Souza/);
+    expect(r.documento.pecas[1]!.descricao).toBe('Se travar, chama a Pessoa');
+    expect(r.documento.conexoes.map((c) => c.valor)).toEqual(['Pessoa respondeu', 'Pessoa', '2', undefined]);
+    expect(r.canais[0]!.nome).toBe('WhatsApp da Pessoa');
+    // O responsável que não é um dos cadastros que vieram sai; o que é fica.
+    expect(r.documento.pecas.map((p) => p.responsavel)).toEqual([undefined, FILA, undefined, undefined]);
+  });
+
+  it('com os nomes à mostra, o responsável e o canal ficam como estão', () => {
+    const doc = { formato: 'journey/2', pecas: [{ id: 'b', tipo: 'atendimento', nome: 'x', x: 0, y: 0, responsavel: 'Ana Souza' }], conexoes: [], grupos: [], notas: [] };
+    const r = montarRetrato(base(doc, [], { esconder_nomes: false, pessoas: [] }))!;
+    expect(r.documento.pecas[0]!.responsavel).toBe('Ana Souza');
+    expect(r.canais[0]!.nome).toBe('WhatsApp da Ana Souza');
+  });
+
+  it('o intencional de opções repetidas com nome na condição continua no link (a chave é feita dos ids)', () => {
+    const doc: Documento = {
+      formato: 'journey/2',
+      pecas: [
+        { id: 'i', tipo: 'inicio', nome: 'Início', x: 0, y: 0 },
+        { id: 'd', tipo: 'decisao', nome: 'D', x: 0, y: 0 },
+        { id: 'a', tipo: 'atendimento', nome: 'A', x: 0, y: 0, responsavel: FULANA },
+        { id: 'f', tipo: 'fim', nome: 'Fim', x: 0, y: 0 },
+      ],
+      conexoes: [
+        { id: 'c1', de: 'i', para: 'd', regra: 'sempre' },
+        { id: 'c2', de: 'd', para: 'a', regra: 'condicao', valor: 'pediu a Ana' },
+        { id: 'c3', de: 'd', para: 'f', regra: 'condicao', valor: 'pediu a Ana' },
+        { id: 'c4', de: 'a', para: 'f', regra: 'sempre' },
+      ],
+      grupos: [],
+      notas: [],
+    };
+    const cadastros = [{ id: FULANA, tipo: 'pessoa', nome: 'Ana', campos: {} }];
+    const chave = diagnosticar(doc, { cadastros }).find((a) => a.tipo === 'opcoes_repetidas')!.chave;
+    const r = montarRetrato(base(doc, cadastros, { pessoas: ['Ana'], intencionais: [{ chave, nota: 'a Ana decide' }] }))!;
+    expect(r.intencionais).toEqual([{ chave, nota: 'a Pessoa 1 decide' }]);
   });
 });

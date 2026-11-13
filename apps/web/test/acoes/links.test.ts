@@ -1,129 +1,137 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { bancoFalso } from './banco-falso';
 
-type Resposta = { data?: unknown; error: { code?: string; message: string } | null };
-let respostas: Record<string, Resposta> = {};
-/** O que cada consulta fez: tabela, operação, valores e filtros. */
-let feitas: { tabela: string; op: string; valores?: unknown; filtros: [string, unknown][] }[] = [];
-
-function consulta(tabela: string) {
-  const f: (typeof feitas)[number] = { tabela, op: 'select', filtros: [] };
-  feitas.push(f);
-  const r = () => respostas[`${tabela}.${f.op}`] ?? { data: null, error: null };
-  const q: Record<string, unknown> = {
-    then: (ok: (v: Resposta) => unknown, falha: (e: unknown) => unknown) => Promise.resolve(r()).then(ok, falha),
-    single: async () => r(),
-    maybeSingle: async () => r(),
-    select: () => q,
-  };
-  for (const m of ['eq', 'is'])
-    q[m] = (coluna: string, valor: unknown) => {
-      f.filtros.push([coluna, valor]);
-      return q;
-    };
-  for (const m of ['insert', 'update'])
-    q[m] = (valores?: unknown) => {
-      f.op = m;
-      f.valores = valores;
-      return q;
-    };
-  return q;
-}
-
-vi.mock('@/lib/dados', () => ({ usuarioAtual: async () => ({ supabase: { from: consulta } }) }));
+const b = bancoFalso();
+vi.mock('@/lib/dados', () => ({ usuarioAtual: async () => ({ supabase: b.supabase }) }));
 // O lib/link de verdade importa server-only e lê a chave; aqui só a resposta importa.
 let configurado = true;
 vi.mock('@/lib/link', () => ({ linkPublicoConfigurado: () => configurado }));
-const revalidar = vi.fn();
-vi.mock('next/cache', () => ({ revalidatePath: (c: string) => revalidar(c) }));
 const { criarLink, revogarLink } = await import('@/acoes/links');
 
 const log = vi.spyOn(console, 'error').mockImplementation(() => {});
 const OPCOES = { versao: null, esconderNomes: true, cenarioId: null, validade: 30 };
-const CENARIO = { nome: 'E se?', entrada: 'entrada:e', inicio: '2026-11-23T16:57', modo: 'cenario', escolhas: ['saida:m-1'] };
+const CENARIO = { nome: 'E se?', inicio: 'i', quando: '2026-11-23T16:57', modo: 'relogio', escolhas: ['c2'] };
+/** A versão 2: Início → decisão (c2 ou c3) → Fim. */
+const VERSAO = {
+  documento: {
+    formato: 'journey/2',
+    pecas: [
+      { id: 'i', tipo: 'inicio', nome: 'Início', x: 0, y: 0 },
+      { id: 'd', tipo: 'decisao', nome: 'Qual?', x: 0, y: 0 },
+      { id: 'f', tipo: 'fim', nome: 'Fim', x: 0, y: 0 },
+    ],
+    conexoes: [
+      { id: 'c1', de: 'i', para: 'd', regra: 'sempre' },
+      { id: 'c2', de: 'd', para: 'f', regra: 'opcao', valor: '1' },
+      { id: 'c3', de: 'd', para: 'f', regra: 'opcao', valor: '2' },
+    ],
+    grupos: [],
+    notas: [],
+  },
+};
+const RESUMO = { id: 'l1', token: 'abcdefghijklmnopqrstuvwx', versao: null, esconder_nomes: true, cenario_nome: null, expira_em: null, revogado_em: null, criado_em: '2026-11-13T10:00:00Z' };
 
 describe('acoes/links', () => {
   beforeEach(() => {
-    respostas = {};
-    feitas = [];
-    revalidar.mockClear();
+    b.limpar();
     log.mockClear();
     configurado = true;
   });
 
   it('sem a chave secreta no servidor, nem tenta criar e avisa', async () => {
     configurado = false;
-    expect(await criarLink('e1', 'j1', { ...OPCOES, cenarioId: 'c1' })).toEqual({
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1' })).toEqual({
       erro: 'Os links públicos ainda não estão configurados neste servidor (falta a chave secreta). Avisa quem cuida do Journey.',
     });
-    expect(feitas).toEqual([]);
+    expect(b.feitas).toEqual([]);
     expect(log).toHaveBeenCalled();
   });
 
-  it('cria o link com as opções e devolve o token; a validade vira data', async () => {
-    respostas['links.insert'] = { data: { token: 'abcdefghijklmnopqrstuvwx' }, error: null };
+  it('cria o link com as opções e devolve como a lista mostra; a validade vira data', async () => {
+    b.quando('links.insert', { data: RESUMO, error: null });
     const antes = Date.now();
-    expect(await criarLink('e1', 'j1', OPCOES)).toEqual({ token: 'abcdefghijklmnopqrstuvwx' });
-    const v = feitas[0]!.valores as { expira_em: string };
-    expect(v).toMatchObject({ empresa_id: 'e1', jornada_id: 'j1', versao: null, esconder_nomes: true, cenario: null });
+    expect(await criarLink('e1', 'f1', OPCOES)).toEqual({ link: RESUMO });
+    const v = b.feitas[0]!.valores as { expira_em: string };
+    expect(v).toMatchObject({ empresa_id: 'e1', fluxo_id: 'f1', versao: null, esconder_nomes: true, cenario: null });
     expect(new Date(v.expira_em).getTime() - antes).toBeGreaterThanOrEqual(30 * 86_400_000 - 1000);
-    expect(revalidar).toHaveBeenCalledWith('/e/e1/j/j1');
   });
 
-  it('o cenário inicial é copiado do banco, desta jornada', async () => {
-    respostas['cenarios.select'] = { data: CENARIO, error: null };
-    respostas['links.insert'] = { data: { token: 't' }, error: null };
-    await criarLink('e1', 'j1', { ...OPCOES, cenarioId: 'c1', validade: null, versao: 2 });
-    expect(feitas[0]!.filtros).toEqual([
-      ['id', 'c1'],
-      ['jornada_id', 'j1'],
-    ]);
-    expect(feitas[1]!.valores).toMatchObject({ cenario: CENARIO, expira_em: null, versao: 2 });
+  it('o cenário inicial é copiado do banco, deste fluxo e desta empresa', async () => {
+    b.quando('cenarios.select', { data: CENARIO, error: null });
+    b.quando('links.insert', { data: RESUMO, error: null });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', validade: null })).toEqual({ link: RESUMO });
+    expect(b.feitas[0]!.filtros).toEqual([['empresa_id', 'e1'], ['fluxo_id', 'f1'], ['id', 'k1']]);
+    expect(b.feitas[1]!.valores).toMatchObject({ cenario: CENARIO, expira_em: null, versao: null });
+  });
+
+  it('com versão fixa, o cenário tem que tocar nela (com os Horários da empresa)', async () => {
+    b.quando('cenarios.select', { data: CENARIO, error: null });
+    b.quando('fluxo_versoes.select', { data: VERSAO, error: null });
+    b.quando('cadastros.select', { data: [], error: null });
+    b.quando('links.insert', { data: RESUMO, error: null });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', versao: 2 })).toEqual({ link: RESUMO });
+    expect(b.feitas.map((f) => f.tabela)).toEqual(['cenarios', 'fluxo_versoes', 'cadastros', 'links']);
+    expect(b.feitas[1]!.filtros).toEqual([['empresa_id', 'e1'], ['fluxo_id', 'f1'], ['numero', 2]]);
+    expect(b.feitas[2]!.filtros).toEqual([['empresa_id', 'e1'], ['tipo', 'horario']]);
+    expect(b.feitas[3]!.valores).toMatchObject({ cenario: CENARIO, versao: 2 });
+  });
+
+  it('cenário que começa numa peça que a versão não tem, ou com escolha que ela não tem: recusa', async () => {
+    b.quando('cenarios.select', { data: { ...CENARIO, inicio: 'outro' }, error: null }, { data: { ...CENARIO, escolhas: ['c2', 'c9'] }, error: null }, { data: { ...CENARIO, escolhas: ['c9'] }, error: null });
+    b.quando('fluxo_versoes.select', { data: VERSAO, error: null }, { data: VERSAO, error: null }, { data: VERSAO, error: null });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', versao: 2 })).toEqual({
+      erro: 'O cenário “E se?” começa numa peça que não existe na versão 2. Escolhe outra versão ou outro cenário.',
+    });
+    const naoToca = { erro: 'O cenário “E se?” não toca na versão 2: alguma escolha dele não existe nela. Escolhe outra versão ou outro cenário.' };
+    // Uma escolha a mais depois do fim também não serve: o motor não a aceita.
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', versao: 2 })).toEqual(naoToca);
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', versao: 2 })).toEqual(naoToca);
+    expect(b.feitas.some((f) => f.tabela === 'links')).toBe(false);
+  });
+
+  it('versão que sumiu ou que não abre: recusa antes de criar', async () => {
+    b.quando('cenarios.select', { data: CENARIO, error: null }, { data: CENARIO, error: null });
+    b.quando('fluxo_versoes.select', { data: null, error: null }, { data: { documento: { formato: 'journey/1' } }, error: null });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', versao: 2 })).toEqual({ erro: 'Esta versão não existe mais neste fluxo.' });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1', versao: 2 })).toEqual({ erro: 'A versão 2 não abre: o documento dela não é válido.' });
   });
 
   it('cenário que sumiu não vira link', async () => {
-    respostas['cenarios.select'] = { data: null, error: null };
-    expect(await criarLink('e1', 'j1', { ...OPCOES, cenarioId: 'c1' })).toEqual({ erro: 'Este cenário não existe mais.' });
-    expect(feitas.map((f) => f.tabela)).toEqual(['cenarios']);
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 'k1' })).toEqual({ erro: 'Este cenário não existe mais.' });
+    expect(b.feitas.map((f) => f.tabela)).toEqual(['cenarios']);
   });
 
   it('esconder nomes só desliga com false', async () => {
-    respostas['links.insert'] = { data: { token: 't' }, error: null };
-    await criarLink('e1', 'j1', { ...OPCOES, esconderNomes: 'nao' as unknown as boolean });
-    expect(feitas[0]!.valores).toMatchObject({ esconder_nomes: true });
+    await criarLink('e1', 'f1', { ...OPCOES, esconderNomes: 'nao' as unknown as boolean });
+    expect(b.feitas[0]!.valores).toMatchObject({ esconder_nomes: true });
   });
 
-  it('validade fora da lista e versão inválida são recusadas antes do banco', async () => {
-    expect(await criarLink('e1', 'j1', { ...OPCOES, validade: 1 })).toEqual({ erro: 'Escolhe uma validade da lista.' });
-    expect(await criarLink('e1', 'j1', { ...OPCOES, versao: 0 })).toEqual({ erro: 'Versão inválida.' });
-    expect(feitas).toEqual([]);
+  it('validade fora da lista, versão e cenário inválidos são recusados antes do banco', async () => {
+    expect(await criarLink('e1', 'f1', { ...OPCOES, validade: 1 })).toEqual({ erro: 'Escolhe uma validade da lista.' });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, versao: 0 })).toEqual({ erro: 'Versão inválida.' });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, versao: 1.5 })).toEqual({ erro: 'Versão inválida.' });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, cenarioId: 3 as unknown as string })).toEqual({ erro: 'Cenário inválido.' });
+    expect(await criarLink('e1', 'f1', null as never)).toEqual({ erro: 'Opções inválidas.' });
+    expect(await criarLink('e1', 'f1', 'x' as never)).toEqual({ erro: 'Opções inválidas.' });
+    expect(b.feitas).toEqual([]);
   });
 
-  it('versão que não existe vira texto pra pessoa', async () => {
-    respostas['links.insert'] = { error: { code: '23503', message: 'insert or update on table "links" violates foreign key' } };
-    expect(await criarLink('e1', 'j1', { ...OPCOES, versao: 9 })).toEqual({ erro: 'Esta versão não existe mais nesta jornada.' });
+  it('versão que não existe vira texto pra pessoa; sem versão fixa, é o fluxo que sumiu', async () => {
+    b.quando('links.insert', { error: { code: '23503', message: 'violates foreign key' } }, { error: { code: '23503', message: 'violates foreign key' } });
+    expect(await criarLink('e1', 'f1', { ...OPCOES, versao: 9 })).toEqual({ erro: 'Esta versão não existe mais neste fluxo.' });
+    expect(await criarLink('e1', 'f1', OPCOES)).toEqual({ erro: 'Este fluxo não existe mais.' });
     expect(log).toHaveBeenCalled();
   });
 
-  it('sem versão fixa, 23503 é a jornada que sumiu', async () => {
-    respostas['links.insert'] = { error: { code: '23503', message: 'violates foreign key' } };
-    expect(await criarLink('e1', 'j1', { ...OPCOES, versao: null })).toEqual({ erro: 'Esta jornada não existe mais.' });
-  });
-
-  it('revogar marca a data, só se ainda não foi revogado, nesta jornada', async () => {
-    respostas['links.update'] = { data: [{ id: 'l1' }], error: null };
-    expect(await revogarLink('e1', 'j1', 'l1')).toEqual({});
-    expect(feitas[0]!.filtros).toEqual([
-      ['id', 'l1'],
-      ['jornada_id', 'j1'],
-      ['revogado_em', null],
-    ]);
-    expect(typeof (feitas[0]!.valores as { revogado_em: string }).revogado_em).toBe('string');
-    expect(revalidar).toHaveBeenCalledWith('/e/e1/j/j1');
+  it('revogar marca a data, só se ainda não foi revogado, neste fluxo e empresa; devolve a data do banco', async () => {
+    b.quando('links.update', { data: [{ revogado_em: '2026-11-13T10:00:00.123Z' }], error: null });
+    expect(await revogarLink('e1', 'f1', 'l1')).toEqual({ revogado_em: '2026-11-13T10:00:00.123Z' });
+    expect(b.feitas[0]!.filtros).toEqual([['empresa_id', 'e1'], ['fluxo_id', 'f1'], ['id', 'l1'], ['revogado_em', null]]);
+    expect(typeof (b.feitas[0]!.valores as { revogado_em: string }).revogado_em).toBe('string');
   });
 
   it('revogar de novo avisa', async () => {
-    respostas['links.update'] = { data: [], error: null };
-    expect(await revogarLink('e1', 'j1', 'l1')).toEqual({ erro: 'Este link não existe mais ou já foi revogado.' });
-    expect(revalidar).not.toHaveBeenCalled();
+    b.quando('links.update', { data: [], error: null });
+    expect(await revogarLink('e1', 'f1', 'l1')).toEqual({ erro: 'Este link não existe mais ou já foi revogado.' });
   });
 });
