@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diagnosticar } from '../src/diagnostico';
+import { diagnosticar, fnv1a64, resumirChave } from '../src/diagnostico';
 import { doc, liga, peca } from './apoio';
 
 const chaves = (...args: Parameters<typeof diagnosticar>) => diagnosticar(...args).map((a) => a.chave);
@@ -43,7 +43,21 @@ describe('diagnóstico', () => {
       [peca('i', 'inicio'), peca('d', 'decisao'), peca('a', 'fim'), peca('b', 'fim')],
       [liga('i', 'd'), liga('d', 'a', { regra: 'opcao', valor: '1' }), liga('d', 'b', { regra: 'opcao', valor: '1' })],
     );
-    expect(diagnosticar(d)).toEqual([expect.objectContaining({ chave: 'opcoes_repetidas:d:opcao:1', refs: ['d', 'd>a', 'd>b'] })]);
+    expect(diagnosticar(d)).toEqual([expect.objectContaining({ chave: 'opcoes_repetidas:d:d>a+d>b', refs: ['d', 'd>a', 'd>b'] })]);
+  });
+
+  it('a chave das opções repetidas é feita dos ids, nunca do texto da condição', () => {
+    // A condição é texto livre: pode ter o nome de uma pessoa (e o link esconde nomes) ou emoji.
+    const valor = `pediu a Ana Souza ${'😀'.repeat(40)}`;
+    const d = doc(
+      [peca('i', 'inicio'), peca('d', 'decisao'), peca('a', 'fim'), peca('b', 'fim')],
+      [liga('i', 'd'), liga('d', 'b', { id: 'z', regra: 'condicao', valor }), liga('d', 'a', { id: 'y', regra: 'condicao', valor })],
+    );
+    const k = chaves(d)[0]!;
+    expect(k).toBe('opcoes_repetidas:d:y+z');
+    // Texto diferente depois dos primeiros 60 caracteres não é a mesma condição.
+    const diferentes = doc(d.pecas, [liga('i', 'd'), liga('d', 'b', { regra: 'condicao', valor: `${'x'.repeat(60)}1` }), liga('d', 'a', { regra: 'condicao', valor: `${'x'.repeat(60)}2` })]);
+    expect(chaves(diferentes)).toEqual([]);
   });
 
   it('regra pela metade', () => {
@@ -107,9 +121,9 @@ describe('diagnóstico', () => {
   it('saídas iguais: um achado por grupo, inclusive "senão" repetido', () => {
     const pecas = [peca('i', 'inicio'), peca('d', 'decisao'), peca('a', 'fim'), peca('b', 'fim'), peca('c', 'fim')];
     const tres = doc(pecas, [liga('i', 'd'), ...['a', 'b', 'c'].map((x) => liga('d', x, { regra: 'opcao', valor: '1' }))]);
-    expect(diagnosticar(tres)).toEqual([expect.objectContaining({ chave: 'opcoes_repetidas:d:opcao:1', refs: ['d', 'd>a', 'd>b', 'd>c'] })]);
+    expect(diagnosticar(tres)).toEqual([expect.objectContaining({ chave: 'opcoes_repetidas:d:d>a+d>b+d>c', refs: ['d', 'd>a', 'd>b', 'd>c'] })]);
     const senoes = doc(pecas, [liga('i', 'd'), liga('d', 'a', { regra: 'condicao', valor: 'pago' }), liga('d', 'b', { regra: 'senao' }), liga('d', 'c', { regra: 'senao' })]);
-    expect(chaves(senoes)).toEqual(['opcoes_repetidas:d:senao']);
+    expect(chaves(senoes)).toEqual(['opcoes_repetidas:d:d>b+d>c']);
   });
 
   describe('caminho mais longo com muitos caminhos', () => {
@@ -165,5 +179,52 @@ describe('diagnóstico', () => {
     const t0 = performance.now();
     diagnosticar(d, { meta_s: 60 });
     expect(performance.now() - t0).toBeLessThan(100);
+  });
+
+  describe('chave comprida', () => {
+    // Um ciclo junta os ids de todas as peças dele: a chave cresce com o ciclo, e o banco guarda a chave do intencional.
+    const ciclo = (n: number, prefixo = 'p') => {
+      const ids = Array.from({ length: n }, (_, i) => `${prefixo}-${String(i).padStart(3, '0')}`);
+      return doc(
+        [peca('i', 'inicio'), ...ids.map((id) => peca(id, 'etapa'))],
+        [liga('i', ids[0]!), ...ids.map((id, k) => liga(id, ids[(k + 1) % n]!))],
+      );
+    };
+    const doCiclo = (d: ReturnType<typeof ciclo>) => chaves(d).find((k) => k.startsWith('ciclo_sem_saida:'))!;
+
+    it('curta fica como é', () => {
+      expect(doCiclo(ciclo(3))).toBe('ciclo_sem_saida:p-000+p-001+p-002');
+    });
+
+    it('o título de um ciclo grande cita alguns nomes e conta o resto', () => {
+      const titulo = diagnosticar(ciclo(2000)).find((a) => a.tipo === 'ciclo_sem_saida')!.titulo;
+      expect(titulo).toBe('Ciclo sem saída: p-000, p-001, p-002, p-003, p-004 e mais 1995');
+      expect(diagnosticar(ciclo(5)).find((a) => a.tipo === 'ciclo_sem_saida')!.titulo).toBe('Ciclo sem saída: p-000, p-001, p-002, p-003, p-004');
+    });
+
+    it('comprida vira o começo mais um resumo: curta, estável e diferente pra outro ciclo', () => {
+      const k = doCiclo(ciclo(300));
+      expect(k.length).toBeLessThanOrEqual(120);
+      expect(k.startsWith('ciclo_sem_saida:p-000+p-001+')).toBe(true);
+      expect(k).toMatch(/~[0-9a-f]{16}$/);
+      expect(doCiclo(ciclo(300))).toBe(k);
+      expect(doCiclo(ciclo(301))).not.toBe(k);
+      expect(doCiclo(ciclo(300, 'q'))).not.toBe(k);
+    });
+
+    it('o resumo é o FNV-1a de 64 bits do texto inteiro', () => {
+      const longo = 'x'.repeat(201);
+      expect(resumirChave('a'.repeat(200))).toBe('a'.repeat(200));
+      expect(resumirChave(longo)).toBe(`${'x'.repeat(80)}~${fnv1a64('x'.repeat(201))}`);
+      // Vetores conhecidos do FNV-1a de 64 bits.
+      expect(fnv1a64('')).toBe('cbf29ce484222325');
+      expect(fnv1a64('a')).toBe('af63dc4c8601ec8c');
+      expect(fnv1a64('foobar')).toBe('85944171f73967e8');
+    });
+
+    it('não corta um caractere no meio', () => {
+      const k = resumirChave('😀'.repeat(150));
+      expect(k.startsWith('😀'.repeat(80) + '~')).toBe(true);
+    });
   });
 });
