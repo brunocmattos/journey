@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 55 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 56 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -51,6 +51,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **`(a ?? '').toLowerCase()`** precisa dos parênteses: `a ?? ''.toLowerCase()` compila e faz outra coisa.
 - **pgTAP não aceita `delete … returning` dentro de `with`** num `select`: apague num comando separado e confira com `ok(exists(…))`.
 - **`check` de `jsonb` com chave faltando dá `null`, e `null` passa no `check`:** a forma do documento vai dentro de `coalesce(…, false)`.
+- **`Date.UTC` normaliza calado:** 30 de fevereiro vira 2 de março e 24:00 vira o dia seguinte. `lerQuando` e as datas de feriado só aceitam o que volta igual depois de `toISOString` (veio da revisão da tarefa 1).
 - **Hora de parede:** `lerQuando('2026-11-23T10:30')` guarda os números como UTC e o relógio lê com `getUTC*`. Assim o resultado não depende do fuso da máquina que roda o teste.
 
 ## Mapa de arquivos
@@ -64,7 +65,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | `packages/fluxo/src/validar.ts` | `lerDocumento`: confere um documento vindo de fora e devolve uma cópia limpa |
 | `packages/fluxo/src/indice.ts` | Saídas e entradas de cada peça; o texto de cada regra |
 | `packages/fluxo/src/motor.ts` | `Execucao`, `executar`, `simular` e os eventos |
-| `packages/fluxo/src/diagnostico.ts` | `diagnosticar`: os doze tipos de achado |
+| `packages/fluxo/src/diagnostico.ts` | `diagnosticar`: os treze tipos de achado |
 | `packages/fluxo/src/modelos.ts` | Suporte no WhatsApp, Esteira de crédito, SAC por e-mail e URA telefônica |
 | `packages/fluxo/src/index.ts` | O que o pacote exporta |
 | `packages/fluxo/test/*.ts` | Testes (Vitest) e os construtores `peca`, `liga`, `doc` |
@@ -259,6 +260,7 @@ describe('relógio', () => {
   it('lê data e hora de parede', () => {
     expect(new Date(lerQuando('2026-11-23T10:30')).toISOString()).toBe('2026-11-23T10:30:00.000Z');
     expect(() => lerQuando('23/11/2026')).toThrow('AAAA-MM-DDTHH:MM');
+    for (const ruim of ['2026-02-30T10:00', '2026-11-23T24:00', '2026-11-23T10:60', '0050-01-01T10:00']) expect(() => lerQuando(ruim)).toThrow('AAAA-MM-DDTHH:MM');
   });
 
   it('dentro e fora do horário, com o fim da janela de fora', () => {
@@ -266,6 +268,14 @@ describe('relógio', () => {
     expect(dentroDoHorario(comercial, lerQuando('2026-11-23T17:59'))).toBe(true);
     expect(dentroDoHorario(comercial, lerQuando('2026-11-23T18:00'))).toBe(false);
     expect(dentroDoHorario(comercial, lerQuando('2026-11-22T10:00'))).toBe(false); // domingo
+  });
+
+  it('várias janelas no mesmo dia, e 24:00 como fim', () => {
+    const h = camposHorario({ id: 'h', tipo: 'horario', nome: 'H', campos: { janelas: [{ dias: ['seg'], inicio: '08:00', fim: '12:00' }, { dias: ['seg'], inicio: '13:00', fim: '18:00' }, { dias: ['sab'], inicio: '00:00', fim: '24:00' }] } })!;
+    expect(dentroDoHorario(h, lerQuando('2026-11-23T12:30'))).toBe(false); // almoço
+    expect(dentroDoHorario(h, lerQuando('2026-11-23T13:00'))).toBe(true);
+    expect(dentroDoHorario(h, lerQuando('2026-11-28T23:59'))).toBe(true); // sábado inteiro
+    expect(dentroDoHorario(h, lerQuando('2026-11-29T00:00'))).toBe(false); // domingo
   });
 
   it('feriado fecha, inclusive o que repete todo ano', () => {
@@ -280,10 +290,21 @@ describe('relógio', () => {
     expect(camposHorario({ id: 'x', tipo: 'horario', nome: 'H', campos: { janelas: [{ dias: ['seg'], inicio: '8h', fim: '18:00' }] } })).toBeNull();
     expect(camposHorario({ id: 'x', tipo: 'horario', nome: 'H', campos: { janelas: [{ dias: ['segunda'], inicio: '08:00', fim: '18:00' }] } })).toBeNull();
     expect(camposHorario({ id: 'x', tipo: 'horario', nome: 'H', campos: { janelas: [] } })).toEqual({ janelas: [], feriados: [] });
+    const janela = (inicio: string, fim: string) => camposHorario({ id: 'x', tipo: 'horario', nome: 'H', campos: { janelas: [{ dias: ['seg'], inicio, fim }] } });
+    expect(janela('22:00', '06:00')).toBeNull(); // invertida: passar da meia-noite são duas janelas
+    expect(janela('08:00', '08:00')).toBeNull();
+    expect(janela('24:00', '24:00')).toBeNull();
+    const feriado = (feriados: unknown) => camposHorario({ id: 'x', tipo: 'horario', nome: 'H', campos: { janelas: [], feriados } });
+    expect(feriado([{ data: '2026-02-30' }])).toBeNull();
+    expect(feriado([{ data: '25/12' }])).toBeNull();
+    expect(feriado({ data: '2026-12-25' })).toBeNull();
+    expect(camposHorario(undefined)).toBeNull();
+    expect(camposHorario({ id: 'x', tipo: 'horario', nome: 'H' })).toBeNull();
   });
 
   it('formata tempo', () => {
     expect([40, 60, 3600, 7500, 86400, 97200].map(formatarTempo)).toEqual(['40 s', '1 min', '1 h', '2 h 5 min', '1 d', '1 d 3 h']);
+    expect([59.5, 3599, 86399, -5, NaN, Infinity].map(formatarTempo)).toEqual(['1 min', '59 min', '23 h 59 min', '0 s', '—', '—']);
   });
 });
 ```
@@ -357,25 +378,33 @@ export const TIPOS_CADASTRO_PADRAO = [
   { chave: 'horario', nome: 'Horário' },
 ] as const;
 
-const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
-const DATA = /^\d{4}-\d{2}-\d{2}$/;
+const INICIO = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** O fim da janela pode ser 24:00 (até a meia-noite). */
+const FIM = /^(([01]\d|2[0-3]):[0-5]\d|24:00)$/;
+/** AAAA-MM-DD que existe no calendário (2026-02-30 não). */
+const ehData = (v: unknown): v is string =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00Z`).toISOString().slice(0, 10) === v;
 
-/** Os campos de um cadastro Horário, se o cadastro é um horário com campos válidos; senão null. */
+/**
+ * Os campos de um cadastro Horário, se o cadastro é um horário com campos válidos; senão null.
+ * Uma janela vai de início a fim no mesmo dia (fim depois do início; 24:00 vale como fim). Pra passar da
+ * meia-noite, use duas janelas (22:00–24:00 num dia, 00:00–06:00 no outro).
+ */
 export function camposHorario(c: Cadastro | undefined): CamposHorario | null {
   if (!c || c.tipo !== 'horario' || !c.campos) return null;
   const { janelas, feriados } = c.campos as { janelas?: unknown; feriados?: unknown };
-  if (!Array.isArray(janelas)) return null;
+  if (!Array.isArray(janelas) || (feriados !== undefined && !Array.isArray(feriados))) return null;
   const js: JanelaHorario[] = [];
   for (const j of janelas) {
     const { dias, inicio, fim } = (j ?? {}) as Record<string, unknown>;
     if (!Array.isArray(dias) || !dias.every((d) => (DIAS as readonly unknown[]).includes(d))) return null;
-    if (typeof inicio !== 'string' || typeof fim !== 'string' || !HORA.test(inicio) || !HORA.test(fim)) return null;
-    js.push({ dias: dias as Dia[], inicio, fim });
+    if (typeof inicio !== 'string' || typeof fim !== 'string' || !INICIO.test(inicio) || !FIM.test(fim) || fim <= inicio) return null;
+    js.push({ dias: [...dias] as Dia[], inicio, fim });
   }
   const fs: Feriado[] = [];
-  for (const f of Array.isArray(feriados) ? feriados : []) {
+  for (const f of (feriados ?? []) as unknown[]) {
     const { data, todo_ano, nome } = (f ?? {}) as Record<string, unknown>;
-    if (typeof data !== 'string' || !DATA.test(data)) return null;
+    if (!ehData(data)) return null;
     fs.push({ data, ...(todo_ano === true && { todo_ano: true }), ...(typeof nome === 'string' && { nome }) });
   }
   return { janelas: js, feriados: fs };
@@ -395,8 +424,12 @@ import { DIAS, type CamposHorario, type Dia } from './cadastros';
  */
 export function lerQuando(texto: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(texto);
-  if (!m) throw new Error(`data e hora inválidas: "${texto}". Use AAAA-MM-DDTHH:MM`);
-  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  const ms = m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) : NaN;
+  // Date.UTC aceita 30 de fevereiro e 24h (vira o dia seguinte): só vale o que volta igual.
+  if (!m || Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 16) !== texto) {
+    throw new Error(`data e hora inválidas: "${texto}". Use AAAA-MM-DDTHH:MM`);
+  }
+  return ms;
 }
 
 const diaDaSemana = (ms: number): Dia => DIAS[new Date(ms).getUTCDay()] as Dia;
@@ -414,7 +447,7 @@ export function ehFeriado(h: CamposHorario, ms: number): boolean {
   return h.feriados.some((f) => f.data === iso || (f.todo_ano === true && f.data.slice(5) === iso.slice(5)));
 }
 
-/** Dentro de alguma janela da semana e fora dos feriados. */
+/** Dentro de alguma janela da semana e fora dos feriados. `ms` é hora de parede, de `lerQuando` (não `Date.now()`). */
 export function dentroDoHorario(h: CamposHorario, ms: number): boolean {
   if (ehFeriado(h, ms)) return false;
   const dia = diaDaSemana(ms);
@@ -424,6 +457,7 @@ export function dentroDoHorario(h: CamposHorario, ms: number): boolean {
 
 /** "2 h 5 min", "3 d 4 h", "40 s". */
 export function formatarTempo(segundos: number): string {
+  if (!Number.isFinite(segundos)) return '—';
   const s = Math.max(0, Math.round(segundos));
   if (s < 60) return `${s} s`;
   const d = Math.floor(s / 86400);
@@ -438,7 +472,7 @@ export function formatarTempo(segundos: number): string {
 - [ ] **Passo 8: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  5 passed (5)` e o `tsc` sem saída.
+Expected: `Tests  6 passed (6)` e o `tsc` sem saída.
 
 - [ ] **Passo 9: commit**
 
@@ -676,7 +710,7 @@ export function lerDocumento(entrada: unknown, conhecidos: Conhecidos = {}): Lei
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  12 passed (12)` e o `tsc` sem saída.
+Expected: `Tests  13 passed (13)` e o `tsc` sem saída.
 
 - [ ] **Passo 5: commit**
 
@@ -1044,7 +1078,7 @@ export function simular(doc: Documento, contexto: Contexto, opcoes: OpcoesExecuc
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  28 passed (28)` e o `tsc` sem saída.
+Expected: `Tests  29 passed (29)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -1129,7 +1163,9 @@ describe('diagnóstico', () => {
     const pecas = [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'k1' }), peca('a', 'fim'), peca('b', 'fim')];
     const conexoes = [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' as const }), liga('h', 'b', { regra: 'horario', horario: 'fora' as const })];
     expect(chaves(doc(pecas, conexoes), { cadastros: [{ id: 'k1', tipo: 'fila', nome: 'Fila' }] })).toEqual(['horario_sem_cadastro:h']);
-    expect(chaves(doc(pecas.map((p) => (p.id === 'h' ? { ...p, responsavel: 'h' } : p)), conexoes), { cadastros: [HORARIO] })).toEqual([]);
+    const comH = doc(pecas.map((p) => (p.id === 'h' ? { ...p, responsavel: 'h' } : p)), conexoes);
+    expect(chaves(comH, { cadastros: [HORARIO] })).toEqual([]);
+    expect(chaves(comH, { cadastros: [{ ...HORARIO, campos: { janelas: [{ dias: ['seg'], inicio: '18:00', fim: '08:00' }] } }] })).toEqual(['horario_invalido:h']);
   });
 
   it('caminho mais longo acima da meta', () => {
@@ -1288,8 +1324,9 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
     if (p.tipo === 'atendimento' && !p.responsavel) achado('sem_responsavel', 'observacao', p.id, `${p.nome}: quem atende?`, `O atendimento não diz quem atende (uma pessoa, fila ou equipe).`, [p.id]);
     if (p.responsavel && opcoes.cadastros && !opcoes.cadastros.some((k) => k.id === p.responsavel)) achado('responsavel_inexistente', 'alerta', p.id, `${p.nome} aponta pra um cadastro que não existe`, `O responsável de ${p.nome} foi apagado ou é de outra empresa.`, [p.id]);
     if (saidas.some((c) => c.regra === 'horario') && opcoes.cadastros) {
-      const h = camposHorario(opcoes.cadastros.find((k) => k.id === p.responsavel));
-      if (!h) achado('horario_sem_cadastro', 'alerta', p.id, `${p.nome} decide pelo horário, mas sem um Horário`, `As saídas de ${p.nome} são "dentro" e "fora do horário", mas a peça não usa um cadastro de Horário: o relógio não tem como decidir.`, [p.id]);
+      const k = opcoes.cadastros.find((x) => x.id === p.responsavel);
+      if (k?.tipo === 'horario' && !camposHorario(k)) achado('horario_invalido', 'alerta', p.id, `O horário ${k.nome} tem campos inválidos`, `${p.nome} decide pelo horário ${k.nome}, mas uma janela ou um feriado dele está errado: o relógio não tem como decidir.`, [p.id]);
+      else if (!camposHorario(k)) achado('horario_sem_cadastro', 'alerta', p.id, `${p.nome} decide pelo horário, mas sem um Horário`, `As saídas de ${p.nome} são "dentro" e "fora do horário", mas a peça não usa um cadastro de Horário: o relógio não tem como decidir.`, [p.id]);
     }
     // Opções repetidas: mesma regra e mesmo valor saindo da mesma peça.
     const vistos = new Map<string, string>();
@@ -1327,7 +1364,7 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  42 passed (42)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
+Expected: `Tests  43 passed (43)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
 
 - [ ] **Passo 5: commit**
 
@@ -1595,7 +1632,7 @@ export { MODELOS, type Modelo } from './modelos';
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  55 passed (55)` e o `tsc` sem saída.
+Expected: `Tests  56 passed (56)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2027,7 +2064,7 @@ Expected: `Files=3, Tests=126` e `Result: PASS`.
 - [ ] **Passo 5: a v1 continua de pé**
 
 Run: `npm test && npm run typecheck`
-Expected: `@journey/fluxo` 55, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
+Expected: `@journey/fluxo` 56, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
 
 - [ ] **Passo 6: commit**
 
@@ -2118,7 +2155,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 55, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
+Expected: fluxo 56, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
