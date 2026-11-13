@@ -1,10 +1,12 @@
 import type { Conexao, Documento, Grupo, Nota, Peca, TipoPeca } from '@journey/fluxo';
 import { dentro } from './geometria';
-import { FORMAS, GRUPO, NOTA, caixaDe, naGrade } from './pecas';
+import { FORMAS, GRUPO, NOTA, ROTULO_RESPONSAVEL, caixaDe, naGrade } from './pecas';
 
 /**
  * As mudanças do editor no documento journey/2. Todas puras: recebem o documento e devolvem outro, sem tocar
  * no de entrada (o histórico guarda as versões anteriores por referência). Ids vêm de quem chama.
+ * Quando nada muda, devolvem o mesmo documento (o histórico não ganha passo vazio). O que sai daqui passa no
+ * `lerDocumento`: um documento que ele recusa seria salvo e depois não abriria mais.
  */
 
 /** Aplica um remendo: chave com `undefined` some do objeto (o documento não guarda campo vazio). */
@@ -17,7 +19,28 @@ function remendar<T extends object>(obj: T, patch: Partial<NoInfer<T>>): T {
   return novo as T;
 }
 
-const trocar = <T extends { id: string }>(lista: readonly T[], id: string, f: (x: T) => T): T[] => lista.map((x) => (x.id === id ? f(x) : x));
+/** Troca um item da lista; se nada mudou (id que não existe, ou o mesmo item), devolve a mesma lista. */
+function trocar<T extends { id: string }>(lista: T[], id: string, f: (x: T) => T): T[] {
+  let mudou = false;
+  const nova = lista.map((x) => {
+    if (x.id !== id) return x;
+    const y = f(x);
+    if (y !== x) mudou = true;
+    return y;
+  });
+  return mudou ? nova : lista;
+}
+
+/** O documento com uma lista trocada, ou o mesmo documento se a lista é a mesma. */
+const com = <K extends 'pecas' | 'conexoes' | 'grupos' | 'notas'>(doc: Documento, chave: K, lista: Documento[K]): Documento => (lista === doc[chave] ? doc : { ...doc, [chave]: lista });
+
+/** Os números de opção que as saídas de uma peça já usam. O próximo é o menor que falta. */
+function proximaOpcao(usados: Set<string>): string {
+  let n = 1;
+  while (usados.has(String(n))) n++;
+  usados.add(String(n));
+  return String(n);
+}
 
 /** Uma peça nova com o centro em (cx, cy), na grade, com o nome do tipo. */
 export function criarPeca(doc: Documento, id: string, tipo: TipoPeca, cx: number, cy: number): Documento {
@@ -50,13 +73,10 @@ export function ligar(doc: Documento, id: string, de: string, para: string): Lig
   let conexoes = doc.conexoes;
   let nova: Conexao = { id, de, para, regra: 'sempre' };
   if (outras.length >= 1) {
-    let i = 0;
-    conexoes = conexoes.map((c) => {
-      if (c.de !== de) return c;
-      i++;
-      return c.regra === 'sempre' && !c.rotulo ? { ...c, regra: 'opcao', valor: String(i) } : c;
-    });
-    nova = { ...nova, regra: 'opcao', valor: String(outras.length + 1) };
+    // Números que já são opção não se repetem: depois de apagar a opção 2 de 1, 2, 3, a próxima é 2.
+    const usados = new Set(outras.filter((c) => c.regra === 'opcao' && c.valor).map((c) => c.valor!));
+    conexoes = conexoes.map((c) => (c.de === de && c.regra === 'sempre' && !c.rotulo ? { ...c, regra: 'opcao', valor: proximaOpcao(usados) } : c));
+    nova = { ...nova, regra: 'opcao', valor: proximaOpcao(usados) };
   }
   return { doc: { ...doc, conexoes: [...conexoes, nova] }, conexao: nova };
 }
@@ -77,8 +97,13 @@ export function criarLigada(doc: Documento, idPeca: string, idConexao: string, o
   return 'doc' in r ? r.doc : comPeca;
 }
 
-export const moverPeca = (doc: Documento, id: string, x: number, y: number): Documento => ({ ...doc, pecas: trocar(doc.pecas, id, (p) => ({ ...p, x: naGrade(x), y: naGrade(y) })) });
-export const moverNota = (doc: Documento, id: string, x: number, y: number): Documento => ({ ...doc, notas: trocar(doc.notas, id, (n) => ({ ...n, x: naGrade(x), y: naGrade(y) })) });
+/** Põe x e y na grade; se o lugar não muda, o item é o mesmo. */
+const noLugar = <T extends { x: number; y: number }>(item: T, x: number, y: number): T => {
+  const [gx, gy] = [naGrade(x), naGrade(y)];
+  return gx === item.x && gy === item.y ? item : { ...item, x: gx, y: gy };
+};
+export const moverPeca = (doc: Documento, id: string, x: number, y: number): Documento => com(doc, 'pecas', trocar(doc.pecas, id, (p) => noLugar(p, x, y)));
+export const moverNota = (doc: Documento, id: string, x: number, y: number): Documento => com(doc, 'notas', trocar(doc.notas, id, (n) => noLugar(n, x, y)));
 
 /** O que um grupo leva junto quando se move: peças e notas com o centro dentro dele. */
 export function conteudoDoGrupo(doc: Documento, id: string): { pecas: string[]; notas: string[] } {
@@ -94,6 +119,7 @@ export function conteudoDoGrupo(doc: Documento, id: string): { pecas: string[]; 
 export function moverGrupo(inicio: Documento, id: string, dx: number, dy: number, levar: { pecas: string[]; notas: string[] }): Documento {
   const mx = naGrade(dx);
   const my = naGrade(dy);
+  if (!mx && !my) return inicio;
   const pecas = new Set(levar.pecas);
   const notas = new Set(levar.notas);
   return {
@@ -104,53 +130,92 @@ export function moverGrupo(inicio: Documento, id: string, dx: number, dy: number
   };
 }
 
-export const redimensionarGrupo = (doc: Documento, id: string, w: number, h: number): Documento => ({
-  ...doc,
-  grupos: trocar(doc.grupos, id, (g) => ({ ...g, w: Math.max(GRUPO.minW, naGrade(w)), h: Math.max(GRUPO.minH, naGrade(h)) })),
-});
-
-/** Muda campos de uma peça. Trocar o tipo mantém o centro (as formas têm tamanhos diferentes) e as ligações. */
-export function mudarPeca(doc: Documento, id: string, patch: Partial<Omit<Peca, 'id'>>): Documento {
-  return {
-    ...doc,
-    pecas: trocar(doc.pecas, id, (p) => {
-      const nova = remendar(p, patch);
-      if (patch.tipo && patch.tipo !== p.tipo) {
-        const a = FORMAS[p.tipo];
-        const b = FORMAS[patch.tipo];
-        nova.x = naGrade(p.x + a.w / 2 - b.w / 2);
-        nova.y = naGrade(p.y + a.h / 2 - b.h / 2);
-      }
-      if (!nova.nome) nova.nome = FORMAS[nova.tipo].nome;
-      return nova;
-    }),
-  };
+export function redimensionarGrupo(doc: Documento, id: string, w: number, h: number): Documento {
+  const [gw, gh] = [Math.max(GRUPO.minW, naGrade(w)), Math.max(GRUPO.minH, naGrade(h))];
+  return com(doc, 'grupos', trocar(doc.grupos, id, (g) => (g.w === gw && g.h === gh ? g : { ...g, w: gw, h: gh })));
 }
 
-/** Muda a regra ou os campos de uma conexão. Trocar a regra limpa os campos que não são dela. */
+/** O remendo mudou alguma coisa? (Pra não criar passo no histórico à toa.) */
+const igual = <T extends object>(a: T, b: T): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Muda campos de uma peça. Trocar o tipo mantém o centro (as formas têm tamanhos diferentes) e as ligações, e tira
+ * o que o novo tipo não mostra no painel: o tempo no Início e no Fim, o responsável onde não há responsável.
+ * Nome vazio (ou só espaços) volta pro nome do tipo; tipo e posição nunca somem.
+ */
+export function mudarPeca(doc: Documento, id: string, patch: Partial<Omit<Peca, 'id'>>): Documento {
+  return com(
+    doc,
+    'pecas',
+    trocar(doc.pecas, id, (p) => {
+      const nova = remendar(p, patch);
+      nova.tipo ??= p.tipo;
+      nova.x ??= p.x;
+      nova.y ??= p.y;
+      if (nova.tipo !== p.tipo) {
+        const a = FORMAS[p.tipo];
+        const b = FORMAS[nova.tipo];
+        nova.x = naGrade(p.x + a.w / 2 - b.w / 2);
+        nova.y = naGrade(p.y + a.h / 2 - b.h / 2);
+        if (nova.tipo === 'inicio' || nova.tipo === 'fim') delete nova.tempo_s;
+        if (!ROTULO_RESPONSAVEL[nova.tipo]) delete nova.responsavel;
+      }
+      nova.nome = nova.nome?.trim() || FORMAS[nova.tipo].nome;
+      return igual(nova, p) ? p : nova;
+    }),
+  );
+}
+
+/**
+ * Muda a regra ou os campos de uma conexão. Trocar a regra limpa os campos que não são dela. "Depois de um tempo"
+ * sempre tem um tempo (zero, até a pessoa preencher) e "horário" sempre tem um lado: sem eles o documento não abre.
+ */
 export function mudarConexao(doc: Documento, id: string, patch: Partial<Omit<Conexao, 'id' | 'de' | 'para'>>): Documento {
-  return {
-    ...doc,
-    conexoes: trocar(doc.conexoes, id, (c) => {
+  return com(
+    doc,
+    'conexoes',
+    trocar(doc.conexoes, id, (c) => {
       let base: Conexao = c;
       if (patch.regra && patch.regra !== c.regra) {
         const { valor: _v, tempo_s: _t, horario: _h, ...resto } = c;
         base = resto;
-        if (patch.regra === 'horario' && !patch.horario) base = { ...base, horario: 'dentro' };
       }
-      return remendar(base, patch);
+      const nova = remendar(base, patch);
+      nova.regra ??= c.regra;
+      if (nova.regra === 'tempo' && nova.tempo_s === undefined) nova.tempo_s = 0;
+      if (nova.regra === 'horario' && !nova.horario) nova.horario = 'dentro';
+      return igual(nova, c) ? c : nova;
     }),
-  };
+  );
 }
 
-export const inverterConexao = (doc: Documento, id: string): Documento => ({ ...doc, conexoes: trocar(doc.conexoes, id, (c) => ({ ...c, de: c.para, para: c.de })) });
-export const mudarGrupo = (doc: Documento, id: string, patch: Partial<Pick<Grupo, 'nome' | 'cor'>>): Documento => ({ ...doc, grupos: trocar(doc.grupos, id, (g) => remendar(g, patch)) });
-export const mudarNota = (doc: Documento, id: string, patch: Partial<Pick<Nota, 'texto' | 'cor'>>): Documento => ({ ...doc, notas: trocar(doc.notas, id, (n) => remendar(n, patch)) });
+/** Inverte a direção. Se a de volta já existe, não faz nada: seriam duas ligações iguais (o que `ligar` recusa). */
+export function inverterConexao(doc: Documento, id: string): Documento {
+  const c = doc.conexoes.find((x) => x.id === id);
+  if (!c || c.de === c.para || doc.conexoes.some((x) => x.de === c.para && x.para === c.de)) return doc;
+  return com(doc, 'conexoes', trocar(doc.conexoes, id, () => ({ ...c, de: c.para, para: c.de })));
+}
+
+export const mudarGrupo = (doc: Documento, id: string, patch: Partial<Pick<Grupo, 'nome' | 'cor'>>): Documento =>
+  com(doc, 'grupos', trocar(doc.grupos, id, (g) => {
+    const novo = remendar(g, patch);
+    novo.nome = novo.nome?.trim() || 'Grupo';
+    return igual(novo, g) ? g : novo;
+  }));
+
+/** O texto da nota pode ficar vazio, mas não some do documento. */
+export const mudarNota = (doc: Documento, id: string, patch: Partial<Pick<Nota, 'texto' | 'cor'>>): Documento =>
+  com(doc, 'notas', trocar(doc.notas, id, (n) => {
+    const nova = remendar(n, patch);
+    nova.texto ??= '';
+    return igual(nova, n) ? n : nova;
+  }));
 
 export type Selecao = { tipo: 'peca' | 'conexao' | 'grupo' | 'nota'; id: string } | null;
 
 /** Apaga o que está selecionado. Peça leva junto as ligações dela; grupo deixa as peças. */
 export function apagar(doc: Documento, sel: NonNullable<Selecao>): Documento {
+  if (!existe(doc, sel)) return doc;
   if (sel.tipo === 'peca') return { ...doc, pecas: doc.pecas.filter((p) => p.id !== sel.id), conexoes: doc.conexoes.filter((c) => c.de !== sel.id && c.para !== sel.id) };
   if (sel.tipo === 'conexao') return { ...doc, conexoes: doc.conexoes.filter((c) => c.id !== sel.id) };
   if (sel.tipo === 'grupo') return { ...doc, grupos: doc.grupos.filter((g) => g.id !== sel.id) };

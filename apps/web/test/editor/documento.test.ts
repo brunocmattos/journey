@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { documentoVazio, type Documento } from '@journey/fluxo';
-import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, mudarConexao, mudarPeca, redimensionarGrupo } from '@/editor/documento';
+import { documentoVazio, lerDocumento, type Documento } from '@journey/fluxo';
+import { apagar, conteudoDoGrupo, criarGrupo, criarLigada, criarNota, criarPeca, duplicar, existe, inverterConexao, ligar, moverGrupo, moverPeca, mudarConexao, mudarNota, mudarPeca, redimensionarGrupo } from '@/editor/documento';
 
 const base = (): Documento => {
   let d = criarPeca(documentoVazio(), 'a', 'inicio', 95, 30);
@@ -38,7 +38,15 @@ describe('editor/documento', () => {
     let d = ligado(base(), 'c1', 'a', 'b');
     d = mudarConexao(d, 'c1', { regra: 'condicao', valor: 'pago' });
     d = ligado(d, 'c2', 'a', 'c');
-    expect(d.conexoes.map((c) => [c.regra, c.valor])).toEqual([['condicao', 'pago'], ['opcao', '2']]);
+    expect(d.conexoes.map((c) => [c.regra, c.valor])).toEqual([['condicao', 'pago'], ['opcao', '1']]);
+  });
+
+  it('número de opção não se repete: depois de apagar a 2 de 1, 2, 3, a próxima é a 2', () => {
+    let d = criarPeca(base(), 'x', 'fim', 700, 300);
+    d = ligado(ligado(ligado(d, 'k1', 'b', 'a'), 'k2', 'b', 'c'), 'k3', 'b', 'x');
+    d = apagar(d, { tipo: 'conexao', id: 'k2' });
+    d = ligado(d, 'k4', 'b', 'c');
+    expect(d.conexoes.filter((c) => c.de === 'b').map((c) => [c.id, c.valor])).toEqual([['k1', '1'], ['k3', '3'], ['k4', '2']]);
   });
 
   it('ligar recusa a mesma peça, ligação repetida e peça que não existe', () => {
@@ -74,6 +82,36 @@ describe('editor/documento', () => {
     d = mudarConexao(d, 'c1', { regra: 'horario' });
     expect(d.conexoes[0]).toEqual({ id: 'c1', de: 'a', para: 'b', regra: 'horario', horario: 'dentro' });
     expect(inverterConexao(d, 'c1').conexoes[0]).toMatchObject({ de: 'b', para: 'a' });
+  });
+
+  it('o que sai daqui sempre passa no lerDocumento (senão salvaria e não abriria mais)', () => {
+    let d = ligado(base(), 'c1', 'a', 'b');
+    d = mudarConexao(d, 'c1', { regra: 'tempo' });
+    expect(d.conexoes[0]).toMatchObject({ regra: 'tempo', tempo_s: 0 });
+    d = mudarConexao(d, 'c1', { regra: 'horario', horario: undefined });
+    expect(d.conexoes[0]).toMatchObject({ regra: 'horario', horario: 'dentro' });
+    d = mudarPeca(d, 'b', { nome: ' \t ' });
+    expect(d.pecas.find((p) => p.id === 'b')!.nome).toBe('Etapa');
+    d = mudarPeca(d, 'b', { tipo: undefined, x: undefined });
+    d = criarNota(d, 'n', 0, 0);
+    d = mudarNota(d, 'n', { texto: '' });
+    expect(lerDocumento(d).problemas).toEqual([]);
+  });
+
+  it('virar Fim tira o tempo e o responsável que o painel não mostra mais', () => {
+    let d = mudarPeca(base(), 'b', { tempo_s: 3600, responsavel: 'k1', cor: '#fff' });
+    d = mudarPeca(d, 'b', { tipo: 'fim' });
+    expect(d.pecas.find((p) => p.id === 'b')).toEqual({ id: 'b', tipo: 'fim', nome: 'Etapa', x: 320, y: 0, cor: '#fff' });
+  });
+
+  it('sem mudança, o mesmo documento (o histórico não ganha passo vazio)', () => {
+    const d = ligado(base(), 'c1', 'a', 'b');
+    expect(moverPeca(d, 'b', 302, 3)).toBe(d);
+    expect(mudarPeca(d, 'b', { nome: 'Etapa' })).toBe(d);
+    expect(mudarPeca(d, 'zz', { nome: 'X' })).toBe(d);
+    expect(mudarConexao(d, 'c1', { regra: 'sempre' })).toBe(d);
+    expect(apagar(d, { tipo: 'peca', id: 'zz' })).toBe(d);
+    expect(inverterConexao(ligado(d, 'c2', 'b', 'a'), 'c2')).toEqual(ligado(d, 'c2', 'b', 'a'));
   });
 
   it('grupo leva junto o que tem o centro dentro dele, a partir de onde o arrasto começou', () => {
