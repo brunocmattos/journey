@@ -69,6 +69,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **Gestos por ponteiro:** guarde o `pointerId` e ignore os outros; `pointercancel` e `lostpointercapture` encerram o gesto (o sistema pode tomar o toque e o `pointerup` nunca chega).
 - **Enter com foco num botão ou link é do botão:** o atalho de renomear (Enter) ignora `button, a, [role=button]…`; a peça trata o próprio Enter no quadro. Botão com só `onPointerDown` não funciona no teclado: o `onClick` com `e.detail === 0` cobre teclado e leitor de tela. Pelo teclado, uma forma da barra cria a peça no centro do quadro visível, já selecionada e com foco (Enter renomeia).
 - **`beforeunload` com o salvamento parado** (conflito, trava, recusa) não pede confirmação: senão "Recarregar" abria o diálogo "sair do site?".
+- **Rode o pgTAP antes da ponta a ponta** (ou num banco recém-criado): o `journey.test.sql` (da v1) cria a versão 2 de toda jornada do banco, e os testes de importar da ponta a ponta deixam jornadas com versão 2; aí o pgTAP para em `jornada_versoes_jornada_id_numero_key`. Não é regressão da etapa B.
 - **Hora da trava no fuso de São Paulo** (`timeZone: FUSO`): o servidor e o navegador de teste rodam em UTC.
 - **Um canal chamado `constructor`** acharia a função do `Object` em `estilo.canais[chave]`: a cor só vale se for própria do objeto (`Object.hasOwn`). E o `ESTILO_PADRAO` é congelado: quem quer mudar, copia.
 - **`naGrade` devolve 0, não -0:** `Math.round(-0.1) * 10` é `-0`, e o `toEqual` do Vitest diferencia.
