@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 76 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 76 testes, núcleo 253 e app 184 (sem mudança), pgTAP 136 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -48,6 +48,8 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **Modelos congelados; um fluxo novo nasce de `instanciarModelo`**, que copia o documento e troca os responsáveis (ids locais do modelo) pelos cadastros da empresa | Editar um fluxo não pode mudar o modelo pra quem vier depois, e o banco só aceita responsável que seja cadastro da empresa | Usar o documento do modelo direto: muda o modelo na mesma sessão e o `salvar_fluxo` recusa |
 | **No banco, o documento é `jsonb` numa coluna só, com `check` da forma** (`formato` `journey/2` e as quatro listas) | O editor salva o documento inteiro; o servidor confere só a forma e os responsáveis. A validação completa é a do pacote, no app | Tabelas de peças e conexões: cada arrasto viraria dezenas de linhas |
 | **Salvar só pela função `salvar_fluxo`**, com a revisão que o editor abriu (40001 se outra pessoa salvou), a trava (P0001) e responsáveis que sejam cadastros da empresa (22023) | Sem edição simultânea na v1 (spec 16): a trava avisa, a revisão garante que ninguém sobrescreve sem saber | Update direto da coluna: sobrescreve calado |
+| **O banco repete os limites do app** (2.000 peças, 6.000 conexões, documento de até 8 MB, estilo de até 20 KB) e guarda a contagem de peças numa coluna (`total_pecas`) | Quem chama a API direto não passa pelo `lerDocumento`; e a lista de fluxos não precisa abrir cada documento | Confiar só no app: um documento de 200 mil peças entraria e deixaria a lista lenta |
+| **Revisão nula é recusada** (`is distinct from`) | `2 <> null` é null e deixaria sobrescrever calado | Comparar com `<>` |
 | **Trava com validade** (`pegar_trava` renova; vencida passa pra quem pede) | Fechar a aba sem soltar não pode prender o fluxo | Trava sem validade |
 | **"Onde é usado" (`fluxo_cadastros`) refeito a cada salvamento**, com `on delete restrict` no cadastro | Apagar um cadastro em uso quebraria os fluxos calado | Procurar no `jsonb` na hora de apagar |
 | **Canal não se apaga, se arquiva; tipo de cadastro padrão não se apaga** | Fluxos antigos continuam apontando pra eles | Apagar e deixar órfão |
@@ -57,6 +59,8 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 - **`noUncheckedIndexedAccess` está ligado no pacote:** `lista[0]` é `T | undefined`. Nos testes, use `!` onde o valor certamente existe; no código, trate o `undefined`.
 - **`(a ?? '').toLowerCase()`** precisa dos parênteses: `a ?? ''.toLowerCase()` compila e faz outra coisa.
 - **pgTAP não aceita `delete … returning` dentro de `with`** num `select`: apague num comando separado e confira com `ok(exists(…))`.
+- **O Postgres não garante a ordem do `and`:** `jsonb_typeof(x) = 'array' and jsonb_array_length(x) <= 2000` pode chamar `jsonb_array_length` num escalar e dar erro. Use `case when … then … else false end`.
+- **Apagar a empresa com cadastro em uso:** a cascata chega em `cadastros` antes de limpar `fluxo_cadastros` (que restringe). Um gatilho `before delete` em `empresas` limpa o "onde é usado" antes.
 - **`check` de `jsonb` com chave faltando dá `null`, e `null` passa no `check`:** a forma do documento vai dentro de `coalesce(…, false)`.
 - **`Date.UTC` normaliza calado:** 30 de fevereiro vira 2 de março e 24:00 vira o dia seguinte. `lerQuando` e as datas de feriado só aceitam o que volta igual depois de `toISOString` (veio da revisão da tarefa 1).
 - **Hora de parede:** `lerQuando('2026-11-23T10:30')` guarda os números como UTC e o relógio lê com `getUTC*`. Assim o resultado não depende do fuso da máquina que roda o teste.
@@ -2046,7 +2050,7 @@ git commit -m "fluxo: modelos prontos (WhatsApp, crédito, e-mail, URA) e export
 -- Journey v2 (etapa A): canais, cadastros, fluxos, salvar, trava e versões.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(46);
 
 insert into auth.users (id, email, aud, role, email_confirmed_at) values
   ('00000000-0000-0000-0000-0000000000f1', 'ana@exemplo.com', 'authenticated', 'authenticated', now()),
@@ -2109,7 +2113,14 @@ select is(public.salvar_fluxo(current_setting('teste.f')::uuid, 0,
   '{"velocidade":2}'), 1, 'salva e devolve a revisão nova');
 select is((select array_agg(cadastro_id::text) from public.fluxo_cadastros), array[current_setting('teste.fila')], 'o "onde é usado" vem do documento');
 select is((select estilo from public.fluxos), '{"velocidade":2}'::jsonb, 'e o estilo junto');
+select is((select pecas from public.fluxos_resumo), 1, 'a lista diz quantas peças, sem abrir o documento');
+select throws_ok($$ update public.fluxos_resumo set nome = 'x' $$, '42501', null, 'a lista só se lê');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 0, pg_temp.doc()) $$, '40001', null, 'revisão velha: outra pessoa salvou no meio');
+select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, null, pg_temp.doc()) $$, '40001', null, 'sem revisão também não sobrescreve');
+select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1,
+  pg_temp.doc((select jsonb_agg(jsonb_build_object('id', 'p' || g, 'tipo', 'etapa', 'nome', 'x', 'x', 0, 'y', 0)) from generate_series(1, 2001) g))) $$,
+  '23514', null, 'mais de 2.000 peças não entra');
+select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, pg_temp.doc(), '[]') $$, '23514', null, 'estilo tem que ser um objeto');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, '{"formato":"journey/1","pecas":[]}') $$, '23514', null, 'documento que não é journey/2 não entra');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, '{"formato":"journey/2"}') $$, '23514', null, 'nem documento sem as listas');
 select throws_ok($$ select public.salvar_fluxo(current_setting('teste.f')::uuid, 1, pg_temp.doc('[{"id":"a","tipo":"etapa","nome":"x","x":0,"y":0,"responsavel":"maria"}]')) $$, '22023', null, 'responsável que não é cadastro não entra');
@@ -2137,6 +2148,24 @@ select is((public.pegar_trava(current_setting('teste.f')::uuid) ->> 'ok')::boole
 -- Versões.
 select is(public.marcar_versao(current_setting('teste.f')::uuid, 'antes do horário novo'), 1, 'marca a versão 1');
 select is((select documento from public.fluxo_versoes), (select documento from public.fluxos), 'a versão guarda o documento de agora');
+
+
+-- Depois da revisão: maiúsculas, mais versões, soltar a trava, membro que sai, empresa que sai.
+select is(public.salvar_fluxo(current_setting('teste.f')::uuid, 1,
+  pg_temp.doc(jsonb_build_array(jsonb_build_object('id', 'a', 'tipo', 'atendimento', 'nome', 'Cobra', 'x', 0, 'y', 0, 'responsavel', upper(current_setting('teste.fila')))))),
+  2, 'id de cadastro em maiúsculas também vale');
+select is(public.marcar_versao(current_setting('teste.f')::uuid, 'depois'), 2, 'a próxima versão é a 2');
+select public.soltar_trava(current_setting('teste.f')::uuid);
+select is((select trava_por from public.fluxos), null, 'quem tem a trava solta');
+select pg_temp.entrar('00000000-0000-0000-0000-0000000000f1');
+select public.pegar_trava(current_setting('teste.f')::uuid);
+reset role;
+delete from public.membros where usuario_id = '00000000-0000-0000-0000-0000000000f1';
+set local role authenticated;
+select pg_temp.entrar('00000000-0000-0000-0000-0000000000f2');
+select is((public.pegar_trava(current_setting('teste.f')::uuid) ->> 'ok')::boolean, true, 'trava de quem saiu da empresa não vale');
+reset role;
+select lives_ok($$ delete from public.empresas where id = current_setting('teste.a')::uuid $$, 'empresa com cadastro em uso se apaga, com tudo dela');
 
 select * from finish();
 rollback;
@@ -2243,6 +2272,8 @@ create table public.fluxos (
   documento jsonb not null default '{"formato":"journey/2","pecas":[],"conexoes":[],"grupos":[],"notas":[]}',
   -- Estilo e animação do fluxo (o que muda em relação ao padrão).
   estilo jsonb not null default '{}' check (jsonb_typeof(estilo) = 'object'),
+  -- Quantas peças o documento tem (pra lista, sem abrir o documento). Só salvar_fluxo mexe.
+  total_pecas int not null default 0,
   -- Meta de tempo do fluxo, em segundos (o diagnóstico avisa quando o caminho mais longo passa dela).
   meta_s int check (meta_s > 0),
   -- Sobe a cada salvamento: quem salva manda a revisão que abriu; se mudou no meio, o banco recusa.
@@ -2256,13 +2287,15 @@ create table public.fluxos (
   trava_ate timestamptz,
   unique (id, empresa_id),
   foreign key (empresa_id, canal) references public.canais (empresa_id, chave),
-  -- coalesce: chave faltando dá null, e null passaria no check.
+  -- coalesce: chave faltando dá null, e null passaria no check. case: o Postgres não garante a ordem do and. Os limites são os de LIMITES (packages/fluxo/src/validar.ts).
   constraint fluxos_documento_forma check (coalesce(
     documento ->> 'formato' = 'journey/2'
-    and jsonb_typeof(documento -> 'pecas') = 'array'
-    and jsonb_typeof(documento -> 'conexoes') = 'array'
-    and jsonb_typeof(documento -> 'grupos') = 'array'
-    and jsonb_typeof(documento -> 'notas') = 'array', false))
+    and case when jsonb_typeof(documento -> 'pecas') = 'array' then jsonb_array_length(documento -> 'pecas') <= 2000 else false end
+    and case when jsonb_typeof(documento -> 'conexoes') = 'array' then jsonb_array_length(documento -> 'conexoes') <= 6000 else false end
+    and case when jsonb_typeof(documento -> 'grupos') = 'array' then jsonb_array_length(documento -> 'grupos') <= 500 else false end
+    and case when jsonb_typeof(documento -> 'notas') = 'array' then jsonb_array_length(documento -> 'notas') <= 500 else false end, false)),
+  constraint fluxos_documento_tamanho check (octet_length(documento::text) <= 8000000),
+  constraint fluxos_estilo_tamanho check (octet_length(estilo::text) <= 20000)
 );
 create index fluxos_empresa on public.fluxos (empresa_id, editado_em desc);
 
@@ -2291,11 +2324,35 @@ create table public.fluxo_cadastros (
   foreign key (cadastro_id, empresa_id) references public.cadastros (id, empresa_id) on delete restrict
 );
 create index fluxo_cadastros_cadastro on public.fluxo_cadastros (cadastro_id);
+create index fluxo_versoes_empresa on public.fluxo_versoes (empresa_id);
+
+-- Apagar a empresa apaga tudo dela. O "onde é usado" sai antes, senão o cadastro em uso barraria a cascata.
+create function public.limpar_uso_da_empresa() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.fluxo_cadastros where empresa_id = old.id;
+  return old;
+end;
+$$;
+create trigger limpar_uso_da_empresa before delete on public.empresas for each row execute function public.limpar_uso_da_empresa();
+revoke execute on function public.limpar_uso_da_empresa() from public, anon, authenticated;
+
+-- Quem mudou o fluxo por último, inclusive nome, canal e meta (que a tela grava direto).
+create function public.carimbar_fluxo() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.editado_em := now();
+  new.editado_por := coalesce(auth.uid(), new.editado_por);
+  return new;
+end;
+$$;
+create trigger carimbar_fluxo before update of nome, descricao, canal, meta_s, documento, estilo on public.fluxos
+  for each row execute function public.carimbar_fluxo();
 
 -- A lista de fluxos sem trazer os documentos: só o tamanho. security_invoker: valem as regras de quem pergunta.
 create view public.fluxos_resumo with (security_invoker = true) as
   select f.id, f.empresa_id, f.nome, f.descricao, f.canal, f.editado_em, f.editado_por,
-    jsonb_array_length(f.documento -> 'pecas') as pecas,
+    f.total_pecas as pecas,
     case when f.trava_ate > now() then f.trava_por end as editando_por
   from public.fluxos f;
 
@@ -2332,7 +2389,9 @@ create policy "membro vê onde é usado" on public.fluxo_cadastros for select to
 
 -- Por coluna: o que a tela grava direto. Documento, revisão, trava e versões só pelas funções abaixo.
 revoke all on public.canais, public.tipos_cadastro, public.cadastros, public.fluxos, public.fluxo_versoes, public.fluxo_cadastros, public.fluxos_resumo from anon;
-revoke insert, update, delete, truncate, trigger, references on
+revoke all on public.fluxos_resumo from authenticated;
+grant select on public.fluxos_resumo to authenticated;
+revoke insert, update, delete, truncate, trigger, references, maintain on
   public.canais, public.tipos_cadastro, public.cadastros, public.fluxos, public.fluxo_versoes, public.fluxo_cadastros from authenticated;
 grant insert (empresa_id, chave, nome, cor, icone, ordem) on public.canais to authenticated;
 grant update (nome, cor, icone, ordem, arquivado) on public.canais to authenticated;
@@ -2361,14 +2420,15 @@ begin
   if not found or not public.eh_membro(v.empresa_id) then
     raise exception 'fluxo não encontrado' using errcode = 'P0002';
   end if;
-  if v.trava_por is not null and v.trava_por <> auth.uid() and v.trava_ate > now() then
+  if v.trava_por is not null and v.trava_por <> auth.uid() and v.trava_ate > now()
+    and exists (select 1 from public.membros m where m.empresa_id = v.empresa_id and m.usuario_id = v.trava_por) then
     raise exception 'outra pessoa está editando este fluxo' using errcode = 'P0001';
   end if;
-  if v.revisao <> p_revisao then
+  if v.revisao is distinct from p_revisao then
     raise exception 'o fluxo mudou desde que foi aberto: recarregue' using errcode = '40001';
   end if;
   if jsonb_typeof(p_documento -> 'pecas') = 'array' then
-    select array_agg(distinct p ->> 'responsavel') into v_resp
+    select array_agg(distinct lower(p ->> 'responsavel')) into v_resp
     from jsonb_array_elements(p_documento -> 'pecas') p
     where coalesce(p ->> 'responsavel', '') <> '';
   end if;
@@ -2383,6 +2443,7 @@ begin
   update public.fluxos set
     documento = p_documento,
     estilo = coalesce(p_estilo, estilo),
+    total_pecas = coalesce(jsonb_array_length(case when jsonb_typeof(p_documento -> 'pecas') = 'array' then p_documento -> 'pecas' end), 0),
     revisao = revisao + 1,
     editado_por = auth.uid(),
     editado_em = now(),
@@ -2407,7 +2468,8 @@ begin
   if not found or not public.eh_membro(v.empresa_id) then
     raise exception 'fluxo não encontrado' using errcode = 'P0002';
   end if;
-  if v.trava_por is null or v.trava_por = auth.uid() or v.trava_ate <= now() then
+  if v.trava_por is null or v.trava_por = auth.uid() or v.trava_ate <= now()
+    or not exists (select 1 from public.membros m where m.empresa_id = v.empresa_id and m.usuario_id = v.trava_por) then
     update public.fluxos set trava_por = auth.uid(), trava_ate = v_ate where id = p_fluxo;
     return jsonb_build_object('ok', true, 'ate', v_ate);
   end if;
@@ -2448,7 +2510,7 @@ grant execute on function public.salvar_fluxo(uuid, int, jsonb, jsonb), public.p
 - [ ] **Passo 4: aplicar e rodar**
 
 Run: `npx supabase db reset && npm run banco:testes`
-Expected: `Files=3, Tests=126` e `Result: PASS`.
+Expected: `Files=3, Tests=136` e `Result: PASS`.
 
 - [ ] **Passo 5: a v1 continua de pé**
 
@@ -2545,7 +2607,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 76, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
+Expected: fluxo 76, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=136`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
