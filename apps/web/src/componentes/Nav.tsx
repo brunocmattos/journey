@@ -7,9 +7,8 @@ export function Nav({ empresaId }: { empresaId: string }) {
   const atual = usePathname();
   const base = `/e/${empresaId}`;
   const itens = [
-    { href: base, rotulo: 'Jornadas', ativo: atual === base || atual.startsWith(`${base}/j/`) },
-    { href: `${base}/importar`, rotulo: 'Importar', ativo: atual.startsWith(`${base}/importar`) },
-    { href: `${base}/catalogo`, rotulo: 'Catálogo', ativo: atual.startsWith(`${base}/catalogo`) },
+    { href: base, rotulo: 'Fluxos', ativo: atual === base || atual.startsWith(`${base}/f/`) },
+    { href: `${base}/cadastros`, rotulo: 'Cadastros', ativo: atual.startsWith(`${base}/cadastros`) },
     { href: `${base}/membros`, rotulo: 'Membros', ativo: atual.startsWith(`${base}/membros`) },
   ];
   return (

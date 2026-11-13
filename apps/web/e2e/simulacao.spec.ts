@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { empresaComImport, entrar, emailNovo } from './apoio';
+import { empresaComImport, entrar, emailNovo, irPara } from './apoio';
 
 const PEQUENA = join(import.meta.dirname, 'fixtures', 'pequena.json');
 /** A mesma central sem a opção 1 do menu (Vendas): o cenário que passava por ela muda. */
@@ -90,7 +90,7 @@ test('depois de um import que tira a opção, a decisão mostra a diferença; ap
   await ateAtendido(page);
   await salvar(page, 'Vendas');
 
-  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await irPara(page, 'importar');
   await page.getByLabel('Arquivos').setInputFiles([SEM_VENDAS]);
   await page.getByRole('button', { name: 'Analisar' }).click();
   await expect(page.getByText('pode confirmar')).toBeVisible({ timeout: 30_000 });

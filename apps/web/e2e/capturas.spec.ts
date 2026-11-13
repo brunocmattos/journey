@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { entrar, emailNovo } from './apoio';
+import { entrar, emailNovo, irPara } from './apoio';
 
 const CENTRAL = join(import.meta.dirname, '..', '..', '..', 'packages', 'nucleo', 'test', 'fixtures', 'central');
 const PASTA = process.env.CAPTURAS ?? '';
@@ -14,7 +14,7 @@ test('capturas da tela', async ({ page, request, browser }) => {
   await entrar(page, request, emailNovo('captura'));
   await page.getByLabel('Nome da empresa').fill('Central de teste');
   await page.getByRole('button', { name: 'Criar' }).click();
-  await page.getByRole('link', { name: 'Importar' }).first().click();
+  await irPara(page, 'importar');
   await page.getByLabel('Arquivos').setInputFiles(readdirSync(CENTRAL).filter((n) => n.endsWith('.csv')).map((n) => join(CENTRAL, n)));
   await page.getByRole('button', { name: 'Analisar' }).click();
   await expect(page.getByRole('button', { name: 'Confirmar import' })).toBeVisible({ timeout: 30_000 });
