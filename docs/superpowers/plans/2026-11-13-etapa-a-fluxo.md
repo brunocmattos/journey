@@ -15,7 +15,7 @@
 ## Antes de começar
 
 - **Branch:** `claude/journey-etapa-3-public-links-5wx03t`, que já tem o spec v2 (PR brunocmattos/journey#4 em rascunho). Este plano e o código entram no mesmo PR.
-- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 66 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
+- **Todo o código deste plano já foi escrito e testado num ensaio**, sobre esse branch (`10104c3`): `@journey/fluxo` 72 testes, núcleo 253 e app 184 (sem mudança), pgTAP 126 (eram 90), `npm run typecheck` limpo. Copie os arquivos exatamente como estão. Se um teste falhar, investigue antes de mudar o teste.
 - **Docker e Supabase local:** como nas etapas anteriores. Se `docker info` falhar, `sudo containerd > /tmp/containerd.log 2>&1 &` e depois `sudo dockerd --containerd=/run/containerd/containerd.sock > /tmp/dockerd.log 2>&1 &`, e espere responder. Depois `npm install` e `npm run banco`.
 - **Commits:** crie `.git/atribuicao.txt` uma vez, com as duas linhas de atribuição da sessão (`Co-Authored-By: …` e `Claude-Session: …`). Todo commit usa `-m "$(cat .git/atribuicao.txt)"` como segundo parágrafo da mensagem.
 - **Patches:** arquivo novo vem inteiro. Arquivo que já existe vem como diff; aplique da raiz do repositório salvando o bloco num arquivo e rodando `git apply <arquivo>` (ou à mão, linha por linha).
@@ -43,7 +43,8 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | **`simular(…, escolhas)` refaz do zero** com a lista de conexões escolhidas | É como a tela vai voltar um passo e como um cenário salvo é reproduzido; sem estado escondido | Guardar e restaurar o estado do motor |
 | **Chave do achado = tipo + ids** (`beco_sem_saida:e`, `opcoes_repetidas:d:opcao:1`) | Renomear a peça não muda a chave; "marcar como intencional" sobrevive (como na v1) | Chave pelo texto |
 | **Ciclo sem saída pelo algoritmo de Tarjan** (componentes fortemente conexos) | Acha todos os ciclos fechados de uma vez, em tempo linear: 500 peças em menos de 100 ms | Procurar ciclos a partir de cada peça: quadrático |
-| **"Passou do prazo" usa o caminho mais longo sem repetir peça** até um Fim, contra a meta do fluxo (`meta_s`) | É o pior caso que um cliente vive; com ciclo, a primeira volta já conta | Média dos caminhos: esconde o pior |
+| **"Passou do prazo" usa o caminho mais longo sem repetir peça** até um Fim, contra a meta do fluxo (`meta_s`): exato e linear quando o fluxo não tem ciclo (ordem topológica); com ciclo, uma busca por Início com teto, que avisa quando é estimativa | É o pior caso que um cliente vive; sem ciclo, o resultado não depende da ordem do documento | Média dos caminhos: esconde o pior. Busca com um teto só pra todos os Inícios: o segundo Início nunca era olhado |
+| **O diagnóstico segue o motor:** Fim encerra (as saídas dele não levam ninguém, `fim_com_saida`); peça só com saídas de horário precisa dos dois lados ou de um "senão" (`horario_sem_lado`); saídas iguais são um achado por grupo | O que o diagnóstico diz tem que bater com o que a água faz no play | Olhar só o desenho: peça "alcançável" atrás de um Fim, decisão de horário chamada de "sem escolha" |
 | **No banco, o documento é `jsonb` numa coluna só, com `check` da forma** (`formato` `journey/2` e as quatro listas) | O editor salva o documento inteiro; o servidor confere só a forma e os responsáveis. A validação completa é a do pacote, no app | Tabelas de peças e conexões: cada arrasto viraria dezenas de linhas |
 | **Salvar só pela função `salvar_fluxo`**, com a revisão que o editor abriu (40001 se outra pessoa salvou), a trava (P0001) e responsáveis que sejam cadastros da empresa (22023) | Sem edição simultânea na v1 (spec 16): a trava avisa, a revisão garante que ninguém sobrescreve sem saber | Update direto da coluna: sobrescreve calado |
 | **Trava com validade** (`pegar_trava` renova; vencida passa pra quem pede) | Fechar a aba sem soltar não pode prender o fluxo | Trava sem validade |
@@ -70,7 +71,7 @@ Cada uma foi comparada com a alternativa antes de entrar aqui.
 | `packages/fluxo/src/validar.ts` | `lerDocumento`: confere um documento vindo de fora e devolve uma cópia limpa |
 | `packages/fluxo/src/indice.ts` | Saídas e entradas de cada peça; o texto de cada regra |
 | `packages/fluxo/src/motor.ts` | `Execucao`, `executar`, `simular` e os eventos |
-| `packages/fluxo/src/diagnostico.ts` | `diagnosticar`: os treze tipos de achado |
+| `packages/fluxo/src/diagnostico.ts` | `diagnosticar`: os quinze tipos de achado |
 | `packages/fluxo/src/modelos.ts` | Suporte no WhatsApp, Esteira de crédito, SAC por e-mail e URA telefônica |
 | `packages/fluxo/src/index.ts` | O que o pacote exporta |
 | `packages/fluxo/test/*.ts` | Testes (Vitest) e os construtores `peca`, `liga`, `doc` |
@@ -1335,6 +1336,63 @@ describe('diagnóstico', () => {
     expect(a!.texto).toContain('3 h');
   });
 
+  it('Fim encerra: as saídas dele não levam ninguém', () => {
+    const d = doc([peca('i', 'inicio'), peca('f', 'fim'), peca('x', 'etapa'), peca('g', 'fim')], [liga('i', 'f'), liga('f', 'x'), liga('x', 'g')]);
+    expect(chaves(d)).toEqual(['inalcancavel:g', 'inalcancavel:x', 'fim_com_saida:f']);
+  });
+
+  it('Início sem saída é um achado só', () => {
+    expect(chaves(doc([peca('i', 'inicio')]))).toEqual(['beco_sem_saida:i']);
+  });
+
+  it('decisão só de horário precisa dos dois lados (ou de um senão)', () => {
+    const pecas = [peca('i', 'inicio'), peca('h', 'decisao', { responsavel: 'h' }), peca('a', 'fim'), peca('b', 'fim')];
+    expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' })]), { cadastros: [HORARIO] })).toEqual(['horario_sem_lado:h:fora', 'inalcancavel:b']);
+    expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' }), liga('h', 'b', { regra: 'senao' })]), { cadastros: [HORARIO] })).toEqual([]);
+    expect(chaves(doc(pecas, [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' }), liga('h', 'b', { regra: 'horario', horario: 'fora' })]))).toEqual([]);
+    expect(chaves(doc([peca('i', 'inicio'), peca('h', 'decisao'), peca('a', 'fim')], [liga('i', 'h'), liga('h', 'a', { regra: 'horario', horario: 'dentro' })]))).toEqual(['horario_sem_cadastro:h', 'horario_sem_lado:h:fora']);
+  });
+
+  it('saídas iguais: um achado por grupo, inclusive "senão" repetido', () => {
+    const pecas = [peca('i', 'inicio'), peca('d', 'decisao'), peca('a', 'fim'), peca('b', 'fim'), peca('c', 'fim')];
+    const tres = doc(pecas, [liga('i', 'd'), ...['a', 'b', 'c'].map((x) => liga('d', x, { regra: 'opcao', valor: '1' }))]);
+    expect(diagnosticar(tres)).toEqual([expect.objectContaining({ chave: 'opcoes_repetidas:d:opcao:1', refs: ['d', 'd>a', 'd>b', 'd>c'] })]);
+    const senoes = doc(pecas, [liga('i', 'd'), liga('d', 'a', { regra: 'condicao', valor: 'pago' }), liga('d', 'b', { regra: 'senao' }), liga('d', 'c', { regra: 'senao' })]);
+    expect(chaves(senoes)).toEqual(['opcoes_repetidas:d:senao']);
+  });
+
+  describe('caminho mais longo com muitos caminhos', () => {
+    // De A, 20 decisões em losango (2^20 caminhos, todos rápidos); de B, um atendimento de 10 dias.
+    const losangos = (comVolta: boolean) => {
+      const pecas = [peca('A', 'inicio'), peca('B', 'inicio'), peca('lento', 'atendimento', { responsavel: 'k', tempo_s: 10 * 86400 }), peca('f', 'fim')];
+      const conexoes = [liga('B', 'lento'), liga('lento', 'f'), liga('A', 's0')];
+      for (let k = 0; k < 20; k++) {
+        pecas.push(peca(`s${k}`, 'decisao'), peca(`a${k}`, 'etapa'), peca(`b${k}`, 'etapa'));
+        const prox = k === 19 ? 'f' : `s${k + 1}`;
+        conexoes.push(liga(`s${k}`, `a${k}`, { regra: 'opcao', valor: '1' }), liga(`s${k}`, `b${k}`, { regra: 'opcao', valor: '2' }), liga(`a${k}`, prox), liga(`b${k}`, prox));
+      }
+      if (comVolta) conexoes.push(liga('a19', 's0', { regra: 'opcao', valor: '9' }));
+      return doc(pecas, conexoes);
+    };
+    const invertido = (d: ReturnType<typeof doc>) => ({ ...d, pecas: [...d.pecas].reverse(), conexoes: [...d.conexoes].reverse() });
+    it('sem ciclo é exato e não depende da ordem do documento', () => {
+      const d = losangos(false);
+      for (const x of [d, invertido(d)]) {
+        const a = diagnosticar(x, { meta_s: 86400 }).find((y) => y.tipo === 'passou_do_prazo')!;
+        expect(a.refs).toEqual(['B', 'lento', 'f']);
+        expect(a.texto).not.toContain('estimativa');
+      }
+    });
+    it('com ciclo, cada Início tem sua busca; no teto, avisa que é estimativa', () => {
+      const d = losangos(true);
+      for (const x of [d, invertido(d)]) {
+        const a = diagnosticar(x, { meta_s: 86400 }).find((y) => y.tipo === 'passou_do_prazo')!;
+        expect(a.refs).toEqual(['B', 'lento', 'f']);
+        expect(a.texto).toContain('estimativa');
+      }
+    });
+  });
+
   it('ordem: grave, alerta, observação; a chave não depende do nome', () => {
     const d = doc([peca('i', 'inicio'), peca('e', 'etapa', { nome: 'X' }), peca('s', 'atendimento'), peca('f', 'fim')], [liga('i', 'e')]);
     const g = diagnosticar(d).map((a) => a.gravidade);
@@ -1373,7 +1431,7 @@ Expected: FAIL, `Failed to resolve import "../src/diagnostico"`.
 import { camposHorario, type Cadastro } from './cadastros';
 import { indexar, type Indice } from './indice';
 import { formatarTempo } from './relogio';
-import type { Documento } from './documento';
+import type { Conexao, Documento } from './documento';
 
 export type Gravidade = 'grave' | 'alerta' | 'observacao';
 
@@ -1397,13 +1455,17 @@ export interface OpcoesDiagnostico {
 
 const ORDEM: Record<Gravidade, number> = { grave: 0, alerta: 1, observacao: 2 };
 
+/** As saídas que a água usa: um Fim encerra a jornada, então as saídas dele não levam a lugar nenhum. */
+const proximas = (idx: Indice, id: string): Conexao[] => (idx.pecas.get(id)!.tipo === 'fim' ? [] : idx.saidas.get(id)!);
+const tempoDa = (c: Conexao): number => (c.regra === 'tempo' ? (c.tempo_s ?? 0) : 0);
+
 /** De onde cada id chega andando pelas conexões. */
 function alcance(idx: Indice, origens: readonly string[], para: 'frente' | 'tras'): Set<string> {
   const vistos = new Set<string>(origens);
   const fila = [...origens];
   while (fila.length) {
     const id = fila.pop()!;
-    const prox = para === 'frente' ? idx.saidas.get(id)!.map((c) => c.para) : idx.entradas.get(id)!.map((c) => c.de);
+    const prox = para === 'frente' ? proximas(idx, id).map((c) => c.para) : idx.entradas.get(id)!.filter((c) => idx.pecas.get(c.de)!.tipo !== 'fim').map((c) => c.de);
     for (const p of prox) if (!vistos.has(p)) { vistos.add(p); fila.push(p); }
   }
   return vistos;
@@ -1421,7 +1483,7 @@ function ciclos(idx: Indice): string[][] {
       const topo = trabalho[trabalho.length - 1]!;
       const [v, i] = topo;
       if (i === 0) { indice.set(v, n); baixo.set(v, n); n++; pilha.push(v); naPilha.add(v); }
-      const saidas = idx.saidas.get(v)!;
+      const saidas = proximas(idx, v);
       if (i < saidas.length) {
         topo[1]++;
         const w = saidas[i]!.para;
@@ -1435,45 +1497,104 @@ function ciclos(idx: Indice): string[][] {
         const comp: string[] = [];
         let w: string;
         do { w = pilha.pop()!; naPilha.delete(w); comp.push(w); } while (w !== v);
-        if (comp.length > 1 || idx.saidas.get(v)!.some((c) => c.para === v)) achados.push(comp.sort());
+        if (comp.length > 1 || proximas(idx, v).some((c) => c.para === v)) achados.push(comp.sort());
       }
     }
   }
   return achados;
 }
 
-/** O caminho mais demorado de algum Início até algum Fim, sem repetir peça (com um teto de buscas pra fluxo grande). */
-function caminhoMaisLongo(idx: Indice, inicios: readonly string[]): { tempo_s: number; pecas: string[] } | null {
-  let melhor: { tempo_s: number; pecas: string[] } | null = null;
-  let buscas = 0;
-  // Busca em profundidade sem recursão (fluxo comprido não estoura a pilha): cada nível é uma peça do caminho,
-  // o tempo depois dela e a próxima saída a tentar.
-  const caminho: { id: string; tempo: number; saida: number }[] = [];
-  const noCaminho = new Set<string>();
-  const entrar = (id: string, tempo: number) => {
-    buscas++;
-    const p = idx.pecas.get(id)!;
-    const agora = tempo + (p.tempo_s ?? 0);
-    if (p.tipo === 'fim') {
-      if (!melhor || agora > melhor.tempo_s) melhor = { tempo_s: agora, pecas: [...caminho.map((n) => n.id), id] };
-      return;
-    }
-    noCaminho.add(id);
-    caminho.push({ id, tempo: agora, saida: 0 });
-  };
-  for (const i of inicios) {
-    entrar(i, 0);
-    while (caminho.length && buscas <= 50_000) {
-      const topo = caminho[caminho.length - 1]!;
-      const c = idx.saidas.get(topo.id)![topo.saida++];
-      if (!c) { caminho.pop(); noCaminho.delete(topo.id); continue; }
-      if (!noCaminho.has(c.para)) entrar(c.para, topo.tempo + (c.regra === 'tempo' ? (c.tempo_s ?? 0) : 0));
-    }
-    caminho.length = 0;
-    noCaminho.clear();
-  }
-  return melhor;
+interface Caminho {
+  tempo_s: number;
+  pecas: string[];
+  /** A busca parou no teto: pode haver um caminho mais longo que não foi olhado. */
+  estimado: boolean;
 }
+
+/** Sem ciclo, o caminho mais longo é exato e linear: ordem topológica e, de trás pra frente, o melhor até um Fim. */
+function caminhoSemCiclo(idx: Indice, inicios: readonly string[]): Caminho | null {
+  const grau = new Map<string, number>([...idx.pecas.keys()].map((id) => [id, 0]));
+  for (const id of idx.pecas.keys()) for (const c of proximas(idx, id)) grau.set(c.para, grau.get(c.para)! + 1);
+  const fila = [...grau].filter(([, g]) => g === 0).map(([id]) => id);
+  const ordem: string[] = [];
+  while (fila.length) {
+    const id = fila.pop()!;
+    ordem.push(id);
+    for (const c of proximas(idx, id)) { const g = grau.get(c.para)! - 1; grau.set(c.para, g); if (g === 0) fila.push(c.para); }
+  }
+  const ate = new Map<string, number>();
+  const seguinte = new Map<string, Conexao>();
+  for (const id of ordem.reverse()) {
+    const p = idx.pecas.get(id)!;
+    if (p.tipo === 'fim') { ate.set(id, p.tempo_s ?? 0); continue; }
+    let melhor: Conexao | undefined;
+    let valor = -1;
+    for (const c of proximas(idx, id)) {
+      const resto = ate.get(c.para);
+      if (resto !== undefined && tempoDa(c) + resto > valor) { valor = tempoDa(c) + resto; melhor = c; }
+    }
+    if (melhor) { ate.set(id, (p.tempo_s ?? 0) + valor); seguinte.set(id, melhor); }
+  }
+  let inicio: string | undefined;
+  for (const i of inicios) if (ate.has(i) && (inicio === undefined || ate.get(i)! > ate.get(inicio)!)) inicio = i;
+  if (inicio === undefined) return null;
+  const pecas = [inicio];
+  for (let c = seguinte.get(inicio); c; c = seguinte.get(c.para)) pecas.push(c.para);
+  return { tempo_s: ate.get(inicio)!, pecas, estimado: false };
+}
+
+/** Teto de conexões olhadas por Início na busca com ciclo. */
+const BUSCAS_MAXIMAS = 20_000;
+
+/**
+ * Com ciclo, o caminho mais longo sem repetir peça é uma busca: em profundidade, sem recursão (fluxo comprido
+ * não estoura a pilha), com um teto por Início. Cada nível é uma peça do caminho, o tempo depois dela e a
+ * próxima saída a tentar.
+ */
+function caminhoComCiclo(idx: Indice, inicios: readonly string[]): Caminho | null {
+  let melhor: Caminho | null = null;
+  let estimado = false;
+  for (const i of inicios) {
+    let buscas = 0;
+    const caminho: { id: string; tempo: number; saida: number }[] = [];
+    const noCaminho = new Set<string>();
+    const entrar = (id: string, tempo: number) => {
+      const p = idx.pecas.get(id)!;
+      const agora = tempo + (p.tempo_s ?? 0);
+      if (p.tipo === 'fim') {
+        if (!melhor || agora > melhor.tempo_s) melhor = { tempo_s: agora, pecas: [...caminho.map((n) => n.id), id], estimado: false };
+        return;
+      }
+      noCaminho.add(id);
+      caminho.push({ id, tempo: agora, saida: 0 });
+    };
+    entrar(i, 0);
+    while (caminho.length) {
+      if (++buscas > BUSCAS_MAXIMAS) { estimado = true; break; }
+      const topo = caminho[caminho.length - 1]!;
+      const c = proximas(idx, topo.id)[topo.saida++];
+      if (!c) { caminho.pop(); noCaminho.delete(topo.id); continue; }
+      if (!noCaminho.has(c.para)) entrar(c.para, topo.tempo + tempoDa(c));
+    }
+  }
+  return melhor && { ...(melhor as Caminho), estimado };
+}
+
+/** A chave que diz se duas saídas da mesma peça são iguais (mesma regra e mesmo valor); vazia quando não se compara. */
+function igualdade(c: Conexao): string {
+  switch (c.regra) {
+    case 'opcao':
+    case 'condicao':
+      return c.valor ? `${c.regra}:${c.valor.trim().toLowerCase().slice(0, 60)}` : '';
+    case 'horario':
+      return c.horario ? `horario:${c.horario}` : '';
+    case 'senao':
+      return 'senao';
+    default:
+      return '';
+  }
+}
+const COMO_IGUAL: Record<string, string> = { opcao: 'a mesma opção', condicao: 'a mesma condição', horario: 'o mesmo lado do horário', senao: '"senão"' };
 
 /** Os problemas de um fluxo, do mais grave pro mais leve. Vale pra qualquer canal: nada aqui é de telefonia. */
 export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Achado[] {
@@ -1493,43 +1614,62 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
   for (const p of doc.pecas) {
     const saidas = idx.saidas.get(p.id)!;
     if (p.tipo !== 'fim' && saidas.length === 0) achado('beco_sem_saida', 'grave', p.id, `${p.nome} não tem saída`, `A jornada chega em ${p.nome} e não tem pra onde ir. Liga a uma próxima peça ou troca por um Fim.`, [p.id]);
+    if (p.tipo === 'fim' && saidas.length > 0) achado('fim_com_saida', 'observacao', p.id, `${p.nome} é um Fim e tem saída`, `A jornada termina em ${p.nome}: as saídas dele nunca são usadas.`, [p.id, ...saidas.map((c) => c.id)]);
     if (inicios.length > 0 && p.tipo !== 'inicio' && !alcancaveis.has(p.id)) achado('inalcancavel', 'alerta', p.id, `Ninguém chega em ${p.nome}`, `Nenhum Início leva até ${p.nome}.`, [p.id]);
-    if (p.tipo === 'inicio' && !chegaNoFim.has(p.id)) achado('nao_termina', 'grave', p.id, `${p.nome} nunca chega num Fim`, `Nenhum caminho que começa em ${p.nome} termina num Fim.`, [p.id]);
-    if (p.tipo === 'decisao' && saidas.length === 1) achado('decisao_sem_escolha', 'alerta', p.id, `${p.nome} tem um caminho só`, `É uma decisão, mas só tem uma saída: não há o que decidir.`, [p.id]);
+    if (p.tipo === 'inicio' && saidas.length > 0 && !chegaNoFim.has(p.id)) achado('nao_termina', 'grave', p.id, `${p.nome} nunca chega num Fim`, `Nenhum caminho que começa em ${p.nome} termina num Fim.`, [p.id]);
+    if (p.tipo === 'decisao' && saidas.length === 1 && saidas[0]!.regra !== 'horario') achado('decisao_sem_escolha', 'alerta', p.id, `${p.nome} tem um caminho só`, `É uma decisão, mas só tem uma saída: não há o que decidir.`, [p.id]);
     if (p.tipo === 'atendimento' && !p.responsavel) achado('sem_responsavel', 'observacao', p.id, `${p.nome}: quem atende?`, `O atendimento não diz quem atende (uma pessoa, fila ou equipe).`, [p.id]);
-    if (p.responsavel && opcoes.cadastros && !opcoes.cadastros.some((k) => k.id === p.responsavel)) achado('responsavel_inexistente', 'alerta', p.id, `${p.nome} aponta pra um cadastro que não existe`, `O responsável de ${p.nome} foi apagado ou é de outra empresa.`, [p.id]);
-    if (saidas.some((c) => c.regra === 'horario') && opcoes.cadastros) {
-      const k = opcoes.cadastros.find((x) => x.id === p.responsavel);
-      if (k?.tipo === 'horario' && !camposHorario(k)) achado('horario_invalido', 'alerta', p.id, `O horário ${k.nome} tem campos inválidos`, `${p.nome} decide pelo horário ${k.nome}, mas uma janela ou um feriado dele está errado: o relógio não tem como decidir.`, [p.id]);
-      else if (!camposHorario(k)) achado('horario_sem_cadastro', 'alerta', p.id, `${p.nome} decide pelo horário, mas sem um Horário`, `As saídas de ${p.nome} são "dentro" e "fora do horário", mas a peça não usa um cadastro de Horário: o relógio não tem como decidir.`, [p.id]);
+    const cadastro = p.responsavel ? opcoes.cadastros?.find((k) => k.id === p.responsavel) : undefined;
+    if (p.responsavel && opcoes.cadastros && !cadastro) achado('responsavel_inexistente', 'alerta', p.id, `${p.nome} aponta pra um cadastro que não existe`, `O responsável de ${p.nome} foi apagado ou é de outra empresa.`, [p.id]);
+
+    const deHorario = saidas.filter((c) => c.regra === 'horario');
+    if (deHorario.length) {
+      if (!p.responsavel || (cadastro && cadastro.tipo !== 'horario'))
+        achado('horario_sem_cadastro', 'alerta', p.id, `${p.nome} decide pelo horário, mas sem um Horário`, `${p.nome} tem saída de horário, mas não usa um cadastro de Horário: o relógio não tem como decidir.`, [p.id]);
+      else if (cadastro && !camposHorario(cadastro))
+        achado('horario_invalido', 'alerta', p.id, `O horário ${cadastro.nome} tem campos inválidos`, `${p.nome} decide pelo horário ${cadastro.nome}, mas uma janela ou um feriado dele está errado: o relógio não tem como decidir.`, [p.id]);
+      // Quando o relógio decide sozinho (só saídas de horário), cada lado precisa de uma saída, ou de um "senão".
+      if (saidas.every((c) => c.regra === 'horario')) {
+        for (const lado of ['dentro', 'fora'] as const) {
+          if (!deHorario.some((c) => c.horario === lado))
+            achado('horario_sem_lado', 'alerta', `${p.id}:${lado}`, `${p.nome} não tem saída ${lado} do horário`, `${lado === 'dentro' ? 'Com o atendimento aberto' : 'Com o atendimento fechado'}, a jornada para em ${p.nome}. Liga uma saída "${lado} do horário" ou uma "senão".`, [p.id]);
+        }
+      }
     }
-    // Opções repetidas: mesma regra e mesmo valor saindo da mesma peça.
-    const vistos = new Map<string, string>();
+
+    // Saídas iguais: mesma regra e mesmo valor saindo da mesma peça (um achado por grupo).
+    const iguais = new Map<string, string[]>();
     for (const c of saidas) {
-      if (!['opcao', 'condicao', 'horario'].includes(c.regra)) continue;
-      const k = `${c.regra}:${((c.regra === 'horario' ? c.horario : c.valor) ?? '').toLowerCase()}`;
-      if (k.endsWith(':')) continue;
-      const outra = vistos.get(k);
-      if (outra) achado('opcoes_repetidas', 'alerta', `${p.id}:${k}`, `${p.nome} tem duas saídas iguais`, `Duas saídas de ${p.nome} têm a mesma ${c.regra === 'opcao' ? 'opção' : 'condição'}: não dá pra saber qual seguir.`, [p.id, outra, c.id]);
-      else vistos.set(k, c.id);
+      const k = igualdade(c);
+      if (k) iguais.set(k, [...(iguais.get(k) ?? []), c.id]);
+    }
+    for (const [k, ids] of iguais) {
+      if (ids.length < 2) continue;
+      const regra = k.split(':')[0]!;
+      achado('opcoes_repetidas', 'alerta', `${p.id}:${k}`, `${p.nome} tem ${ids.length} saídas iguais`, `${ids.length} saídas de ${p.nome} são ${COMO_IGUAL[regra]}: não dá pra saber qual seguir.`, [p.id, ...ids]);
     }
   }
 
   for (const c of doc.conexoes) {
     if (!idx.pecas.has(c.de) || !idx.pecas.has(c.para)) continue;
-    const vazia = (c.regra === 'opcao' && !c.valor && !c.rotulo) || (c.regra === 'condicao' && !c.valor) || (c.regra === 'tempo' && !c.tempo_s) || (c.regra === 'horario' && !c.horario);
+    const vazia = (c.regra === 'opcao' && !c.valor) || (c.regra === 'condicao' && !c.valor) || (c.regra === 'tempo' && !c.tempo_s) || (c.regra === 'horario' && !c.horario);
     if (vazia) achado('regra_vazia', 'observacao', c.id, `Saída de ${nome(c.de)} sem regra preenchida`, `A ligação de ${nome(c.de)} pra ${nome(c.para)} tem a regra pela metade.`, [c.de, c.id]);
   }
 
-  for (const comp of ciclos(idx)) {
+  const comps = ciclos(idx);
+  for (const comp of comps) {
     if (comp.some((id) => chegaNoFim.has(id))) continue;
-    achado('ciclo_sem_saida', 'grave', comp.join('+'), `Ciclo sem saída: ${comp.map(nome).join(', ')}`, 'Essas peças levam umas às outras e nenhuma chega num Fim: a jornada fica rodando pra sempre.', comp);
+    achado('ciclo_sem_saida', 'grave', comp.join('+'), `Ciclo sem saída: ${comp.map(nome).join(', ')}`, 'Essas peças levam umas às outras e nenhuma chega num Fim: quem entra aqui não termina a jornada.', comp);
   }
 
   if (opcoes.meta_s && opcoes.meta_s > 0) {
-    const longo = caminhoMaisLongo(idx, inicios);
-    if (longo && longo.tempo_s > opcoes.meta_s)
-      achado('passou_do_prazo', 'alerta', 'fluxo', `O caminho mais longo passa da meta`, `Indo por ${longo.pecas.map(nome).join(' → ')}, o cliente leva ${formatarTempo(longo.tempo_s)}; a meta é ${formatarTempo(opcoes.meta_s)}.`, longo.pecas);
+    const longo = comps.length === 0 ? caminhoSemCiclo(idx, inicios) : caminhoComCiclo(idx, inicios);
+    if (longo && longo.tempo_s > opcoes.meta_s) {
+      const nomes = longo.pecas.map(nome);
+      const trecho = nomes.length > 8 ? [...nomes.slice(0, 3), '…', ...nomes.slice(-3)] : nomes;
+      const aviso = longo.estimado ? ' É uma estimativa: o fluxo tem caminhos demais pra conferir um por um.' : '';
+      achado('passou_do_prazo', 'alerta', 'fluxo', `O caminho mais longo passa da meta`, `Indo por ${trecho.join(' → ')}, o cliente leva ${formatarTempo(longo.tempo_s)}; a meta é ${formatarTempo(opcoes.meta_s)}.${aviso}`, longo.pecas);
+    }
   }
 
   return out.sort((a, b) => ORDEM[a.gravidade] - ORDEM[b.gravidade] || (a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0));
@@ -1539,7 +1679,7 @@ export function diagnosticar(doc: Documento, opcoes: OpcoesDiagnostico = {}): Ac
 - [ ] **Passo 4: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  53 passed (53)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
+Expected: `Tests  59 passed (59)` e o `tsc` sem saída. Se o de 500 peças passar de 100 ms, rode de novo sozinho (`-- diagnostico -t 500`) antes de concluir que é lento: a primeira rodada aquece o JIT.
 
 - [ ] **Passo 5: commit**
 
@@ -1807,7 +1947,7 @@ export { MODELOS, type Modelo } from './modelos';
 - [ ] **Passo 5: rodar e ver passar**
 
 Run: `npm test -w packages/fluxo && npm run typecheck -w packages/fluxo`
-Expected: `Tests  66 passed (66)` e o `tsc` sem saída.
+Expected: `Tests  72 passed (72)` e o `tsc` sem saída.
 
 - [ ] **Passo 6: commit**
 
@@ -2239,7 +2379,7 @@ Expected: `Files=3, Tests=126` e `Result: PASS`.
 - [ ] **Passo 5: a v1 continua de pé**
 
 Run: `npm test && npm run typecheck`
-Expected: `@journey/fluxo` 66, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
+Expected: `@journey/fluxo` 72, `@journey/nucleo` 253 e o app 184 passando (os de banco do app rodam contra a migração nova, que só acrescenta); `tsc` sem saída em todos.
 
 - [ ] **Passo 6: commit**
 
@@ -2330,7 +2470,7 @@ index 1c004da..3a20e21 100644
 - [ ] **Passo 3: conferência final**
 
 Run: `npm test && npm run typecheck && npm run banco:testes`
-Expected: fluxo 66, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
+Expected: fluxo 72, núcleo 253, app 184; `tsc` limpo; pgTAP `Tests=126`, `Result: PASS`.
 
 - [ ] **Passo 4: commit e push**
 
