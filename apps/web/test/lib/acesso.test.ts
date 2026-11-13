@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { avisoDaVolta, caminhoInterno, mensagemDoErro, tipoDoEmail } from '@/lib/acesso';
+import { avisoDaVolta, caminhoInterno, jeitosDeEntrar, mensagemDoErro, tipoDoEmail } from '@/lib/acesso';
 
 describe('acesso: os erros do Supabase Auth', () => {
   it('limite de e-mail: em português, e o que foi mandado continua valendo', () => {
@@ -35,6 +35,11 @@ describe('acesso: a volta pro entrar', () => {
     expect(avisoDaVolta('<script>')).toBeNull();
   });
 
+  it('só com o Google, o aviso do Google não manda entrar com o e-mail', () => {
+    expect(avisoDaVolta('google')).toContain('ou entra com o e-mail');
+    expect(avisoDaVolta('google', { email: false })).toBe('O Google não completou a entrada (cancelada ou recusada). Tenta de novo.');
+  });
+
   it('os tipos do link do e-mail: só os dos modelos (email e recovery)', () => {
     expect(tipoDoEmail('email')).toBe('email');
     expect(tipoDoEmail('recovery')).toBe('recovery');
@@ -50,5 +55,22 @@ describe('acesso: o next da volta', () => {
 
   it('outro site, ou nada, vira a raiz', () => {
     for (const n of ['//evil.com', '//evil.com/conta', '/\\evil.com', 'https://evil.com', 'evil.com', '', null, undefined, '/\tevil', '/\nevil']) expect(caminhoInterno(n), String(n)).toBe('/');
+  });
+});
+
+describe('acesso: os jeitos de entrar', () => {
+  it('e-mail ligado por padrão; Google só com "sim"', () => {
+    expect(jeitosDeEntrar(undefined, undefined)).toEqual({ google: false, email: true });
+    expect(jeitosDeEntrar('sim', undefined)).toEqual({ google: true, email: true });
+    expect(jeitosDeEntrar('nao', 'sim')).toEqual({ google: false, email: true });
+  });
+
+  it('só o Google: e-mail "nao" com o Google ligado', () => {
+    expect(jeitosDeEntrar('sim', 'nao')).toEqual({ google: true, email: false });
+  });
+
+  it('nunca fica sem jeito nenhum: sem o Google, o e-mail volta', () => {
+    expect(jeitosDeEntrar(undefined, 'nao')).toEqual({ google: false, email: true });
+    expect(jeitosDeEntrar('nao', 'nao')).toEqual({ google: false, email: true });
   });
 });
