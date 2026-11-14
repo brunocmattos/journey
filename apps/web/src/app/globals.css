@@ -7,6 +7,8 @@
   --w-telefonia: #1e8bdc;
   --bad: #cf3a3a; --bad-soft: #fbe4e2; --warn: #9c6205; --warn-soft: #fbefd6;
   --ok: #17914f; --ok-soft: #ddf3e6; --info: #3a6a88; --info-soft: #e0ecf3;
+  /* O ciclo (o caminho que volta pro mesmo lugar): o roxo da landing. */
+  --loop: #6b45c8; --loop-soft: #eee7fb;
   --btn: #13212a; --btn-ink: #f2f6f7;
   --shadow: 0 14px 36px -16px rgba(14, 38, 52, 0.42);
   /* Editor (v2): destaque, nota, grupo e quanto as cores claras se misturam no fundo. */
@@ -26,6 +28,7 @@
     --accent: #46a8f0; --accent-soft: #14283a; --nota: #4a4220; --nota-ink: #f3e7b0; --grupo: #131f26; --mistura: 16%;
     --bad: #f06a62; --bad-soft: #3a1c1d; --warn: #e6a23c; --warn-soft: #33270f;
     --ok: #3cc47d; --ok-soft: #12301f; --info: #7fb2d6; --info-soft: #14262f;
+    --loop: #b49cf6; --loop-soft: #261d3d;
     --btn: #e2ebee; --btn-ink: #0a1014;
     --shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.65);
     color-scheme: dark;
@@ -40,6 +43,7 @@
   --accent: #46a8f0; --accent-soft: #14283a; --nota: #4a4220; --nota-ink: #f3e7b0; --grupo: #131f26; --mistura: 16%;
   --bad: #f06a62; --bad-soft: #3a1c1d; --warn: #e6a23c; --warn-soft: #33270f;
   --ok: #3cc47d; --ok-soft: #12301f; --info: #7fb2d6; --info-soft: #14262f;
+  --loop: #b49cf6; --loop-soft: #261d3d;
   --btn: #e2ebee; --btn-ink: #0a1014;
   --shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.65);
   color-scheme: dark;

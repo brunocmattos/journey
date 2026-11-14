@@ -1,9 +1,15 @@
 import { redirect } from 'next/navigation';
-import { empresasDoUsuario, usuarioAtual } from '@/lib/dados';
+import { empresasDoUsuario, sessaoAtual } from '@/lib/dados';
+import { Landing } from '@/landing/Landing';
 
-/** Quem entra cai na primeira empresa; quem foi convidado entra nela antes; quem não tem nenhuma cria. */
+/**
+ * Sem sessão, a landing. Com sessão, o de sempre: quem entra cai na primeira empresa; quem foi convidado entra nela
+ * antes; quem não tem nenhuma cria.
+ */
 export default async function Inicio() {
-  const { supabase } = await usuarioAtual();
+  // A mesma ida ao Auth que o empresasDoUsuario usa (sessaoAtual, com o cache do React).
+  const { supabase, usuario } = await sessaoAtual();
+  if (!usuario) return <Landing />;
   await supabase.rpc('aceitar_convites');
   const empresas = await empresasDoUsuario();
   redirect(empresas[0] ? `/e/${empresas[0].id}` : '/empresa/nova');

@@ -75,6 +75,23 @@ export function jeitosDeEntrar(google: string | undefined, email: string | undef
   return { google: comGoogle, email: email !== 'nao' || !comGoogle };
 }
 
+/** Pra onde leva um botão de entrar da landing: o login do Google direto, ou uma página do app. */
+export type DestinoDaLanding = { tipo: 'google' } | { tipo: 'pagina'; href: '/entrar' | '/entrar?modo=criar' };
+
+/**
+ * Os botões da landing: "Entrar" e "Criar conta" da barra, e a chamada ("Continuar com o Google", na abertura e no
+ * fechamento). Só com o Google, os dois da barra abrem o Google direto: no primeiro acesso o Supabase cria a conta, e
+ * entrar e criar são o mesmo pedido. Com o e-mail, cada um abre a sua aba da /entrar. A chamada diz "Google", então é
+ * o Google sempre que ele está ligado; sem ele, a aba de criar conta.
+ */
+export function destinoDaLanding(botao: 'entrar' | 'criar' | 'chamada', jeitos: { google: boolean; email: boolean }): DestinoDaLanding {
+  if (botao === 'chamada' ? jeitos.google : !jeitos.email) return { tipo: 'google' };
+  return { tipo: 'pagina', href: botao === 'entrar' ? '/entrar' : '/entrar?modo=criar' };
+}
+
+/** A aba que a /entrar abre (`?modo=criar` é o "Criar conta" da landing); qualquer outra coisa é "Entrar". */
+export const modoDoEntrar = (modo: string | undefined): 'entrar' | 'criar' => (modo === 'criar' ? 'criar' : 'entrar');
+
 /** O aviso de quem volta pro entrar (`/entrar?erro=…`): o link do e-mail que não valeu, ou o Google que não terminou. */
 export function avisoDaVolta(erro: string | undefined, { email = true }: { email?: boolean } = {}): string | null {
   if (erro === 'link') return 'O link expirou ou já foi usado. Pede outro.';

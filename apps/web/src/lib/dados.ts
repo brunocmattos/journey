@@ -11,12 +11,21 @@ import { supabaseServidor } from './supabase/servidor';
 
 /** Leituras do banco pelo servidor, com a sessão de quem está logado: a regra de acesso (RLS) vale em todas. */
 
-/** Uma ida ao Auth por pedido: o layout e a página chamam, o cache do React junta as duas. */
-export const usuarioAtual = cache(async () => {
+/**
+ * Uma ida ao Auth por pedido: o layout, a página e a raiz (que mostra a landing sem sessão) chamam, e o cache do React
+ * junta todas. Sem sessão, `usuario` é null.
+ */
+export const sessaoAtual = cache(async () => {
   const supabase = await supabaseServidor();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) redirect('/entrar');
   return { supabase, usuario: data.user };
+});
+
+/** A sessão de quem está logado; sem ela, pro entrar. */
+export const usuarioAtual = cache(async () => {
+  const { supabase, usuario } = await sessaoAtual();
+  if (!usuario) redirect('/entrar');
+  return { supabase, usuario };
 });
 
 type ErroBanco = { code?: string; message: string } | null;

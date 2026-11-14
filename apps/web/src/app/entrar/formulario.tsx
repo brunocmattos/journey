@@ -2,8 +2,9 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { ESPERA_LIMITE_S, ESPERA_REENVIO_S, mensagemDoErro, type ErroDoAuth } from '@/lib/acesso';
+import { entrarComGoogle, preCarregarGoogle } from '@/lib/google';
 import { supabaseNavegador } from '@/lib/supabase/navegador';
-import { BotaoGoogle } from './botao-google';
+import { BotaoGoogle } from '@/componentes/BotaoGoogle';
 
 /**
  * - entrar: e-mail e senha (o caminho principal);
@@ -25,11 +26,22 @@ const ABAS = ['entrar', 'criar'] as const;
  * Os e-mails voltam pelo /auth/confirm (os modelos em supabase/templates dizem pra onde): a página tem um botão, e o
  * POST dele (/auth/confirmar) confirma no servidor, então o link abre em qualquer navegador. O Google volta pelo /auth/callback, com o código do PKCE que fica neste navegador.
  */
-export function FormularioEntrar({ google, email: comEmail, aviso }: { google: boolean; email: boolean; aviso: string | null }) {
+export function FormularioEntrar({
+  google,
+  email: comEmail,
+  aviso,
+  modo: modoInicial = 'entrar',
+}: {
+  google: boolean;
+  email: boolean;
+  aviso: string | null;
+  /** A aba em que abre (`/entrar?modo=criar`). */
+  modo?: 'entrar' | 'criar';
+}) {
   // Antes de o React assumir a página, os botões ficam desligados: um Enter ali mandaria o formulário pelo navegador.
   const [pronto, setPronto] = useState(false);
   useEffect(() => setPronto(true), []);
-  const [modo, setModo] = useState<Modo>('entrar');
+  const [modo, setModo] = useState<Modo>(modoInicial);
   // Controlados e sem `name`: nada vai pra URL, e o e-mail continua no campo entre os modos e depois de enviar.
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -109,15 +121,23 @@ export function FormularioEntrar({ google, email: comEmail, aviso }: { google: b
     }
   }
 
-  // Dando certo, o navegador sai pro Google; só volta aqui com erro (provedor desligado, rede).
+  // Dando certo, o navegador sai pro Google; só volta aqui com erro (provedor desligado, rede), e aí a tela diz aqui
+  // mesmo (já é a /entrar). Enquanto o pedido sai, o botão fica ocupado: o segundo clique não pede de novo.
+  const [indoProGoogle, setIndoProGoogle] = useState(false);
   async function comGoogle() {
+    if (indoProGoogle) return;
     setErro(null);
-    const { error } = await supabaseNavegador().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/auth/callback` } });
-    if (error) {
-      console.error('[entrar com Google]', error.message);
-      setErro(`Não deu pra entrar com o Google agora. Tenta de novo${comEmail ? ', ou entra com o e-mail' : ''}.`);
-    }
+    setIndoProGoogle(true);
+    if (await entrarComGoogle()) return;
+    setIndoProGoogle(false);
+    setErro(`Não deu pra entrar com o Google agora. Tenta de novo${comEmail ? ', ou entra com o e-mail' : ''}.`);
   }
+  // Quem volta do Google pelo "voltar" do navegador acha a página como deixou (cache de página): o botão solta.
+  useEffect(() => {
+    const voltou = (e: PageTransitionEvent) => e.persisted && setIndoProGoogle(false);
+    addEventListener('pageshow', voltou);
+    return () => removeEventListener('pageshow', voltou);
+  }, []);
 
   const textoBotao = enviando
     ? 'Enviando…'
@@ -146,7 +166,7 @@ export function FormularioEntrar({ google, email: comEmail, aviso }: { google: b
   if (!comEmail)
     return (
       <div className="form-entrar">
-        <BotaoGoogle disabled={!pronto} onClick={comGoogle} />
+        <BotaoGoogle disabled={!pronto} onClick={comGoogle} ocupado={indoProGoogle} aoChegar={preCarregarGoogle} />
         <p className="so-google">Primeira vez? A conta é criada na hora, com o e-mail do teu Google.</p>
         {alerta}
       </div>
@@ -281,7 +301,7 @@ export function FormularioEntrar({ google, email: comEmail, aviso }: { google: b
           <div className="ou" aria-hidden="true">
             ou
           </div>
-          <BotaoGoogle disabled={!pronto} onClick={comGoogle} />
+          <BotaoGoogle disabled={!pronto} onClick={comGoogle} ocupado={indoProGoogle} aoChegar={preCarregarGoogle} />
         </>
       )}
     </div>

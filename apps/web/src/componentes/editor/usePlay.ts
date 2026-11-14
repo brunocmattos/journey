@@ -17,6 +17,8 @@ export interface OpcoesPlay {
   avisar: (texto: string) => void;
   /** Chamado ao começar um play (o editor fecha o campo de nome aberto). */
   aoComecar?: () => void;
+  /** A hora em que um play novo começa (AAAA-MM-DDTHH:MM); sem ela, agora. Os exemplos da landing fixam um dia útil. */
+  quando?: string;
 }
 
 /**
@@ -52,7 +54,7 @@ export function usePlay(o: OpcoesPlay) {
     o.aoComecar?.();
   };
 
-  const comecarEm = (inicio: string) => tocar({ inicio, quando: play?.quando ?? agora(), modo: play?.modo ?? 'relogio', escolhas: [] });
+  const comecarEm = (inicio: string) => tocar({ inicio, quando: play?.quando ?? o.quando ?? agora(), modo: play?.modo ?? 'relogio', escolhas: [] });
 
   /** Dá play no Início selecionado, no único, ou pergunta por qual começar. */
   const darPlay = (selecionado: string | null) => {

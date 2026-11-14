@@ -300,8 +300,23 @@
   .editor.visualizador { padding: 8px; }
   .editor .topo-link .empurra { margin-left: 0; width: 100%; }
 }
-/* Tela baixa (celular deitado): a gaveta à esquerda e o cartão do play à direita, lado a lado, sem um cobrir o outro. */
+/* Embutido (os exemplos da landing): na altura de quem contém, sem cabeçalho e rodapé; o diagnóstico e o play numa
+   barra em cima do quadro, à direita. Estreito (pela largura dele, não da tela), sem as pílulas do canto. */
+.editor.visualizador.embutido { height: 100%; padding: 0; grid-template-rows: minmax(0, 1fr); container-type: inline-size; }
+.editor .barra-embutida { position: absolute; right: 12px; top: 12px; z-index: 31; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.editor.embutido .palco { touch-action: pan-y; }
+@container (max-width: 599px) {
+  .editor.embutido .hud { display: none; }
+}
+/* Largo, a gaveta fica ao lado do quadro (e não em cima): o fluxo enquadrado ao abrir aparece inteiro. 900 px é o
+   EMBUTIDO_LARGO do Visualizador.tsx (abaixo dele, a gaveta começa fechada). */
+@container (min-width: 900px) {
+  .editor.embutido.com-gaveta .quadro-e-gaveta { grid-template-columns: minmax(0, 1fr) 340px; gap: 10px; }
+  .editor.embutido .gaveta { position: static; width: auto; max-height: none; min-height: 0; box-shadow: none; }
+  .editor.embutido.com-gaveta .barra-embutida { right: 362px; }
+}
+/* Tela baixa (celular deitado; o embutido segue a largura dele, não a da tela): a gaveta à esquerda e o cartão do play à direita, lado a lado, sem um cobrir o outro. */
 @media (max-height: 600px) and (min-width: 600px) {
-  .editor.com-gaveta .gaveta { width: calc(50% - 18px); max-height: calc(100% - 24px); top: 12px; min-height: 0; }
-  .editor.com-gaveta .cartao-sim { left: auto; right: 12px; transform: none; width: min(440px, calc(50% - 18px)); max-height: calc(100% - 26px); overflow: auto; }
+  .editor:not(.embutido).com-gaveta .gaveta { width: calc(50% - 18px); max-height: calc(100% - 24px); top: 12px; min-height: 0; }
+  .editor:not(.embutido).com-gaveta .cartao-sim { left: auto; right: 12px; transform: none; width: min(440px, calc(50% - 18px)); max-height: calc(100% - 26px); overflow: auto; }
 }
