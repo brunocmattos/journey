@@ -1,7 +1,7 @@
 # Landing do Journey
 
 - **Data:** 14/11/2026
-- **Status:** rascunho pra revisão do Bruno
+- **Status:** aprovada (14/11/2026), com os ajustes do ensaio (seções 3, 4, 6 e 8)
 - **Direção escolhida:** A, "o próprio editor" (protótipo: https://claude.ai/artifact/FcPwhsAxaqeuFzpHDqenVe, primeira moldura)
 - **Depende de:** etapa C (visualizador do link público, diagnóstico, login só com Google)
 
@@ -9,7 +9,7 @@
 
 Quem abre o Journey sem estar logado vê uma página que explica o produto em segundos e convida a criar a conta. Hoje cai direto na `/entrar`, que é um formulário e uma prévia de um fluxo só.
 
-A página tem uma tarefa: fazer a pessoa clicar em "Criar conta com o Google". Pra isso ela precisa mostrar, só de bater o olho, o que o Journey faz: desenhar um fluxo, dar play e ver onde o cliente chega, onde espera demais e onde se perde.
+A página tem uma tarefa: fazer a pessoa clicar em "Continuar com o Google" e criar a conta. Pra isso ela precisa mostrar, só de bater o olho, o que o Journey faz: desenhar um fluxo, dar play e ver onde o cliente chega, onde espera demais e onde se perde.
 
 Público: quem cuida de atendimento e CX (URA, WhatsApp, SAC, filas) e quem desenha processos internos (aprovações, esteiras, onboarding).
 
@@ -33,7 +33,8 @@ Público: quem cuida de atendimento e CX (URA, WhatsApp, SAC, filas) e quem dese
 - **"Entrar" e "Criar conta" (barra e botões):**
   - Com o e-mail desligado: os dois abrem direto o login do Google (`signInWithOAuth`, volta pelo `/auth/callback`). No primeiro acesso, o Supabase cria a conta; não há diferença entre entrar e criar.
   - Com o e-mail ligado: "Entrar" leva pra `/entrar`; "Criar conta" leva pra `/entrar?modo=criar`, que abre a aba "Criar conta".
-  - O botão de Google segue as diretrizes de marca, como o da `/entrar` (o mesmo `BotaoGoogle`, com o rótulo do lugar: "Criar conta com o Google" no hero e no fechamento).
+  - O botão de Google segue as diretrizes de marca, como o da `/entrar` (o mesmo `BotaoGoogle`), com o texto aprovado "Continuar com o Google" na abertura e no fechamento ("Criar conta com o Google" não é um dos textos das diretrizes). Sem o Google ligado, a chamada vira "Criar conta" e leva pra `/entrar?modo=criar`.
+  - O cliente do Supabase só baixa quando o ponteiro ou o foco chega no botão do Google (ou no clique); o primeiro clique deixa o botão ocupado e o segundo é ignorado; se o pedido não sai, a landing leva pra `/entrar?erro=google`.
 - **Erro do Google** (cancelou, recusou): volta pra `/entrar?erro=google`, como hoje, com o aviso.
 
 ## 4. A página, seção por seção (com os textos)
@@ -51,7 +52,7 @@ Português do Brasil, tratando por "tu", como o resto do app. Sem caixa alta, se
 
 - **Título:** Desenha o fluxo e dá play.
 - **Texto:** Teu atendimento e teus processos num quadro só. No play, a água mostra por onde o cliente passa, onde espera demais e onde ele se perde.
-- **Botões:** "Criar conta com o Google" (botão do Google) e **Ver exemplos** (link sublinhado, rola até 4.3).
+- **Botões:** "Continuar com o Google" (botão do Google) e **Ver exemplos** (link sublinhado, rola até 4.3).
 - **Ao lado (embaixo no celular):** o fluxo animado da seção 5.
 
 ### 4.3 Exemplos ("Um fluxo pra cada operação")
@@ -70,7 +71,7 @@ Português do Brasil, tratando por "tu", como o resto do app. Sem caixa alta, se
 - **Título:** O que o play mostra e o fluxograma esconde
 - **Texto:** Fluxo desenhado em slide parece sempre certo. Com a água passando, os problemas aparecem sozinhos.
 - Quatro itens, cada um com um ícone no estilo das peças do editor (tile claro, traço `--ink-2`, a cor do problema só num detalhe):
-  1. **O cliente que volta pro menu sem parar.** A URA que repete "não entendi", o chamado que passa de setor em setor. No play, o caminho volta pro mesmo lugar, e o diagnóstico marca o ciclo.
+  1. **O cliente que volta pro menu sem parar.** A URA que repete "não entendi", o chamado que passa de setor em setor. No play, tu vê o caminho voltar pro mesmo lugar; quando ele volta sozinho, sem ninguém escolher, o diagnóstico marca o ciclo.
   2. **A opção que não leva a lugar nenhum.** Opção 9 da URA, ligação fora do horário, caixa de e-mail sem dono. A água chega e não tem pra onde ir: tu vê o cano sem saída antes do cliente achar.
   3. **A espera que ninguém mede.** Cada etapa tem um tempo, e o play soma o do cliente até o fim. Quando passa da meta, o Journey diz por qual caminho.
   4. **O fluxograma que ninguém atualiza.** O desenho é o fluxo de verdade: muda num lugar e todo mundo vê. As versões guardam como era antes de cada mudança.
@@ -93,8 +94,8 @@ Português do Brasil, tratando por "tu", como o resto do app. Sem caixa alta, se
 ### 4.7 Fechamento e rodapé
 
 - **Título:** Play your journey.
-- **Texto:** Cria a tua conta com o Google e desenha o primeiro fluxo em minutos, do zero ou a partir de um modelo pronto.
-- **Botão:** "Criar conta com o Google".
+- **Texto:** Entra com o Google e desenha o primeiro fluxo em minutos, do zero ou a partir de um modelo pronto. (Sem o Google ligado: "Desenha o primeiro fluxo em minutos, do zero ou a partir de um modelo pronto.")
+- **Botão:** "Continuar com o Google" (sem o Google ligado: "Criar conta").
 - **Rodapé:** Journey, à esquerda; "Desenha o fluxo e dá play.", à direita.
 
 ## 5. O fluxo animado da abertura
@@ -112,26 +113,29 @@ Português do Brasil, tratando por "tu", como o resto do app. Sem caixa alta, se
 ## 6. Os exemplos com o produto de verdade
 
 - **Onde:** seção 4.3.
-- **Carregamento:** o visualizador e o `@journey/fluxo` só carregam quando a seção chega perto da tela (`IntersectionObserver` + `next/dynamic` sem SSR). Antes disso, a área tem a altura final e mostra a miniatura do exemplo escolhido, pra a página não pular.
+- **Carregamento:** o visualizador e o `@journey/fluxo` só carregam quando a área chega a 240 px da tela (`IntersectionObserver` + `next/dynamic` sem SSR). Antes disso, a área tem a altura final e mostra a miniatura do exemplo escolhido, pra a página não pular.
 - **Os quatro exemplos:** cada um é um retrato (`Retrato`, o mesmo tipo do link público) montado no código, sem banco e sem chave secreta (`landing/exemplos.ts`):
   - empresa "Exemplo", versão `null`, `esconderNomes: false`, `expiraEm: null`, `intencionais: []`, `cenario: null`;
   - os canais padrão (Telefonia `#1e8bdc`, WhatsApp `#159e5a`, E-mail `#c98410`, Chat `#7650d6`, Interno `#3a6a88`);
   - o documento e os cadastros vêm de uma cópia do modelo (`MODELOS` do `@journey/fluxo`), com os problemas abaixo acrescentados de propósito, pra o diagnóstico ter o que mostrar.
-- **Os problemas de cada exemplo** (o diagnóstico tem que achar exatamente estes, e o teste confere):
+- **Os problemas de cada exemplo** (o diagnóstico acha exatamente estes, e o teste confere). O motor só marca um ciclo quando ele anda sozinho, sem ninguém escolher e sem o tempo passar; por isso a volta que vira achado em cada exemplo passa pela decisão do horário. As voltas com escolha (Opção inválida → Menu, Não entendi → Qual assunto?, Pede documento → Análise) aparecem no play, mas não são achado.
 
 | Exemplo | O que muda em relação ao modelo | O que o diagnóstico acha | Estilo |
 |---|---|---|---|
-| URA telefônica | Menu ganha a opção 9 "Falar com atendente" → mensagem "Transferindo…" sem saída; "Opção inválida" volta pro Menu em vez de desligar | `beco_sem_saida` em "Transferindo…"; `ciclo_sem_tempo` em Menu ↔ Opção inválida | `linha`, curva `reta`, espessura 6 |
-| Suporte no WhatsApp | Assunto ganha a opção 3 "Outro assunto" → mensagem "Não entendi" que volta pras Boas-vindas; meta do fluxo 30 min | `ciclo_sem_tempo` em Boas-vindas → … → Não entendi; `passou_do_prazo` (suporte + espera pelo cliente) | `cano`, curva `suave`, espessura 10 (o padrão) |
+| URA telefônica | Menu ganha a opção 9 "Falar com atendente" → mensagem "Transferindo…" sem saída; "Fora do horário" (sem tempo) volta pro "Dentro do horário?"; "Opção inválida" volta pro Menu | `beco_sem_saida` em "Transferindo…"; `ciclo_sem_tempo` em Fora do horário ↔ Dentro do horário? | `linha`, curva `reta`, espessura 6 |
+| Suporte no WhatsApp | O aviso de fora do horário (sem tempo) volta pras Boas-vindas (sem tempo), e "Encerra a conversa" sai; Assunto ganha a opção 3 "Outro assunto" → "Não entendi" → volta pro Assunto; meta 30 min | `ciclo_sem_tempo` em Boas-vindas → horário → aviso; `passou_do_prazo` (suporte + espera pelo cliente) | `cano`, curva `suave`, espessura 10 (o padrão) |
 | SAC por e-mail | Meta do fluxo 24 h | `passou_do_prazo` (a escalação de 48 h) | `cano`, curva `cotovelo`, espessura 12 |
-| Esteira de crédito | Analista ganha a opção "Pede documento" → mensagem "Cliente manda o documento" → volta pra Análise; meta 2 h | `ciclo_sem_tempo` na análise ↔ documento; `passou_do_prazo` (análise de 4 h) | `tracejado`, curva `cotovelo`, espessura 8 |
+| Esteira de crédito | "Dentro do expediente?" (Horário comercial) antes da análise, e "Espera o expediente" (sem tempo) volta pra ele; o analista ganha "Pede documento" → "Cliente manda o documento" → volta pra Análise; meta 2 h | `ciclo_sem_tempo` em Espera o expediente ↔ Dentro do expediente?; `passou_do_prazo` (análise de 4 h) | `tracejado`, curva `cotovelo`, espessura 8 |
 
+- **A hora do play dos exemplos:** o dia de hoje às 10h, ou o próximo dia que às 10h está dentro do Horário comercial (o mesmo relógio do motor). Assim quem abre de noite ou no domingo vê o menu, e não o aviso de fechado; o e2e não depende da hora em que roda.
 - **O visualizador embutido:** o `Visualizador` ganha um modo `embutido`:
   - sem o cabeçalho (empresa, versão, validade) e sem o rodapé "Feito com Journey";
   - ocupa a altura que a seção der (fixa: 560 px no computador, 480 px no celular);
   - enquadra o fluxo inteiro ao abrir;
-  - a gaveta do diagnóstico abre sozinha, com os achados do exemplo;
-  - o play começa parado: um botão "Dar play" visível no cartão do play (como hoje). Não toca sozinho.
+  - a gaveta do diagnóstico abre sozinha, com os achados do exemplo, num contêiner de 900 px ou mais (ao lado do quadro); abaixo disso ela começa fechada, com o botão dos achados visível, pra o fluxo aparecer primeiro;
+  - o play começa parado: "Dar play" fica numa barra em cima do quadro, junto com o botão dos achados (o cartão do play só existe com o play andando). Não toca sozinho;
+  - a roda do mouse rola a página (o zoom do quadro fica com Ctrl ou Cmd), deslizar na vertical rola a página no toque, e as teclas do play só valem com o foco dentro do visualizador;
+  - se o visualizador não carregar (rede, publicação nova no meio da visita), só ele some e a miniatura fica: a página não quebra.
 - **Troca de aba:** o visualizador desmonta e monta de novo com o outro retrato (play zerado, enquadramento novo). A aba escolhida fica na URL como `#exemplo-ura`, `#exemplo-whatsapp`, `#exemplo-email` e `#exemplo-credito`, pra dar pra mandar o link de um exemplo.
 - **As abas** são um `tablist` de verdade (setas, Home, End, `aria-selected`), como as abas da `/entrar`.
 
@@ -145,7 +149,7 @@ Português do Brasil, tratando por "tu", como o resto do app. Sem caixa alta, se
 
 ## 8. Desempenho e acessibilidade
 
-- O primeiro carregamento de `/` não traz o editor, o `Quadro` nem o `@journey/fluxo` (conferir os chunks no build, como foi feito pra `/entrar`). Eles chegam com a seção dos exemplos.
+- O primeiro carregamento de `/` não traz o editor, o `Quadro`, o `@journey/fluxo` nem o cliente do Supabase. Eles chegam com a seção dos exemplos (e o Supabase com o botão do Google). `npm run test:build` (no app) faz o build e confere isso no manifesto; sem build, falha.
 - Sem rolagem lateral em 390 px. A abertura cabe no celular com o fluxo embaixo do texto.
 - Foco visível em tudo; as abas e os botões funcionam no teclado; contraste AA nos dois temas (incluindo o texto dos selos).
 - "Reduzir movimento": abertura parada; o play dos exemplos continua (é ação da pessoa).
@@ -157,7 +161,7 @@ Português do Brasil, tratando por "tu", como o resto do app. Sem caixa alta, se
   - o diagnóstico de cada exemplo acha exatamente os achados da tabela da seção 6;
   - `proxy`: `/` é público, `/e/…` continua fechado, `/x` não vira público por começar com `/`.
 - **Ponta a ponta** (os achados exatos de cada exemplo saem do motor; se algum código da tabela não bater, o teste de unidade mostra e a tabela é corrigida antes de seguir):
-  - sem sessão, `/` mostra o título e o botão "Criar conta com o Google";
+  - sem sessão, `/` mostra o título e a chamada de criar a conta ("Continuar com o Google" com o Google ligado; "Criar conta" nos testes locais, que rodam sem ele);
   - com sessão, `/` vai pra empresa como hoje;
   - rolar até os exemplos carrega o visualizador; trocar pra "URA telefônica" mostra o achado do cano sem saída; dar play e escolher a opção 9 leva a água até "Transferindo…";
   - `#exemplo-credito` na URL abre a aba da esteira;
