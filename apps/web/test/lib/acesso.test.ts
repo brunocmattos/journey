@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { avisoDaVolta, caminhoInterno, jeitosDeEntrar, mensagemDoErro, tipoDoEmail } from '@/lib/acesso';
+import { avisoDaVolta, caminhoInterno, destinoDaLanding, jeitosDeEntrar, mensagemDoErro, modoDoEntrar, tipoDoEmail } from '@/lib/acesso';
 
 describe('acesso: os erros do Supabase Auth', () => {
   it('limite de e-mail: em português, e o que foi mandado continua valendo', () => {
@@ -72,5 +72,34 @@ describe('acesso: os jeitos de entrar', () => {
   it('nunca fica sem jeito nenhum: sem o Google, o e-mail volta', () => {
     expect(jeitosDeEntrar(undefined, 'nao')).toEqual({ google: false, email: true });
     expect(jeitosDeEntrar('nao', 'nao')).toEqual({ google: false, email: true });
+  });
+});
+
+describe('acesso: os botões da landing', () => {
+  const soGoogle = { google: true, email: false };
+  const osDois = { google: true, email: true };
+  const soEmail = { google: false, email: true };
+
+  it('só o Google: entrar e criar conta abrem o Google direto (a conta nasce no primeiro acesso)', () => {
+    for (const b of ['entrar', 'criar', 'chamada'] as const) expect(destinoDaLanding(b, soGoogle)).toEqual({ tipo: 'google' });
+  });
+
+  it('com o e-mail: entrar vai pra /entrar e criar conta pra aba de criar', () => {
+    for (const j of [osDois, soEmail]) {
+      expect(destinoDaLanding('entrar', j)).toEqual({ tipo: 'pagina', href: '/entrar' });
+      expect(destinoDaLanding('criar', j)).toEqual({ tipo: 'pagina', href: '/entrar?modo=criar' });
+    }
+  });
+
+  it('a chamada ("Continuar com o Google") é o Google sempre que ele está ligado; sem ele, a aba de criar', () => {
+    expect(destinoDaLanding('chamada', osDois)).toEqual({ tipo: 'google' });
+    expect(destinoDaLanding('chamada', soEmail)).toEqual({ tipo: 'pagina', href: '/entrar?modo=criar' });
+  });
+});
+
+describe('acesso: o modo do entrar pela URL', () => {
+  it('só "criar" muda a aba; o resto é entrar', () => {
+    expect(modoDoEntrar('criar')).toBe('criar');
+    for (const m of [undefined, '', 'entrar', 'esqueci', 'CRIAR', ['criar']]) expect(modoDoEntrar(m as string | undefined)).toBe('entrar');
   });
 });

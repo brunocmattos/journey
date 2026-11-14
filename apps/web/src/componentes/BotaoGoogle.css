@@ -1,0 +1,15 @@
+/* O botão do Google com as cores e a fonte do Google (diretrizes de marca do Sign in with Google), e não as do app:
+   branco com borda #747775 no claro, #131314 com borda #8E918F no escuro; formato pílula, que as diretrizes aceitam. */
+.botao-google {
+  --g-fundo: #ffffff; --g-borda: #747775; --g-texto: #1f1f1f; --g-realce: rgba(48, 48, 48, 0.08);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--g-borda); border-radius: 999px; background: var(--g-fundo); color: var(--g-texto);
+  font: 500 14px/20px Roboto, 'Helvetica Neue', Arial, sans-serif; letter-spacing: 0.25px; cursor: pointer;
+}
+.botao-google svg { flex: none; }
+.botao-google:hover:not(:disabled) { background-image: linear-gradient(var(--g-realce), var(--g-realce)); }
+.botao-google:disabled { opacity: 0.38; cursor: default; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .botao-google { --g-fundo: #131314; --g-borda: #8e918f; --g-texto: #e3e3e3; --g-realce: rgba(227, 227, 227, 0.08); }
+}
+:root[data-theme='dark'] .botao-google { --g-fundo: #131314; --g-borda: #8e918f; --g-texto: #e3e3e3; --g-realce: rgba(227, 227, 227, 0.08); }
