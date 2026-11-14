@@ -1,0 +1,206 @@
+/* Landing: tokens do globals.css. As duas cores do WhatsApp são as do canal padrão (como na prévia do entrar): a
+   landing não lê os canais de empresa nenhuma. */
+.landing {
+  --gutter: clamp(16px, 3vw, 32px);
+  --wa: #159e5a;
+  /* O verde das formas cheias (o play do Início): mais escuro no claro, pro triângulo branco ter contraste. */
+  --wa-forte: #11804a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .landing { --wa: #2cc274; --wa-forte: #1f9d5c; }
+}
+:root[data-theme='dark'] .landing { --wa: #2cc274; --wa-forte: #1f9d5c; }
+
+/* Base: o texto da landing é maior que o do app (14 px), e cada bloco fica numa largura de 1180 px. */
+.landing { min-height: 100%; font-size: 16px; line-height: 1.55; }
+.landing .l-largura { max-width: calc(1180px + 2 * var(--gutter)); margin-inline: auto; padding-inline: max(var(--gutter), env(safe-area-inset-left, 0px)) max(var(--gutter), env(safe-area-inset-right, 0px)); }
+.landing h1, .landing h2, .landing h3 { text-wrap: balance; }
+.landing p { margin: 0; }
+.landing [id] { scroll-margin-top: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.landing) { scroll-behavior: smooth; }
+}
+
+/* Os botões e links de entrar. */
+.landing .l-texto { border: 0; background: none; padding: 8px 4px; font: 500 14.5px var(--f-body); color: var(--ink-2); text-decoration: none; cursor: pointer; }
+.landing .l-texto:hover { color: var(--ink); }
+.landing .l-pilula { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px; padding: 9px 16px; background: var(--btn); color: var(--btn-ink); font: 600 14px var(--f-body); text-decoration: none; white-space: nowrap; cursor: pointer; }
+.landing .l-pilula.grande { min-height: 44px; padding: 0 22px; font-size: 15px; }
+.landing .l-texto:disabled, .landing .l-pilula:disabled { cursor: default; }
+.landing .l-sublinhado { font-weight: 500; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.landing .l-sublinhado:hover { text-decoration-thickness: 2px; }
+
+/* A barra: no topo da página (não fixa), sobre o fundo do quadro. */
+.l-barra { background: var(--canvas); border-bottom: 1px solid var(--line); }
+.l-barra .l-largura { display: flex; align-items: center; gap: 12px 26px; min-height: 68px; }
+.l-barra nav { display: flex; gap: 22px; }
+.l-barra nav a { color: var(--ink-2); font-size: 14.5px; text-decoration: none; }
+.l-barra nav a:hover { color: var(--ink); }
+.l-barra .l-conta { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+/* A abertura: o título e a chamada de um lado, o fluxo do outro, no pontilhado do quadro. */
+.l-abertura { background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1.1px, transparent 1.2px); background-size: 18px 18px; border-bottom: 1px solid var(--line); }
+.l-abertura .l-largura { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); gap: 32px 48px; align-items: center; padding-block: clamp(32px, 6vw, 72px) clamp(40px, 6vw, 80px); }
+.l-abertura h1 { font-size: clamp(42px, 5.4vw, 66px); font-weight: 800; line-height: 0.96; letter-spacing: -0.045em; }
+.landing .l-lead { margin-top: 20px; max-width: 40ch; font-size: 17px; color: var(--ink-2); }
+.landing .l-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; margin-top: 28px; }
+
+/* As seções: 96 px entre elas, o título e um texto curto em cima. */
+.l-secao { padding-top: 96px; }
+.l-cabeca { max-width: 62ch; }
+.landing h2 { font-size: clamp(28px, 3.4vw, 40px); font-weight: 800; line-height: 1.05; letter-spacing: -0.035em; }
+.l-cabeca p { margin-top: 12px; font-size: 17px; color: var(--ink-2); }
+.landing .l-cabeca + * { margin-top: 40px; }
+.landing h3 { font-size: 19px; font-weight: 700; line-height: 1.25; letter-spacing: -0.015em; }
+
+/* O que o play mostra: quatro itens com o ícone num tile de peça; a cor do problema só no detalhe. Não são cartões. */
+.l-dores { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 56px; }
+.l-dores li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 18px; align-items: start; }
+.l-dores p { margin-top: 6px; max-width: 52ch; color: var(--ink-2); }
+.l-icone { width: 48px; height: 48px; padding: 11px; border-radius: 13px; background: var(--tile); border: 1.4px solid var(--node-line); box-shadow: 0 3px 0 var(--plate); fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.l-icone .l-detalhe { stroke: var(--c); stroke-width: 2.2; }
+.l-icone .l-gotas { stroke: var(--c); stroke-width: 3.4; }
+.l-icone.loop { --c: var(--loop); }
+.l-icone.bad { --c: var(--bad); }
+.l-icone.warn { --c: var(--warn); }
+.l-icone.info { --c: var(--accent); }
+
+/* Como funciona: três passos numerados (é uma sequência), ligados por um cano com água. */
+.l-passos { --vao: 40px; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--vao); counter-reset: passo; }
+.l-passos li { position: relative; }
+.l-passos li:not(:last-child)::before { content: ''; position: absolute; left: 22px; top: 16px; width: calc(100% + var(--vao)); height: 12px; border: 3px solid var(--pipe-wall); border-radius: 6px; background: var(--accent); }
+.l-numero { position: relative; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--node); border: 1.4px solid var(--node-line); box-shadow: 0 3px 0 var(--plate); font: 600 16px var(--f-mono); }
+.l-passos h3 { margin-top: 20px; }
+.l-passos p { margin-top: 6px; max-width: 40ch; color: var(--ink-2); }
+
+/* Pra quem: duas colunas, cada uma um cartão (é um objeto: um público). */
+.l-publicos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.l-publico { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 26px 28px 28px; }
+.l-publico > p { margin-top: 6px; color: var(--ink-2); }
+.l-publico ul { list-style: none; margin: 18px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.l-publico li { position: relative; padding-left: 22px; }
+.l-publico li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 10px; height: 4px; border-radius: 2px; background: var(--accent); }
+
+/* Fechamento e rodapé. */
+.l-fecho { padding-top: 112px; }
+.l-fecho h2 { font-size: clamp(36px, 4.8vw, 58px); letter-spacing: -0.045em; line-height: 1; }
+.l-fecho p { margin-top: 16px; max-width: 46ch; font-size: 17px; color: var(--ink-2); }
+.l-rodape { margin-top: 96px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 14px; }
+.l-rodape .l-largura { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; padding-block: 24px max(32px, env(safe-area-inset-bottom, 0px)); }
+.l-rodape .marca { font-size: 19px; }
+.l-rodape .marca svg { width: 24px; height: 24px; }
+
+/* Os exemplos: quatro abas (cartões, porque cada uma é um objeto: um fluxo) e o visualizador embaixo. */
+.l-exemplos { display: grid; gap: 16px; }
+.l-abas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.l-aba { display: grid; gap: 6px; align-content: start; text-align: left; padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--node); color: var(--ink); cursor: pointer; }
+.l-aba:hover { border-color: var(--ink-3); }
+.l-aba[aria-selected='true'] { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.l-aba-nome { font-weight: 600; font-size: 15px; }
+.l-aba-dor { font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+.l-aba .l-mini { margin-top: 6px; }
+.l-mini { display: block; width: 100%; height: auto; border-radius: 10px; background: var(--canvas); }
+.l-mini .m-peca { fill: var(--node); stroke: var(--node-line); stroke-width: 1.3; }
+.l-mini .m-losango { stroke: var(--ink-2); }
+.l-mini .m-espera { stroke: var(--c); stroke-width: 1.8; }
+.l-mini .m-inicio { fill: var(--c); }
+.l-mini .m-play { fill: #fff; }
+.l-mini .m-linha, .l-mini .m-cano, .l-mini .m-agua, .l-mini .m-tracejado { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.l-mini .m-linha { stroke: var(--c); stroke-width: 3; }
+.l-mini .m-cano { stroke: var(--pipe-wall); stroke-width: 10; }
+.l-mini .m-agua { stroke: var(--c); stroke-width: 5; }
+.l-mini .m-cano.grosso { stroke-width: 12; stroke-linecap: butt; stroke-linejoin: miter; }
+.l-mini .m-agua.grosso { stroke-width: 6; stroke-linecap: butt; stroke-linejoin: miter; }
+.l-mini .m-volta { stroke: var(--loop); }
+.l-mini .m-tracejado { stroke: var(--c); stroke-width: 4; stroke-dasharray: 9 6; stroke-linecap: butt; }
+.l-mini .m-poca { fill: var(--bad); }
+/* A área do visualizador: a altura final desde o começo. Até ele chegar, a miniatura grande, no quadro. */
+.l-exemplo-area { position: relative; height: 560px; border-radius: 16px; overflow: hidden; }
+.l-exemplo-espera { position: absolute; inset: 0; display: grid; place-items: center; padding: 32px; background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1.1px, transparent 1.2px); background-size: 24px 24px; border: 1px solid var(--line); border-radius: 16px; }
+.l-exemplo-espera .l-mini { max-width: 560px; background: none; }
+.l-exemplo-area > .editor { position: absolute; inset: 0; }
+
+/* O fluxo da abertura. */
+.abertura-fluxo svg { display: block; width: 100%; height: auto; overflow: visible; }
+.abertura-fluxo .de-pe { display: none; }
+.fluxo-abertura text { font-family: var(--f-body); }
+.fluxo-abertura .fa-centro { text-anchor: middle; }
+.fluxo-abertura .fa-nome { font-size: 13.5px; font-weight: 600; fill: var(--ink); }
+.fluxo-abertura .fa-sub { font-size: 11px; fill: var(--ink-2); }
+.fluxo-abertura .fa-ponto { fill: var(--wa); }
+.fluxo-abertura .fa-placa { fill: var(--plate); }
+.fluxo-abertura .fa-corpo { fill: var(--node); stroke: var(--node-line); stroke-width: 1.4; }
+.fluxo-abertura .fa-tile { fill: var(--tile); }
+.fluxo-abertura .fa-icone { fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.fluxo-abertura .fa-play { fill: var(--wa-forte); }
+.fluxo-abertura .fa-triangulo { fill: #fff; }
+.fluxo-abertura .fa-losango { fill: var(--node); stroke: var(--ink-2); stroke-width: 1.6; }
+.fluxo-abertura .fa-parede, .fluxo-abertura .fa-miolo, .fluxo-abertura .fa-agua, .fluxo-abertura .fa-brilho { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.fluxo-abertura .fa-parede { stroke: var(--pipe-wall); stroke-width: 12; }
+.fluxo-abertura .fa-miolo { stroke: var(--pipe-core); stroke-width: 7; }
+.fluxo-abertura .fa-agua { stroke: var(--wa); stroke-width: 6; }
+.fluxo-abertura .volta .fa-agua { stroke: var(--loop); }
+/* O brilho: um traço branco curto andando pelo cano, devagar. */
+.fluxo-abertura .fa-brilho { stroke: #fff; stroke-opacity: 0.6; stroke-width: 2; stroke-dasharray: 5 26; animation: fa-corre 1.8s linear infinite; }
+@keyframes fa-corre { to { stroke-dashoffset: -31; } }
+.fluxo-abertura .fa-opcao rect { fill: var(--node); stroke: var(--node-line); }
+.fluxo-abertura .fa-opcao text { font: 500 11px var(--f-mono); fill: var(--ink-2); }
+/* Os selos: fundo claro da cor, borda da cor e o texto mais escuro (contraste AA nos dois temas). */
+.fluxo-abertura .fa-selo { --c: var(--ok); --c-fundo: var(--ok-soft); }
+.fluxo-abertura .fa-selo.warn { --c: var(--warn); --c-fundo: var(--warn-soft); }
+.fluxo-abertura .fa-selo.bad { --c: var(--bad); --c-fundo: var(--bad-soft); }
+.fluxo-abertura .fa-selo.loop { --c: var(--loop); --c-fundo: var(--loop-soft); }
+.fluxo-abertura .fa-selo rect { fill: var(--c-fundo); stroke: var(--c); stroke-width: 1; }
+.fluxo-abertura .fa-selo text { font-size: 11.5px; font-weight: 600; fill: color-mix(in srgb, var(--c) 70%, var(--ink)); }
+.fluxo-abertura .fa-marca { fill: none; stroke: color-mix(in srgb, var(--c) 70%, var(--ink)); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* A poça e as três gotas, uma atrás da outra. */
+.fluxo-abertura .fa-poca { fill: var(--bad); opacity: 0.35; }
+.fluxo-abertura .fa-gota { fill: var(--bad); opacity: 0; animation: fa-pinga 1.5s ease-in infinite; }
+.fluxo-abertura .fa-gota:nth-of-type(2) { animation-delay: 0.5s; }
+.fluxo-abertura .fa-gota:nth-of-type(3) { animation-delay: 1s; }
+@keyframes fa-pinga { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(26px); opacity: 0; } }
+
+/* Telas médias: a abertura numa coluna (o fluxo embaixo, largo); sem os atalhos da barra. */
+@media (max-width: 959px) {
+  .l-abertura .l-largura { grid-template-columns: minmax(0, 1fr); }
+  .abertura-fluxo { max-width: 720px; }
+}
+@media (max-width: 959px) {
+  .l-abas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 859px) {
+  .l-barra nav { display: none; }
+  .l-dores, .l-publicos { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 759px) {
+  .l-secao { padding-top: 72px; }
+  .l-exemplo-area { height: 480px; }
+  .l-aba { padding: 10px 12px 12px; }
+  .l-aba-dor { font-size: 12.5px; }
+  .l-fecho { padding-top: 80px; }
+  .l-rodape { margin-top: 72px; }
+  /* Os passos de cima pra baixo, com o cano descendo do número de um ao do outro. */
+  .l-passos { --vao: 28px; grid-template-columns: minmax(0, 1fr); }
+  .l-passos li { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 18px; }
+  .l-passos li > :not(.l-numero) { grid-column: 2; }
+  .l-passos .l-numero { grid-row: 1 / span 2; }
+  .l-passos h3 { margin-top: 9px; }
+  .l-passos li:not(:last-child)::before { left: 16px; top: 22px; width: 12px; height: calc(100% + var(--vao)); }
+}
+@media (max-width: 479px) {
+  .l-barra .l-texto { display: none; }
+}
+
+/* No celular, o desenho de pé. */
+@media (max-width: 559px) {
+  .abertura-fluxo .largo { display: none; }
+  .abertura-fluxo .de-pe { display: block; }
+}
+
+/* Movimento reduzido: tudo parado; as gotas ficam no meio da queda, pra se ver que pinga. */
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-abertura .fa-brilho { animation: none; stroke-opacity: 0; }
+  .fluxo-abertura .fa-gota { animation: none; opacity: 1; }
+  .fluxo-abertura .fa-gota:nth-of-type(2) { transform: translateY(10px); }
+  .fluxo-abertura .fa-gota:nth-of-type(3) { transform: translateY(20px); }
+}

@@ -34,3 +34,16 @@ describe('proxy no link público', () => {
     expect(r.headers.get('location')).toBe('http://127.0.0.1:3000/entrar');
   });
 });
+
+describe('proxy na raiz', () => {
+  it('deixa abrir / sem sessão (é a landing)', async () => {
+    const r = await proxy(new NextRequest('http://127.0.0.1:3000/', { headers: { host: '127.0.0.1:3000' } }));
+    expect(r.headers.get('location')).toBeNull();
+  });
+
+  // Só a raiz exata: o resto continua pedindo sessão, mesmo começando com "/".
+  it.each(['/e/x', '/xyz', '/empresa/nova', '//', '/%2F', '//e/x'])('manda %s pro entrar sem sessão', async (caminho) => {
+    const r = await proxy(new NextRequest(`http://127.0.0.1:3000${caminho}`, { headers: { host: '127.0.0.1:3000' } }));
+    expect(r.headers.get('location')).toBe('http://127.0.0.1:3000/entrar');
+  });
+});

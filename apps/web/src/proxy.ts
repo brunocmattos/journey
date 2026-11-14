@@ -15,8 +15,9 @@ export async function proxy(request: NextRequest) {
     },
   });
   const { data } = await supabase.auth.getClaims();
-  // /l/: o link público, aberto sem conta.
-  const publico = ['/entrar', '/auth', '/l/'].some((p) => request.nextUrl.pathname.startsWith(p));
+  // /l/: o link público, aberto sem conta. A raiz só exata: sem sessão ela é a landing (e todo caminho começa com "/").
+  const caminho = request.nextUrl.pathname;
+  const publico = caminho === '/' || ['/entrar', '/auth', '/l/'].some((p) => caminho.startsWith(p));
   if (!data?.claims && !publico) {
     const paraEntrar = NextResponse.redirect(new URL('/entrar', origemDe(request)));
     // Leva os cookies que o Supabase acabou de mexer (sessão vencida apagada), senão o navegador fica com os velhos.
