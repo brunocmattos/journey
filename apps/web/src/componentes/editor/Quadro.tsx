@@ -68,6 +68,8 @@ export interface PropsQuadro {
   /** "Ver no quadro" de um achado: estas peças e conexões ficam no holofote. */
   destaque?: ReadonlySet<string> | null;
   acoes: AcoesQuadro;
+  /** A roda sem Ctrl rola a página, e não o quadro (o quadro dentro de uma página, como na landing). */
+  rodaRolaPagina?: boolean;
   ref?: React.Ref<QuadroApi>;
   children?: React.ReactNode;
 }
@@ -96,7 +98,25 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 2.5;
 const limitar = (v: number, m: number) => Math.max(-m, Math.min(m, v));
 
-export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, ferramenta, soLeitura, play, pausado, aoAguaChegar, renomeando, destaque = null, acoes, ref, children }: PropsQuadro) {
+export function Quadro({
+  doc,
+  estilo,
+  canais,
+  canalFluxo,
+  nomesCadastros,
+  sel,
+  ferramenta,
+  soLeitura,
+  play,
+  pausado,
+  aoAguaChegar,
+  renomeando,
+  destaque = null,
+  acoes,
+  rodaRolaPagina = false,
+  ref,
+  children,
+}: PropsQuadro) {
   const palco = useRef<HTMLElement>(null);
   const [vista, setVista] = useState<Vista>({ x: 120, y: 260, k: 1 });
   const vistaRef = useRef(vista);
@@ -186,6 +206,8 @@ export function Quadro({ doc, estilo, canais, canalFluxo, nomesCadastros, sel, f
   useEffect(() => {
     const el = palco.current!;
     const roda = (e: WheelEvent) => {
+      // Dentro de uma página, só o zoom (Ctrl ou pinça) fica com o quadro: a roda solta continua rolando a página.
+      if (rodaRolaPagina && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       // Em linhas ou páginas (Firefox), vira pixels. O zoom é limitado por evento: um dente da roda (100 px) não
       // pode dividir o zoom por 2,7; na pinça os passos são pequenos e nem chegam no limite.

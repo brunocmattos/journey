@@ -1,7 +1,7 @@
 'use client';
 
 import './editor.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { diagnosticar, type Achado } from '@journey/fluxo';
 import { dataCurta } from '@/compartilhar/opcoes';
 import type { Retrato } from '@/compartilhar/retrato';
@@ -20,16 +20,25 @@ import { usePlay } from './usePlay';
 
 const nada = () => {};
 
+/** Daqui pra cima, o embutido põe a gaveta ao lado do quadro; abaixo, por cima (o mesmo número do @container no editor.css). */
+const EMBUTIDO_LARGO = 900;
+const estreito = (el: HTMLElement | null) => (el?.clientWidth ?? 0) < EMBUTIDO_LARGO;
+
 /**
  * O link público: o fluxo só de leitura (o quadro do editor), o play (o cenário inicial toca sozinho) e o diagnóstico
  * só leitura, com os intencionais e a nota. Sem trava, sem salvamento, sem painel. Tudo vem do retrato montado no
  * servidor: o navegador de quem abre não fala com o banco.
+ *
+ * `embutido` (os exemplos da landing): dentro de uma página, sem o cabeçalho e o rodapé do link, na altura de quem o
+ * contém, com a gaveta do diagnóstico aberta (fechada quando ele é estreito) e o play parado (o "Dar play" fica numa barra em cima do quadro). A roda
+ * solta rola a página, e as teclas do play só valem com o foco dentro dele. `quando` é a hora em que o play começa.
  */
-export function Visualizador({ retrato: r }: { retrato: Retrato }) {
+export function Visualizador({ retrato: r, embutido = false, quando }: { retrato: Retrato; embutido?: boolean; quando?: string }) {
+  const raiz = useRef<HTMLDivElement>(null);
   const quadro = useRef<QuadroApi>(null);
   const [sel, setSel] = useState<Selecao>(null);
   const [destaque, setDestaque] = useState<ReadonlySet<string> | null>(null);
-  const [gaveta, setGaveta] = useState(false);
+  const [gaveta, setGaveta] = useState(embutido);
   const [velocidade, setVelocidade] = useState(r.estilo.velocidade);
   const [aviso, setAviso] = useState<string | null>(null);
   const doc = r.documento;
@@ -46,6 +55,7 @@ export function Visualizador({ retrato: r }: { retrato: Retrato }) {
     quadro,
     avisar: setAviso,
     aoComecar: () => setDestaque(null),
+    quando,
   });
 
   // O cenário inicial toca sozinho, uma vez.
@@ -69,16 +79,25 @@ export function Visualizador({ retrato: r }: { retrato: Retrato }) {
     setGaveta(aberta);
     if (!aberta) setDestaque(null);
   };
+  // Embutido e estreito (a gaveta ficaria por cima do fluxo inteiro), começa fechada: o botão dos achados abre. Antes
+  // de pintar, pra não piscar aberta.
+  useLayoutEffect(() => {
+    if (embutido && estreito(raiz.current)) setGaveta(false);
+  }, [embutido]);
   // Tela pequena nos dois sentidos: com o play, a gaveta fecha pra não cobrir o cartão. Deitado e mais largo, as
-  // duas cabem lado a lado (editor.css).
+  // duas cabem lado a lado (editor.css). Embutido, conta a largura de quem o contém (a página é larga, o quadro pode
+  // não ser).
   useEffect(() => {
-    if (pl.ativo && matchMedia('(max-height: 600px) and (max-width: 599px)').matches) mudarGaveta(false);
+    if (!pl.ativo) return;
+    if (embutido ? estreito(raiz.current) : matchMedia('(max-height: 600px) and (max-width: 599px)').matches) mudarGaveta(false);
   }, [pl.ativo]);
 
   // Teclas das opções do play; Esc tira o holofote. Na gaveta, só o Esc (tira o holofote, ou fecha a gaveta).
   const teclas = useRef<(e: KeyboardEvent) => void>(nada);
   teclas.current = (e) => {
     const alvo = e.target as Element | null;
+    // Embutido, a página tem outras coisas (as abas): as teclas só valem com o foco aqui dentro.
+    if (embutido && !(alvo instanceof Node && raiz.current?.contains(alvo))) return;
     if (alvo?.closest?.('input, textarea, select')) return;
     if (alvo?.closest?.('.gaveta')) {
       if (e.key !== 'Escape') return;
@@ -111,48 +130,58 @@ export function Visualizador({ retrato: r }: { retrato: Retrato }) {
   };
   const simularAte = (a: Achado) => {
     const alvo = pecaDoAchado(doc, a);
-    const p = alvo && caminhoAte(doc, ctx, alvo, pl.play?.quando ?? agora());
+    const p = alvo && caminhoAte(doc, ctx, alvo, pl.play?.quando ?? quando ?? agora());
     if (!alvo || !p) return setAviso('Nenhum Início chega nesta peça.');
     pl.tocar(p, alvo);
   };
 
   const versao = r.versao ? `versão ${r.versao.numero} — ${r.versao.nome}, de ${dataCurta(r.de)}` : 'o fluxo de agora';
   const corAgua = (canal: string | null) => corDoCanal(r.estilo, r.canais, canal ?? r.fluxo.canal);
+  // O diagnóstico e o play: no topo do link; embutido, numa barra em cima do quadro.
+  const botoes = (
+    <>
+      <button
+        ref={botaoDiagnostico}
+        className="botao"
+        type="button"
+        aria-expanded={gaveta}
+        aria-controls={gaveta ? 'gaveta-diagnostico' : undefined}
+        onClick={() => mudarGaveta(!gaveta)}
+        data-testid="botao-diagnostico"
+      >
+        <Icone nome="alerta" />
+        {rotuloAchados(separados.abertos.length)}
+      </button>
+      <button className="botao primario b-play" type="button" onClick={pl.ativo ? pl.parar : () => pl.darPlay(sel?.tipo === 'peca' ? sel.id : null)}>
+        <Icone nome={pl.ativo ? 'parar' : 'play'} />
+        {pl.ativo ? 'Parar' : 'Dar play'}
+      </button>
+    </>
+  );
 
   return (
-    <div className={`editor visualizador${r.estilo.ondas ? ' ondas' : ''}${r.estilo.holofote ? ' holofote-on' : ''}${pl.vis?.pergunta ? ' escolhendo' : destaque ? ' destacando' : ''}${pl.ativo ? ' com-play' : ''}${gaveta ? ' com-gaveta' : ''}`}>
-      <header className="topo topo-link">
-        <Marca href={null} />
-        <div className="titulo-link">
-          <span className="mudo">{r.empresa.nome}</span>
-          <h1>{r.fluxo.nome}</h1>
-        </div>
-        <div className="selos-link">
-          <span className="selo info">só leitura</span>
-          <span className="mudo">{versao}</span>
-          {r.esconderNomes && <span className="selo info">nomes escondidos</span>}
-          <span className="mudo">{r.expiraEm ? `vale até ${dataCurta(r.expiraEm)}` : 'sem prazo'}</span>
-        </div>
-        <div className="empurra">
-          <button
-            ref={botaoDiagnostico}
-            className="botao"
-            type="button"
-            aria-expanded={gaveta}
-            aria-controls={gaveta ? 'gaveta-diagnostico' : undefined}
-            onClick={() => mudarGaveta(!gaveta)}
-            data-testid="botao-diagnostico"
-          >
-            <Icone nome="alerta" />
-            {rotuloAchados(separados.abertos.length)}
-          </button>
-          <button className="botao primario b-play" type="button" onClick={pl.ativo ? pl.parar : () => pl.darPlay(sel?.tipo === 'peca' ? sel.id : null)}>
-            <Icone nome={pl.ativo ? 'parar' : 'play'} />
-            {pl.ativo ? 'Parar' : 'Dar play'}
-          </button>
-        </div>
-      </header>
+    <div
+      ref={raiz}
+      className={`editor visualizador${embutido ? ' embutido' : ''}${r.estilo.ondas ? ' ondas' : ''}${r.estilo.holofote ? ' holofote-on' : ''}${pl.vis?.pergunta ? ' escolhendo' : destaque ? ' destacando' : ''}${pl.ativo ? ' com-play' : ''}${gaveta ? ' com-gaveta' : ''}`}
+    >
+      {!embutido && (
+        <header className="topo topo-link">
+          <Marca href={null} />
+          <div className="titulo-link">
+            <span className="mudo">{r.empresa.nome}</span>
+            <h1>{r.fluxo.nome}</h1>
+          </div>
+          <div className="selos-link">
+            <span className="selo info">só leitura</span>
+            <span className="mudo">{versao}</span>
+            {r.esconderNomes && <span className="selo info">nomes escondidos</span>}
+            <span className="mudo">{r.expiraEm ? `vale até ${dataCurta(r.expiraEm)}` : 'sem prazo'}</span>
+          </div>
+          <div className="empurra">{botoes}</div>
+        </header>
+      )}
       <div className="quadro-e-gaveta">
+        {embutido && <div className="barra-embutida">{botoes}</div>}
         <Quadro
           ref={quadro}
           doc={pl.play ? pl.docPlay : doc}
@@ -163,6 +192,7 @@ export function Visualizador({ retrato: r }: { retrato: Retrato }) {
           sel={sel}
           ferramenta="selecionar"
           soLeitura
+          rodaRolaPagina={embutido}
           play={pl.vis}
           pausado={pl.pausado}
           aoAguaChegar={pl.aguaChegou}
@@ -221,7 +251,7 @@ export function Visualizador({ retrato: r }: { retrato: Retrato }) {
           />
         )}
       </div>
-      <footer className="rodape-link">Feito com Journey</footer>
+      {!embutido && <footer className="rodape-link">Feito com Journey</footer>}
       <div role="status">{aviso && <div className="aviso">{aviso}</div>}</div>
       <div className="so-leitor" role="status">
         {anuncio}
